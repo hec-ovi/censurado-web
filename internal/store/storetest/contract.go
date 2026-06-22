@@ -420,6 +420,82 @@ func RunFilters(t *testing.T, repo store.Repository) {
 	})
 }
 
+// RunFacets executes the Facets conformance suite against repo, which must be
+// empty. Running the identical suite against both SQLite and Postgres is what
+// proves the aggregate values, counts, and the deterministic ordering (Count
+// DESC, then Value ASC) are byte-identical across the engines. It does not call
+// t.Parallel.
+func RunFacets(t *testing.T, repo store.Repository) {
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Six articles arranged so each axis exercises BOTH ordering keys: a clear
+	// Count-DESC winner and a Count tie broken by Value-ASC. The sixth article
+	// introduces a mixed-case value on every axis (Section "World", Author "Zara",
+	// Topic "Zen") whose ASCII byte order DIFFERS from a locale collation: under
+	// byte order (SQLite BINARY / Postgres COLLATE "C") every uppercase letter
+	// (0x41-0x5A) sorts before every lowercase one (0x61-0x7A), so "World" < the
+	// lowercase "economics", and "Zara"/"Zen" lead their count-tie groups; under a
+	// typical Postgres locale (en_US.UTF-8) those uppercase-initial values would
+	// instead sort case-blended (economics < World) or last (Zara, Zen at the 'z'
+	// position). The COLLATE "C" pin in postgres.go is what keeps Postgres on byte
+	// order, and these assertions FAIL on Postgres if that pin is ever removed.
+	// Section/author are stored verbatim (only trimmed) and topics preserve their
+	// original casing (domain.normalizeTopics), so the mixed case reaches the SQL.
+	//   Sections: tech=2, politics=2 (tie -> politics<tech), World=1, economics=1 (tie -> World<economics)
+	//   Authors:  ada=3, Zara=1, bo=1, cy=1 (tie -> Zara<bo<cy)
+	//   Topics:   go=3, election=2, Zen=1, markets=1, release=1 (tie -> Zen<markets<release)
+	seed := []domain.Article{
+		mustArticle(t, domain.PublishInput{Title: "T1", Body: "b", Author: "ada", Section: "tech", Topics: []string{"go", "release"}}, base),
+		mustArticle(t, domain.PublishInput{Title: "T2", Body: "b", Author: "bo", Section: "tech", Topics: []string{"go"}}, base.Add(24*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "T3", Body: "b", Author: "ada", Section: "politics", Topics: []string{"election"}}, base.Add(48*time.Hour)),
+		// One article carrying two topics, to prove COUNT(*) over the join table
+		// counts it once per distinct topic, never double.
+		mustArticle(t, domain.PublishInput{Title: "T4", Body: "b", Author: "cy", Section: "politics", Topics: []string{"election", "go"}}, base.Add(72*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "T5", Body: "b", Author: "ada", Section: "economics", Topics: []string{"markets"}}, base.Add(96*time.Hour)),
+		// Mixed-case tie-break values on every axis (see comment above).
+		mustArticle(t, domain.PublishInput{Title: "T6", Body: "b", Author: "Zara", Section: "World", Topics: []string{"Zen"}}, base.Add(120*time.Hour)),
+	}
+	for _, a := range seed {
+		if _, err := repo.Upsert(ctx, a); err != nil {
+			t.Fatalf("seed upsert %q: %v", a.Slug, err)
+		}
+	}
+
+	got, err := repo.Facets(ctx)
+	if err != nil {
+		t.Fatalf("Facets: %v", err)
+	}
+
+	// Value-ASC ties below are asserted in BYTE order ("World" before lowercase
+	// "economics"; "Zara"/"Zen" ahead of their lowercase peers). This is the
+	// ordering the COLLATE "C" pin guarantees on Postgres and SQLite's BINARY
+	// default gives for free; a locale collation would order these differently.
+	assertFacets(t, "Sections", got.Sections, []store.Facet{
+		{Value: "politics", Count: 2}, {Value: "tech", Count: 2}, {Value: "World", Count: 1}, {Value: "economics", Count: 1},
+	})
+	assertFacets(t, "Authors", got.Authors, []store.Facet{
+		{Value: "ada", Count: 3}, {Value: "Zara", Count: 1}, {Value: "bo", Count: 1}, {Value: "cy", Count: 1},
+	})
+	assertFacets(t, "Topics", got.Topics, []store.Facet{
+		{Value: "go", Count: 3}, {Value: "election", Count: 2}, {Value: "Zen", Count: 1}, {Value: "markets", Count: 1}, {Value: "release", Count: 1},
+	})
+}
+
+// assertFacets checks a facet slice for exact value, count, and order equality.
+func assertFacets(t *testing.T, axis string, got, want []store.Facet) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s: got %d facets %v, want %d %v", axis, len(got), got, len(want), want)
+		return
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s[%d] = %+v, want %+v (full got %v)", axis, i, got[i], want[i], got)
+		}
+	}
+}
+
 // assertWholeSecond verifies the article's PublishedAt and CreatedAt carry no
 // sub-second component and equal the truncated inputs, regardless of which
 // engine stored them.

@@ -65,6 +65,25 @@ func TestPostgresFilters(t *testing.T) {
 	storetest.RunFilters(t, repo)
 }
 
+// TestPostgresFacets runs the shared Facets conformance suite against a real
+// Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the aggregate
+// values, counts, and the deterministic Count-DESC-then-Value-ASC ordering are
+// byte-identical to SQLite.
+func TestPostgresFacets(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunFacets(t, repo)
+}
+
 // TestPostgresSubmissionLog runs the shared SubmissionLog conformance suite
 // against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
 // Postgres adapter records and roundtrips submissions identically to SQLite.

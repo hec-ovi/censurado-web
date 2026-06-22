@@ -191,6 +191,54 @@ func (s *Store) Count(ctx context.Context, f store.Filter) (int, error) {
 	return n, nil
 }
 
+// Facets returns the distinct section, author, and topic values present with
+// their article counts, ordered Count DESC then Value ASC so the bytes are
+// deterministic and identical to the SQLite adapter.
+//
+// The value tie-break is COLLATE "C" (raw byte order) on purpose: SQLite's TEXT
+// columns sort BINARY by default, while Postgres would otherwise use the
+// database's locale collation, which can order mixed-case or accented values
+// differently. Pinning "C" makes the ordering byte-identical across engines for
+// ANY value set, not just the ASCII lowercase ones the conformance suite seeds.
+func (s *Store) Facets(ctx context.Context) (store.Facets, error) {
+	sections, err := facetRows(ctx, s.db,
+		`SELECT section, COUNT(*) FROM articles GROUP BY section ORDER BY COUNT(*) DESC, section COLLATE "C" ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets sections: %w", err)
+	}
+	authors, err := facetRows(ctx, s.db,
+		`SELECT author, COUNT(*) FROM articles GROUP BY author ORDER BY COUNT(*) DESC, author COLLATE "C" ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets authors: %w", err)
+	}
+	// Topic counts are per-article (one row per article carrying the topic); the
+	// join table's (article_id, topic) primary key already forbids duplicates, so
+	// COUNT(*) cannot double-count a single article on one topic.
+	topics, err := facetRows(ctx, s.db,
+		`SELECT topic, COUNT(*) FROM article_topics GROUP BY topic ORDER BY COUNT(*) DESC, topic COLLATE "C" ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets topics: %w", err)
+	}
+	return store.Facets{Sections: sections, Authors: authors, Topics: topics}, nil
+}
+
+func facetRows(ctx context.Context, q querier, query string) ([]store.Facet, error) {
+	rows, err := q.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Facet
+	for rows.Next() {
+		var f store.Facet
+		if err := rows.Scan(&f.Value, &f.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 func buildSelect(f store.Filter, count bool) (string, []any) {
 	var b strings.Builder
 	ab := &argBuilder{}

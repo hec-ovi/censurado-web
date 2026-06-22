@@ -67,6 +67,23 @@ type Filter struct {
 	Offset int
 }
 
+// Facet is one distinct filter value and how many articles carry it. It feeds the
+// admin filter UI's faceted controls.
+type Facet struct {
+	Value string
+	Count int
+}
+
+// Facets is the distinct set of filter values present in the store, per axis,
+// each with its article count. It is a read-only aggregate for the admin filter
+// UI. Each slice is ordered Count DESC, then Value ASC, so the bytes are
+// deterministic and identical across the SQLite and Postgres adapters.
+type Facets struct {
+	Sections []Facet
+	Authors  []Facet
+	Topics   []Facet
+}
+
 // UpsertResult reports the stored article and whether it was newly created.
 // Created is false when an article with the same content hash already existed,
 // which is what makes publishing both idempotent and deduplicated.
@@ -87,6 +104,9 @@ type Repository interface {
 	Find(ctx context.Context, f Filter) ([]domain.Article, error)
 	// Count returns how many articles match the filter, ignoring Limit/Offset.
 	Count(ctx context.Context, f Filter) (int, error)
+	// Facets returns the distinct filter values present with their article counts,
+	// for the admin filter UI. Read-only aggregate. Deterministic ordering.
+	Facets(ctx context.Context) (Facets, error)
 	// Close releases resources held by the store.
 	Close() error
 }

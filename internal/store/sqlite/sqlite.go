@@ -180,6 +180,50 @@ func (s *Store) Count(ctx context.Context, f store.Filter) (int, error) {
 	return n, nil
 }
 
+// Facets returns the distinct section, author, and topic values present with
+// their article counts, ordered Count DESC then Value ASC so the bytes are
+// deterministic and identical to the Postgres adapter. The value tie-break sorts
+// on the TEXT columns' default BINARY (byte) collation; the Postgres adapter
+// pins COLLATE "C" to match this exactly for any value set.
+func (s *Store) Facets(ctx context.Context) (store.Facets, error) {
+	sections, err := facetRows(ctx, s.db,
+		`SELECT section, COUNT(*) FROM articles GROUP BY section ORDER BY COUNT(*) DESC, section ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets sections: %w", err)
+	}
+	authors, err := facetRows(ctx, s.db,
+		`SELECT author, COUNT(*) FROM articles GROUP BY author ORDER BY COUNT(*) DESC, author ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets authors: %w", err)
+	}
+	// Topic counts are per-article (one row per article carrying the topic); the
+	// join table's (article_id, topic) primary key already forbids duplicates, so
+	// COUNT(*) cannot double-count a single article on one topic.
+	topics, err := facetRows(ctx, s.db,
+		`SELECT topic, COUNT(*) FROM article_topics GROUP BY topic ORDER BY COUNT(*) DESC, topic ASC`)
+	if err != nil {
+		return store.Facets{}, fmt.Errorf("facets topics: %w", err)
+	}
+	return store.Facets{Sections: sections, Authors: authors, Topics: topics}, nil
+}
+
+func facetRows(ctx context.Context, q querier, query string) ([]store.Facet, error) {
+	rows, err := q.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Facet
+	for rows.Next() {
+		var f store.Facet
+		if err := rows.Scan(&f.Value, &f.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 func buildSelect(f store.Filter, count bool) (string, []any) {
 	var b strings.Builder
 	var args []any

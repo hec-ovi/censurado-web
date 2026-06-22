@@ -21,14 +21,14 @@ func TestRenderMarkdown_RendersSafeFormatting(t *testing.T) {
 // executable surface. These are the attacks an agent-authored body could carry.
 func TestRenderMarkdown_NeutralizesInjection(t *testing.T) {
 	cases := map[string]string{
-		"raw script tag":         "Hello <script>alert(1)</script> world",
-		"img onerror handler":    "![x](data:image/png;base64,xx)\n\n<img src=x onerror=alert(1)>",
-		"javascript link":        "[click](javascript:alert(1))",
-		"inline event handler":   "<a href=\"#\" onclick=\"alert(1)\">x</a>",
-		"style tag":              "<style>body{display:none}</style>text",
-		"svg onload":             "<svg/onload=alert(1)>",
-		"iframe":                 "<iframe src=\"https://evil.example\"></iframe>",
-		"data uri html":          "[x](data:text/html,<script>alert(1)</script>)",
+		"raw script tag":       "Hello <script>alert(1)</script> world",
+		"img onerror handler":  "![x](data:image/png;base64,xx)\n\n<img src=x onerror=alert(1)>",
+		"javascript link":      "[click](javascript:alert(1))",
+		"inline event handler": "<a href=\"#\" onclick=\"alert(1)\">x</a>",
+		"style tag":            "<style>body{display:none}</style>text",
+		"svg onload":           "<svg/onload=alert(1)>",
+		"iframe":               "<iframe src=\"https://evil.example\"></iframe>",
+		"data uri html":        "[x](data:text/html,<script>alert(1)</script>)",
 	}
 	// Raw HTML is escaped to entities (so no real <script>/<svg>/<style>/<iframe>
 	// tags survive), and dangerous URL schemes are stripped. Escaped text that

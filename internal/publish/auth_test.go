@@ -26,11 +26,11 @@ func TestStaticKeyAuth(t *testing.T) {
 	})
 
 	for name, token := range map[string]string{
-		"wrong secret":     "ak_ada.wrong",
-		"unknown prefix":   "ak_bo.super-secret-value",
-		"no separator":     "ak_adasuper-secret-value",
-		"empty":            "",
-		"empty secret":     "ak_ada.",
+		"wrong secret":   "ak_ada.wrong",
+		"unknown prefix": "ak_bo.super-secret-value",
+		"no separator":   "ak_adasuper-secret-value",
+		"empty":          "",
+		"empty secret":   "ak_ada.",
 	} {
 		t.Run("rejects "+name, func(t *testing.T) {
 			if _, err := a.Authenticate(token); !errors.Is(err, ErrUnauthorized) {

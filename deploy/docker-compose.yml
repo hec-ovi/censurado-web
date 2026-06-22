@@ -137,21 +137,56 @@ services:
     tmpfs:
       - /tmp
 
-  # --- litestream backup sidecar: ADDED IN PHASE 6C --------------------------
-  # Extension point only. Phase 6C will add a litestream service that continuously
-  # replicates /data/censurado.db (the WAL) to an object store. Sketch (do NOT
-  # enable yet; needs a litestream image, config, and credentials):
+  # --- litestream: continuous backup sidecar (Phase 6C) ----------------------
+  # Continuously replicates /data/censurado.db (snapshots + WAL frames) to a
+  # replica. By default that is the local "replica-data" volume (a file replica,
+  # no credentials). For off-site backups, set the LITESTREAM_S3_* vars in .env
+  # and uncomment the s3 block in litestream.yml.
   #
-  # litestream:
-  #   image: litestream/litestream:0.3
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - publish
-  #   volumes:
-  #     - db-data:/data:ro                       # read the live db (WAL frames)
-  #     - ./litestream.yml:/etc/litestream.yml:ro
-  #     - litestream-replica:/replica            # local/staging replica target
-  #   command: ["replicate"]
+  # Single-writer is preserved: litestream only READS article data to replicate it.
+  # It never inserts/updates rows, so publish remains the sole writer. It does hold
+  # a read lock and manage the WAL, which is why db-data is mounted read-write (a
+  # ":ro" mount cannot touch the -wal/-shm sidecars), exactly like admin/generate.
+  #
+  # Why this runs as root (unlike the nonroot publish/admin/generate): it shares the
+  # WAL index (-shm/-wal) on db-data with the nonroot publish writer (uid 65532) AND
+  # writes a fresh replica-data volume that Docker initializes root-owned. Running as
+  # root lets it read/write both without an ownership clash. depends_on publish so
+  # publish opens the db and creates the 65532-owned -wal/-shm first; litestream then
+  # coexists. It is still cap-dropped, no-new-privileges, and read-only-rootfs, so the
+  # post-compromise blast radius stays small.
+  litestream:
+    image: litestream/litestream:0.3.14@sha256:c5a1e1b01916b3a110f6600820ef176d048d9b9c2411ef0a680de0caa68934a5
+    restart: unless-stopped
+    # depends_on so publish initializes the db-data volume and creates the WAL
+    # sidecars (owned by uid 65532) before litestream attaches.
+    depends_on:
+      - publish
+    # Carries the LITESTREAM_S3_* vars for the optional s3 replica. The file replica
+    # needs none; with the s3 block commented these are simply unused.
+    env_file: .env
+    command: ["replicate", "-config", "/etc/litestream.yml"]
+    volumes:
+      # Read the live db + WAL to replicate. Read-write because WAL/-shm access
+      # requires it; litestream never writes article rows (single-writer intact).
+      - db-data:/data
+      # Local file replica target (snapshots + WAL). Swap for / add s3 in prod.
+      - replica-data:/replica
+      - ./litestream.yml:/etc/litestream.yml:ro
+    # Hardened like the other services: no Linux capabilities, no privilege
+    # escalation, read-only root filesystem with a tmpfs for scratch.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   # The single sqlite database (WAL): written by publish, read by admin/generate.
@@ -159,5 +194,6 @@ volumes:
   # The generated static site: written by generate (and admin regenerate), served
   # by an external CDN/web server outside this compose.
   site-data:
-  # Replica target for the Phase 6C litestream sidecar (extension point above).
-  # litestream-replica:
+  # Local file-replica target for the litestream backup sidecar (snapshots + WAL).
+  # In production this can be the staging replica alongside an off-site s3 replica.
+  replica-data:

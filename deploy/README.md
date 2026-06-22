@@ -61,12 +61,34 @@ Run a static site build on demand (writes the site-data volume, then exits):
 docker compose run --rm generate
 ```
 
+## Backups (litestream + restore drill)
+
+A litestream sidecar (pinned to 0.3.14) continuously replicates the sqlite db
+(snapshots + WAL) to the `replica-data` volume. It only reads article data, so
+publish stays the only writer. Config is `deploy/litestream.yml`. For off-site
+backups, set the `LITESTREAM_S3_*` vars in `.env` and uncomment the s3 block in
+`litestream.yml`.
+
+Backups are only worth having if a restore is proven, so `scripts/restore-drill.sh`
+restores a replica end to end and asserts the restored db is good (integrity,
+row counts, latest article slug) via `cmd/censurado/restorecheck`. It runs in CI on
+every push/PR (the `restore-drill` job) and can be run locally with Docker:
+
+```
+./scripts/restore-drill.sh
+```
+
+It prints `RESTORE DRILL: PASS (RTO=Ns)` and exits 0 only when every check passes.
+The drill is teeth-proved: `DRILL_BREAK=mismatch|garbage|truncate ./scripts/restore-drill.sh`
+deliberately breaks the restore and confirms it exits nonzero with `RESTORE DRILL:
+FAIL (sev1)`. Point it at a copy of a real db with `DRILL_SEED_DB=/path/to/db`.
+
 ## Notes
 
-- The db-data volume is mounted read-write for all three services. WAL readers need
-  to touch the -wal/-shm sidecars, so a read-only mount would break them. Only publish
-  writes article data.
+- The db-data volume is mounted read-write for all four services. WAL readers (admin,
+  generate) and litestream need to touch the -wal/-shm sidecars, so a read-only mount
+  would break them. Only publish writes article data.
 - Images are distroless, non-root, and cgo-free static builds (modernc.org/sqlite is
-  pure Go).
-- The litestream backup sidecar comes in the next phase (6C). The compose file has a
-  commented extension point for it.
+  pure Go). The litestream sidecar runs as root because it shares the WAL index with
+  the nonroot publish writer and writes a Docker-initialized replica volume; it is
+  still cap-dropped, no-new-privileges, and read-only-rootfs.

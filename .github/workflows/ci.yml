@@ -50,3 +50,26 @@ jobs:
         run: npm ci
       - name: Test
         run: npx vitest run
+
+  restore-drill:
+    # The proven-backups gate. This does not check that backups exist; it restores
+    # a Litestream replica end to end and asserts (via cmd/censurado/restorecheck)
+    # that the restored database is actually good: integrity_check ok, row counts
+    # match the live db, and the latest article slug matches. The drill is teeth-
+    # proved (scripts/restore-drill.sh DRILL_BREAK=...) so it fails red on a bad
+    # restore. If this job is red, the backups are NOT trustworthy: treat it sev1.
+    #
+    # Litestream runs via the digest-pinned docker image (the ubuntu runner has
+    # Docker). Go is set up natively so restorecheck builds without Docker.
+    #
+    # To also run this on a schedule (a periodic DR check independent of code
+    # changes), add a top-level `schedule: [{cron: "0 6 * * 1"}]` trigger.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Restore drill (proven-backups gate)
+        run: ./scripts/restore-drill.sh

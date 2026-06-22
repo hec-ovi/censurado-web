@@ -1,0 +1,29 @@
+-- Postgres schema for the article source of truth. Mirrors the SQLite adapter's
+-- shape so the same conformance suite passes against both: stable hot axes
+-- (publish date, author, section) as indexed columns, topics normalized into a
+-- join table, and the open-ended tail in a JSONB column.
+
+CREATE TABLE IF NOT EXISTS articles (
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  slug         TEXT NOT NULL UNIQUE,
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  author       TEXT NOT NULL,
+  section      TEXT NOT NULL,
+  published_at TIMESTAMPTZ NOT NULL,
+  content_hash TEXT NOT NULL UNIQUE,
+  metadata     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at   TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles (published_at);
+CREATE INDEX IF NOT EXISTS idx_articles_author       ON articles (author, published_at);
+CREATE INDEX IF NOT EXISTS idx_articles_section      ON articles (section, published_at);
+
+CREATE TABLE IF NOT EXISTS article_topics (
+  article_id BIGINT NOT NULL REFERENCES articles (id) ON DELETE CASCADE,
+  topic      TEXT NOT NULL,
+  PRIMARY KEY (article_id, topic)
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_topics_topic ON article_topics (topic, article_id);

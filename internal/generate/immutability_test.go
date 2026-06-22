@@ -41,7 +41,7 @@ func TestImmutability_SealedArtifactsStableAcrossGrowth(t *testing.T) {
 		`<header class="site-header"`,
 		`<main class="site-main" id="main">`,
 		`<footer class="site-footer"`,
-		`<script src="/assets/app.js" defer></script>`,
+		`<script type="module" src="/assets/app.js"></script>`,
 	} {
 		if !strings.Contains(pageBefore, frag) {
 			t.Fatalf("sealed page missing expected shell fragment %q", frag)

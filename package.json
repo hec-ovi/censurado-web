@@ -1,0 +1,17 @@
+{
+  "name": "censurado-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Client-side Tier-B refiner test harness for the Censurado static news site.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/user-event": "^14.6.1",
+    "jsdom": "^29.1.1",
+    "msw": "^2.14.6",
+    "vitest": "^4.1.9"
+  }
+}

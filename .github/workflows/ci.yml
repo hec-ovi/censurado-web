@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  go:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -35,3 +35,18 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+
+  js:
+    # Tier-B client refiner suite (Vitest + Testing Library + MSW, jsdom). Gates
+    # every push alongside the Go generator suite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npx vitest run

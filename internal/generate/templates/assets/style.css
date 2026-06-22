@@ -1,23 +1,470 @@
-/* Censurado base styles. Placeholder; the real redaction-brutalist stylesheet
-   arrives in a later workflow and targets the frozen DOM contract (header,
-   nav[data-nav=primary], main#main, footer, section.facet-controls, the
-   article-item data-* hooks, figure.hero). Stable URL: /assets/style.css. */
+/* Censurado: redaction-brutalist stylesheet.
+ *
+ * Identity: the site name "Censurado" (censored) made literal as solid black
+ * redaction bars used for the masthead, the listing heading rule, active facet
+ * chips, link hovers, and section dividers. Bold grotesque display type, mono
+ * metadata, high contrast, auto light/dark. Targets the frozen DOM contract
+ * (Phase 4A) plus the JS-injected facet panel from app.js. Single file, system
+ * fonts only, no preprocessor, no remote @import. Stable URL: /assets/style.css.
+ */
+
+/* ---- palette tokens ------------------------------------------------------ */
 :root {
   color-scheme: light dark;
+
+  --ink: #0a0a0a;          /* bars, body text, rules */
+  --paper: #f3efe6;        /* page ground (warm newsprint) */
+  --surface: #fbf9f4;      /* cards / panels */
+  --muted: #4a4742;        /* metadata, de-emphasized text */
+  --hair: #cdc7ba;         /* subtle borders on paper */
+  --bar: #0a0a0a;          /* redaction bar fill */
+  --bar-ink: #f3efe6;      /* text knocked out of a bar */
+  --mark: #c8102e;         /* censor red: focus ring + active accent */
+  --mark-ink: #ffffff;
+
+  --font-display: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --measure: 68ch;         /* comfortable reading width */
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+
+  --step--1: clamp(0.78rem, 0.72rem + 0.3vw, 0.9rem);
+  --step-0:  clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --step-1:  clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem);
+  --step-2:  clamp(1.6rem, 1.3rem + 1.5vw, 2.6rem);
+  --step-3:  clamp(2.2rem, 1.6rem + 3vw, 4rem);
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f3efe6;        /* in dark, "ink" is the light value used for bars/text */
+    --paper: #0b0b0c;
+    --surface: #161618;
+    --muted: #b3aea4;
+    --hair: #34332f;
+    --bar: #f3efe6;        /* inverted redaction block: light bar, dark text */
+    --bar-ink: #0b0b0c;
+    --mark: #ff5d6c;       /* brighter red holds AA on the dark ground */
+    --mark-ink: #0b0b0c;
+  }
+}
+
+/* ---- reset / base -------------------------------------------------------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  line-height: 1.5;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  text-underline-offset: 0.18em;
 }
 
+a { color: inherit; }
+
+img { max-width: 100%; height: auto; display: block; }
+
+:focus-visible {
+  outline: 3px solid var(--mark);
+  outline-offset: 2px;
+}
+
+/* ---- skip link: hidden until focused ------------------------------------ */
 .skip-link {
   position: absolute;
-  left: -9999px;
-  top: 0;
+  left: 0.5rem;
+  top: -4rem;
+  z-index: 100;
+  background: var(--bar);
+  color: var(--bar-ink);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  padding: 0.5rem 0.9rem;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 0.5rem; }
+
+/* ---- header / masthead --------------------------------------------------- */
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem 1.5rem;
+  padding: clamp(1rem, 3vw, 1.75rem) var(--gutter);
+  border-bottom: 4px solid var(--ink);
 }
 
-.skip-link:focus {
-  left: 0;
+.masthead { margin: 0; }
+
+/* The site name itself, redacted: a solid inked bar with knocked-out text. */
+.site-name {
+  display: inline-block;
+  background: var(--bar);
+  color: var(--bar-ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.15em 0.5em;
+  line-height: 1.1;
+}
+.masthead .site-name { font-size: var(--step-1); }
+.site-name:hover { background: var(--mark); color: var(--mark-ink); }
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.site-nav-link {
+  text-decoration: none;
+  padding: 0.2em 0;
+  border-bottom: 2px solid transparent;
+}
+.site-nav-link:hover,
+.site-nav-link:focus-visible { border-bottom-color: var(--ink); }
+
+/* ---- main layout --------------------------------------------------------- */
+.site-main {
+  display: block;
+  padding: clamp(1.25rem, 4vw, 2.5rem) var(--gutter);
+  max-width: 78rem;
+  margin: 0 auto;
+}
+
+/* ---- listing heading: heavy display + redaction rule -------------------- */
+.listing-heading {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-3);
+  line-height: 1.02;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  margin: 0 0 1.25rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 0.4rem solid var(--ink);
+}
+.listing-heading:focus { outline: none; }
+.listing-heading:focus-visible { outline: 3px solid var(--mark); outline-offset: 4px; }
+
+/* ---- facet controls + JS-injected chip panel ---------------------------- */
+.facet-controls { margin: 0; }
+
+.facet-panel {
+  display: grid;
+  gap: 0.9rem 1.5rem;
+  margin: 0 0 1.75rem;
+  padding: 1rem 1rem 1.15rem;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+}
+
+.facet-group {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) 1fr;
+  gap: 0.4rem 1rem;
+  align-items: start;
+}
+@media (max-width: 34rem) {
+  .facet-group { grid-template-columns: 1fr; gap: 0.35rem; }
+}
+
+.facet-group-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding-top: 0.35rem;
+}
+
+.facet-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* A chip reads as a tactile, stamped tag; selected = a redaction bar. */
+.facet-chip {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  color: var(--ink);
+  background: transparent;
+  border: 2px solid var(--ink);
+  padding: 0.35em 0.7em;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.facet-chip:hover { background: var(--ink); color: var(--paper); }
+.facet-chip[aria-pressed="true"] {
+  background: var(--bar);
+  color: var(--bar-ink);
+  font-weight: 700;
+}
+.facet-chip[aria-disabled="true"],
+.facet-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  text-decoration: line-through;
+  background: transparent;
+  color: var(--muted);
+}
+
+.facet-clear {
+  justify-self: start;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--mark);
+  color: var(--mark-ink);
+  border: 2px solid var(--mark);
+  padding: 0.35em 0.8em;
+  cursor: pointer;
+}
+.facet-clear[hidden] { display: none; }
+
+/* aria-live status: visually compact, never a layout jump. */
+.refine-status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+/* ---- article list / cards ----------------------------------------------- */
+.article-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+.article-item { border-top: 1px solid var(--hair); }
+.article-item:first-child { border-top: 0; }
+
+.card { padding: 1.1rem 0 1.25rem; }
+
+.card-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-1);
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.4rem;
+}
+.card-link {
+  text-decoration: none;
+  background-image: linear-gradient(var(--ink), var(--ink));
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 0.12em;
+  transition: background-size 0.15s ease;
+}
+/* Hover sweeps a redaction bar across the headline. */
+.card-link:hover,
+.card-link:focus-visible { background-size: 100% 0.12em; }
+
+.byline,
+.published {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--muted);
+  margin: 0.15rem 0;
+}
+.byline { line-height: 1.5; }
+.author-link,
+.section-link {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+.author-link:hover,
+.section-link:hover { background: var(--ink); color: var(--paper); border-bottom-color: var(--ink); }
+
+.published { display: block; }
+
+.topics {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.topic-link {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 0.15em 0.5em;
+}
+.topic-link::before { content: "#"; opacity: 0.55; }
+.topic-link:hover { background: var(--ink); color: var(--paper); }
+
+/* empty state injected when a facet selection yields nothing */
+.empty-state {
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--ink);
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--hair);
+}
+.empty-state::before {
+  content: "";
+  display: inline-block;
+  width: 3.5em;
+  height: 0.9em;
+  margin-right: 0.5em;
+  vertical-align: -0.05em;
+  background: var(--bar);
+}
+
+/* ---- pager + months navigators ------------------------------------------ */
+.pager,
+.months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.pager-link,
+.month-link {
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  padding: 0.3em 0.7em;
+  letter-spacing: 0.04em;
+}
+.pager-link:hover,
+.month-link:hover { background: var(--ink); color: var(--paper); }
+
+/* ---- single article ------------------------------------------------------ */
+.article {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+
+.hero {
+  margin: 0 0 1.5rem;
+  position: relative;
+  /* full-bleed-ish: pull to the gutter edges on wide screens */
+  margin-inline: calc(-1 * var(--gutter));
+}
+.hero-img {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: cover;
+  border-block: 3px solid var(--ink);
+}
+/* a thin redaction bar anchored at the hero's lower-left as a motif */
+.hero::after {
+  content: "";
+  position: absolute;
+  left: var(--gutter);
+  bottom: 1rem;
+  width: clamp(3rem, 18%, 9rem);
+  height: 0.85rem;
+  background: var(--bar);
+}
+
+.article-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-2);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.75rem;
+}
+
+.article-body {
+  font-size: var(--step-0);
+  line-height: 1.7;
+  margin-top: 1.5rem;
+}
+.article-body > :first-child { margin-top: 0; }
+.article-body p { margin: 0 0 1.1rem; }
+.article-body h2,
+.article-body h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 2rem 0 0.6rem;
+}
+.article-body h2 { font-size: var(--step-1); }
+.article-body a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 0.1em;
+}
+.article-body a:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
+.article-body blockquote {
+  margin: 1.5rem 0;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 0.4rem solid var(--ink);
+  color: var(--muted);
+}
+.article-body code,
+.article-body pre {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.article-body pre {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  padding: 1rem;
+  overflow-x: auto;
+}
+.article-body img { border: 3px solid var(--ink); margin: 1.5rem 0; }
+
+/* ---- footer -------------------------------------------------------------- */
+.site-footer {
+  margin-top: 3rem;
+  padding: clamp(1.25rem, 4vw, 2.25rem) var(--gutter);
+  border-top: 4px solid var(--ink);
+}
+.site-footer-text { margin: 0; }
+.site-footer .site-name { font-size: var(--step-0); }
+
+/* ---- wide-screen refinements -------------------------------------------- */
+@media (min-width: 60rem) {
+  .article-list { gap: 0; }
+  .facet-panel { padding: 1.25rem 1.5rem; }
+}
+
+/* ---- reduced motion ------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

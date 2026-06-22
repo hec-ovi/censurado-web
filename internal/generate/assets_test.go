@@ -23,8 +23,8 @@ func TestAssets_StableURLsAndReferences(t *testing.T) {
 	if !strings.Contains(page, `<link rel="stylesheet" href="/assets/style.css">`) {
 		t.Errorf("page missing stylesheet link")
 	}
-	if !strings.Contains(page, `<script src="/assets/app.js" defer></script>`) {
-		t.Errorf("page missing deferred app.js script")
+	if !strings.Contains(page, `<script type="module" src="/assets/app.js"></script>`) {
+		t.Errorf("page missing module app.js script")
 	}
 
 	res := genInto(t, repo, out, nil)

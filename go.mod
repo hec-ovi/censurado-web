@@ -1,3 +1,3 @@
-module github.com/censurado/portal
+module github.com/hec-ovi/censurado-web
 
 go 1.26

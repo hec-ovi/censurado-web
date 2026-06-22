@@ -312,6 +312,41 @@ func loadTopics(ctx context.Context, q querier, ids []int64) (map[int64][]string
 	return out, rows.Err()
 }
 
+// FindSubmission returns a prior submission for the idempotency key, or found=false.
+func (s *Store) FindSubmission(ctx context.Context, key string) (store.Submission, bool, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT idempotency_key,content_hash,article_id,slug,author,scopes,created_at FROM submissions WHERE idempotency_key = ?`, key)
+	var sub store.Submission
+	var scopes, created string
+	err := row.Scan(&sub.IdempotencyKey, &sub.ContentHash, &sub.ArticleID, &sub.Slug, &sub.Author, &scopes, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Submission{}, false, nil
+	}
+	if err != nil {
+		return store.Submission{}, false, err
+	}
+	if scopes != "" {
+		sub.Scopes = strings.Split(scopes, " ")
+	}
+	if sub.CreatedAt, err = time.Parse(timeLayout, created); err != nil {
+		return store.Submission{}, false, fmt.Errorf("parse submission created_at: %w", err)
+	}
+	return sub, true, nil
+}
+
+// RecordSubmission appends a submission record (audit log + idempotency ledger).
+func (s *Store) RecordSubmission(ctx context.Context, sub store.Submission) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO submissions (idempotency_key,content_hash,article_id,slug,author,scopes,created_at)
+		 VALUES (?,?,?,?,?,?,?)`,
+		sub.IdempotencyKey, sub.ContentHash, sub.ArticleID, sub.Slug, sub.Author,
+		strings.Join(sub.Scopes, " "), sub.CreatedAt.UTC().Format(timeLayout))
+	if err != nil {
+		return fmt.Errorf("record submission: %w", err)
+	}
+	return nil
+}
+
 func marshalMeta(m map[string]any) (string, error) {
 	if len(m) == 0 {
 		return "{}", nil

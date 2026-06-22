@@ -62,3 +62,25 @@ type Repository interface {
 	// Close releases resources held by the store.
 	Close() error
 }
+
+// Submission is the append-only record of one publish attempt. It is both the
+// audit log entry and the idempotency ledger entry, so one write covers both.
+type Submission struct {
+	IdempotencyKey string
+	ContentHash    string
+	ArticleID      string
+	Slug           string
+	Author         string
+	Scopes         []string
+	CreatedAt      time.Time
+}
+
+// SubmissionLog records publish attempts and looks them up by idempotency key.
+// It is a separate concern from the article Repository so the article contract
+// stays focused, even when one adapter implements both.
+type SubmissionLog interface {
+	// FindSubmission returns a prior submission for the key, or found=false.
+	FindSubmission(ctx context.Context, idempotencyKey string) (Submission, bool, error)
+	// RecordSubmission appends a submission record.
+	RecordSubmission(ctx context.Context, s Submission) error
+}

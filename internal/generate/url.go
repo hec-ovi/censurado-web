@@ -27,8 +27,10 @@ func hash8(contentHash string) string {
 	return contentHash[:8]
 }
 
-func articleURL(a domain.Article) string  { return "/a/" + a.Slug + "-" + hash8(a.ContentHash) + "/" }
-func articlePath(a domain.Article) string { return path.Join("a", a.Slug+"-"+hash8(a.ContentHash), "index.html") }
+func articleURL(a domain.Article) string { return "/a/" + a.Slug + "-" + hash8(a.ContentHash) + "/" }
+func articlePath(a domain.Article) string {
+	return path.Join("a", a.Slug+"-"+hash8(a.ContentHash), "index.html")
+}
 
 // pageDir is the OutDir-relative directory for page n of a scope. n==0 is the
 // bare landing remainder; n>=1 is a sealed full page.
@@ -42,6 +44,12 @@ func pagePath(scope string, n int) string { return path.Join(pageDir(scope, n), 
 func pageURL(scope string, n int) string  { return "/" + pageDir(scope, n) + "/" }
 
 func shardDir(scope string) string { return path.Join("shards", scope) }
+
+// manifestPath/manifestURL locate a scope's standalone PageManifest artifact.
+// scope is the Scope.ShardKey() (e.g. "latest", "section/tech"). The href is a
+// pure function of the scope, so it stays byte-stable on sealed pages.
+func manifestPath(scope string) string { return path.Join("manifest", scope, "index.json") }
+func manifestURL(scope string) string  { return "/" + manifestPath(scope) }
 
 // shardPartPath is the OutDir-relative path of one shard part. Part 1 (and any
 // single-part month) is <mm>.json; higher parts are <mm>.<part>.json.

@@ -52,13 +52,13 @@ func TestBuildRSS_Wellformed(t *testing.T) {
 			Link          string `xml:"link"`
 			LastBuildDate string `xml:"lastBuildDate"`
 			Items         []struct {
-				Title      string `xml:"title"`
-				Link       string `xml:"link"`
-				GUID       string `xml:"guid"`
-				PubDate    string `xml:"pubDate"`
-				Creator    string `xml:"creator"`
+				Title      string   `xml:"title"`
+				Link       string   `xml:"link"`
+				GUID       string   `xml:"guid"`
+				PubDate    string   `xml:"pubDate"`
+				Creator    string   `xml:"creator"`
 				Categories []string `xml:"category"`
-				Encoded    string `xml:"encoded"`
+				Encoded    string   `xml:"encoded"`
 			} `xml:"item"`
 		} `xml:"channel"`
 	}
@@ -264,8 +264,10 @@ func TestSitemap_TierAOnly(t *testing.T) {
 			Loc string `xml:"loc"`
 		} `xml:"url"`
 	}
-	if err := xml.Unmarshal(readArtifact(t, out, "sitemap.xml"), &doc); err != nil {
-		t.Fatalf("sitemap not well-formed: %v", err)
+	// sitemap.xml is now a <sitemapindex>; the Tier-A urlset lives in the listings
+	// child sitemap.
+	if err := xml.Unmarshal(readArtifact(t, out, "sitemaps/listings.xml"), &doc); err != nil {
+		t.Fatalf("listings sitemap not well-formed: %v", err)
 	}
 	locs := map[string]bool{}
 	for _, u := range doc.URLs {

@@ -1,0 +1,23 @@
+/* Censurado base styles. Placeholder; the real redaction-brutalist stylesheet
+   arrives in a later workflow and targets the frozen DOM contract (header,
+   nav[data-nav=primary], main#main, footer, section.facet-controls, the
+   article-item data-* hooks, figure.hero). Stable URL: /assets/style.css. */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}

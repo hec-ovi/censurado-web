@@ -89,11 +89,19 @@ func axisFor(s Scope) map[string]string {
 	return ax
 }
 
-// ManifestScript is the only embed mechanism. json.Marshal (EscapeHTML on by
-// default) \u-escapes <,>,& so there is no </script> breakout. It is rendered
-// with a bare {{.Manifest}} as template.HTML.
+// MarshalManifest serializes a PageManifest to the exact bytes embedded inline
+// (#cnz-manifest) and written to the standalone manifest artifact, so the two are
+// byte-identical. json.Marshal (EscapeHTML on by default) \u-escapes <,>,& so the
+// same bytes are safe both as a standalone file and inside a <script> element. No
+// trailing newline is added, so the inline payload equals the file byte-for-byte.
+func MarshalManifest(m PageManifest) ([]byte, error) {
+	return json.Marshal(m)
+}
+
+// ManifestScript wraps the serialized manifest in the inline #cnz-manifest script
+// element. It is rendered with a bare {{.Manifest}} as template.HTML.
 func ManifestScript(m PageManifest) (template.HTML, error) {
-	b, err := json.Marshal(m)
+	b, err := MarshalManifest(m)
 	if err != nil {
 		return "", err
 	}

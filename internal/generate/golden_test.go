@@ -35,8 +35,24 @@ func TestGolden_AddArticleChangesExactURLs(t *testing.T) {
 		"/shards/2026/06/2026/06.json", "/shards/section/tech/author/ada/2026/06.json",
 		"/shards/section/tech/topic/iac/2026/06.json", "/shards/section/tech/2026/06/2026/06.json",
 	}
-	meta := []string{"/sitemap.xml", "/feed.xml", "/atom.xml", "/feed.json"}
-	want := append(append(append([]string{}, listings...), shards...), meta...)
+	// Each affected scope's standalone manifest gains the new June month (or is
+	// newly created), so it is purged alongside the listing it backs. The /topic/go/
+	// and /2026/05/ scopes are untouched by the June insert, so their manifests stay.
+	manifests := []string{
+		"/manifest/latest/index.json", "/manifest/section/tech/index.json",
+		"/manifest/author/ada/index.json", "/manifest/topic/iac/index.json",
+		"/manifest/2026/06/index.json", "/manifest/section/tech/author/ada/index.json",
+		"/manifest/section/tech/topic/iac/index.json", "/manifest/section/tech/2026/06/index.json",
+	}
+	// The listings sitemap gains the two new June scope URLs (and refreshed
+	// lastmods); a brand-new per-month article sitemap appears for 2026-06; the
+	// sitemap index gains that child. The 2026-05 article sitemap is byte-stable.
+	meta := []string{
+		"/sitemap.xml", "/sitemaps/listings.xml", "/sitemaps/articles-2026-06.xml",
+		"/feed.xml", "/atom.xml", "/feed.json",
+	}
+	want := append(append(append([]string{}, listings...), shards...), manifests...)
+	want = append(want, meta...)
 	want = append(want, articleURL(n))
 
 	requireSameSet(t, "purge", res.Purge, want)

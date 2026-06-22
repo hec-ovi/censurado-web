@@ -3,8 +3,12 @@ package generate
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/hec-ovi/censurado-web/internal/domain"
@@ -13,22 +17,46 @@ import (
 //go:embed templates/*.tmpl
 var templateFS embed.FS
 
+// assetFS holds the CSS/JS source emitted at stable /assets/ URLs. The bytes are
+// placeholders for now; a later workflow ships the real redaction-brutalist
+// styles and the client-side Tier-B refiner.
+//
+//go:embed templates/assets/style.css templates/assets/app.js
+var assetFS embed.FS
+
 var templateFuncs = template.FuncMap{
 	"rfc3339":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"humandate": func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 }
 
 // Two parsed sets share base.tmpl; each pairs it with one content template that
-// defines "main". A single combined set is impossible because listing.tmpl and
-// article.tmpl both define "main".
+// defines "content". A single combined set is impossible because listing.tmpl and
+// article.tmpl both define "content" (and listing.tmpl also defines "headextra").
 var (
 	listingTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl"))
 	articleTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl"))
 )
 
+// headData is the shared <head> model: the SEO/social meta plus the per-scope
+// manifest link. Every field is derived from the page's own fixed inputs (its
+// scope/article, BaseURL, SiteName), never from env.now or the live index size,
+// so it is byte-stable on sealed pages. It is embedded in both view types, so the
+// base template reads .Title, .Canonical, etc. on either page kind.
+type headData struct {
+	Title       string        // <title> and og:title/twitter:title
+	Canonical   string        // absolute self URL; also og:url
+	Description string        // <meta name=description>, og/twitter description
+	SiteName    string        // og:site_name, masthead
+	OGType      string        // "article" on permalinks, "website" on listings
+	OGImage     string        // absolute image URL, "" when none
+	OGVideo     string        // absolute video URL, "" when none
+	TwitterCard string        // "summary" or "summary_large_image"
+	JSONLD      template.HTML // pre-rendered <script type=application/ld+json>
+	ManifestURL string        // listing pages only; "" on articles
+}
+
 type pageView struct {
-	Title     string
-	Canonical string
+	headData
 	PrevURL   string
 	NextURL   string
 	IsLanding bool
@@ -45,16 +73,20 @@ type itemView struct {
 	URL         string
 	AuthorLabel string
 	AuthorURL   string
+	AuthorSlug  string // slug form, matching shard/server membership (data-author)
 	Section     string
 	SectionURL  string
+	SectionSlug string // slug form (data-section)
 	Topics      []topicLink
+	TopicsAttr  string // space-joined topic slugs (data-topics)
+	MonthSlug   string // YYYY-MM publication month (data-month)
 	PublishedAt time.Time
 }
 
 type topicLink struct{ Label, URL string }
 type monthLink struct {
-	Label, URL  string
-	Year, Month int
+	Label, URL, Slug string
+	Year, Month      int
 }
 type pagerView struct {
 	Pages   []pageLink
@@ -67,8 +99,7 @@ type pageLink struct {
 type feedLink struct{ Rel, Type, Href, Title string }
 
 type articleView struct {
-	Title       string
-	Canonical   string
+	headData
 	AuthorLabel string
 	AuthorURL   string
 	Section     string
@@ -76,6 +107,8 @@ type articleView struct {
 	Topics      []topicLink
 	PublishedAt time.Time
 	BodyHTML    template.HTML
+	HeroImage   string // optional hero <img> src; "" when no metadata.image
+	HeroAlt     string // hero alt text
 }
 
 // renderListing renders one Tier-A listing page.
@@ -93,9 +126,25 @@ type articleView struct {
 func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, error) {
 	sc := pg.Scope
 	heading := scopeHeading(sc)
+	title := pageTitle(heading, env.siteName, pg)
+	canonical := absolute(env.siteBase, pg.Canonical)
+	desc := scopeDescription(sc, env.siteName)
+	ld, err := collectionJSONLD(heading, canonical, desc)
+	if err != nil {
+		return nil, err
+	}
 	view := pageView{
-		Title:     pageTitle(heading, env.siteName, pg),
-		Canonical: absolute(env.siteBase, pg.Canonical),
+		headData: headData{
+			Title:       title,
+			Canonical:   canonical,
+			Description: desc,
+			SiteName:    env.siteName,
+			OGType:      "website",
+			TwitterCard: "summary",
+			JSONLD:      ld,
+			// Pure function of the scope, so it is byte-stable on sealed pages.
+			ManifestURL: manifestURL(sc.ShardKey()),
+		},
 		IsLanding: pg.Landing,
 		Heading:   heading,
 	}
@@ -128,16 +177,49 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 
 // renderArticle renders one permalink page.
 func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
+	canonical := absolute(env.siteBase, articleURL(a))
+	bodyHTML := env.bodyHTML[a.ContentHash]
+
+	heroSrc, ogImage := "", ""
+	if img, ok := metadataString(a.Metadata, "image"); ok {
+		heroSrc = img
+		ogImage = resolveURL(env.siteBase, img)
+	}
+	ogVideo := ""
+	if vid, ok := metadataString(a.Metadata, "video"); ok {
+		ogVideo = resolveURL(env.siteBase, vid)
+	}
+	twitterCard := "summary"
+	if ogImage != "" {
+		twitterCard = "summary_large_image"
+	}
+
+	ld, err := articleJSONLD(a, canonical, ogImage)
+	if err != nil {
+		return nil, err
+	}
+
 	view := articleView{
-		Title:       a.Title,
-		Canonical:   absolute(env.siteBase, articleURL(a)),
+		headData: headData{
+			Title:       a.Title,
+			Canonical:   canonical,
+			Description: metaDescription(bodyHTML),
+			SiteName:    env.siteName,
+			OGType:      "article",
+			OGImage:     ogImage,
+			OGVideo:     ogVideo,
+			TwitterCard: twitterCard,
+			JSONLD:      ld,
+		},
 		AuthorLabel: a.Author,
 		AuthorURL:   facetURL("author", a.Author),
 		Section:     a.Section,
 		SectionURL:  facetURL("section", a.Section),
 		Topics:      topicLinksOf(a),
 		PublishedAt: a.PublishedAt,
-		BodyHTML:    template.HTML(env.bodyHTML[a.ContentHash]),
+		BodyHTML:    template.HTML(bodyHTML),
+		HeroImage:   heroSrc,
+		HeroAlt:     a.Title,
 	}
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
@@ -147,16 +229,166 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 }
 
 func itemViewOf(a domain.Article) itemView {
+	// Reuse the canonical shard projection for the slug-form data-* hooks so the
+	// client refiner's membership matches the server-rendered shards exactly.
+	se := ShardEntryOf(a)
 	return itemView{
 		Title:       a.Title,
 		URL:         articleURL(a),
 		AuthorLabel: a.Author,
 		AuthorURL:   facetURL("author", a.Author),
+		AuthorSlug:  se.Author,
 		Section:     a.Section,
 		SectionURL:  facetURL("section", a.Section),
+		SectionSlug: se.Section,
 		Topics:      topicLinksOf(a),
+		TopicsAttr:  strings.Join(se.Topics, " "),
+		MonthSlug:   monthKey(a.PublishedAt.Year(), int(a.PublishedAt.Month())),
 		PublishedAt: a.PublishedAt,
 	}
+}
+
+// metaDescriptionMax bounds the SEO excerpt at ~160 runes. This is the only
+// fixed-length truncation in the package: a structured <meta> tag over already
+// stored prose. The article body itself is never truncated anywhere.
+const metaDescriptionMax = 160
+
+var (
+	htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+	wsRe      = regexp.MustCompile(`\s+`)
+)
+
+// metaDescription derives a deterministic plain-text excerpt from rendered body
+// HTML: strip tags, unescape entities, collapse whitespace, then cut at a word
+// boundary at metaDescriptionMax runes, appending a single ellipsis if truncated.
+// The result is re-escaped by the template when written into the meta attribute.
+func metaDescription(bodyHTML string) string {
+	text := htmlTagRe.ReplaceAllString(bodyHTML, " ")
+	text = html.UnescapeString(text)
+	text = strings.TrimSpace(wsRe.ReplaceAllString(text, " "))
+	return truncateAtWord(text, metaDescriptionMax)
+}
+
+func truncateAtWord(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	cut := string(r[:max])
+	if i := strings.LastIndex(cut, " "); i > 0 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ") + "…"
+}
+
+// scopeDescription is a short, scope-derived listing description. It depends only
+// on the scope and site name, so it is byte-stable on sealed pages.
+func scopeDescription(s Scope, siteName string) string {
+	if s.isSingle() {
+		switch s.Section.Kind {
+		case AxisLatest:
+			return "The latest articles published to " + siteName + "."
+		case AxisSection:
+			return "Articles in the " + s.Section.labelOr() + " section of " + siteName + "."
+		case AxisAuthor:
+			return "Articles by " + s.Section.labelOr() + " on " + siteName + "."
+		case AxisTopic:
+			return "Articles tagged " + s.Section.labelOr() + " on " + siteName + "."
+		case AxisMonth:
+			return "Articles published in " + monthKey(s.Section.Year, s.Section.Month) + " on " + siteName + "."
+		}
+	}
+	return scopeHeading(s) + " on " + siteName + "."
+}
+
+// metadataString reads a non-empty string value from the open metadata object.
+func metadataString(m map[string]any, key string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	v, ok := m[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", false
+	}
+	return s, true
+}
+
+// resolveURL makes a root-relative metadata URL absolute against BaseURL; an
+// already-absolute URL is returned unchanged.
+func resolveURL(base, u string) string {
+	if strings.HasPrefix(u, "/") {
+		return base + u
+	}
+	return u
+}
+
+type ldPerson struct {
+	Type string `json:"@type"`
+	Name string `json:"name"`
+}
+
+type articleLD struct {
+	Context          string   `json:"@context"`
+	Type             string   `json:"@type"`
+	Headline         string   `json:"headline"`
+	DatePublished    string   `json:"datePublished"`
+	Author           ldPerson `json:"author"`
+	ArticleSection   string   `json:"articleSection"`
+	MainEntityOfPage string   `json:"mainEntityOfPage"`
+	Image            []string `json:"image,omitempty"`
+}
+
+type collectionLD struct {
+	Context     string `json:"@context"`
+	Type        string `json:"@type"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Description string `json:"description,omitempty"`
+}
+
+// marshalLD serializes a JSON-LD document into a <script type=application/ld+json>
+// element. json.Marshal escapes <,>,& as \uXXXX, so untrusted titles cannot break
+// out of the script element and the payload is valid JSON.
+func marshalLD(v any) (template.HTML, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return template.HTML(`<script type="application/ld+json">` + string(b) + `</script>`), nil
+}
+
+func articleJSONLD(a domain.Article, canonical, image string) (template.HTML, error) {
+	ld := articleLD{
+		Context:          "https://schema.org",
+		Type:             "NewsArticle",
+		Headline:         a.Title,
+		DatePublished:    a.PublishedAt.UTC().Format(time.RFC3339),
+		Author:           ldPerson{Type: "Person", Name: a.Author},
+		ArticleSection:   a.Section,
+		MainEntityOfPage: canonical,
+	}
+	if image != "" {
+		ld.Image = []string{image}
+	}
+	return marshalLD(ld)
+}
+
+func collectionJSONLD(name, canonical, description string) (template.HTML, error) {
+	return marshalLD(collectionLD{
+		Context:     "https://schema.org",
+		Type:        "CollectionPage",
+		Name:        name,
+		URL:         canonical,
+		Description: description,
+	})
 }
 
 func topicLinksOf(a domain.Article) []topicLink {
@@ -263,6 +495,7 @@ func monthLinksFromYM(months []ym, base string) []monthLink {
 		out = append(out, monthLink{
 			Label: monthKey(m.Year, m.Month),
 			URL:   pageURL(scope, 0),
+			Slug:  monthKey(m.Year, m.Month),
 			Year:  m.Year,
 			Month: m.Month,
 		})

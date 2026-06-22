@@ -15,25 +15,64 @@ type collector interface {
 
 // buildEnv carries the shared per-run state collectors read.
 type buildEnv struct {
-	siteBase string
-	now      time.Time
-	pageSize int
-	capE     int
-	capB     int
-	siteName string
-	plan     *Plan
-	bodyHTML map[string]string // ContentHash -> rendered body, rendered once
+	siteBase   string
+	now        time.Time
+	pageSize   int
+	capE       int
+	capB       int
+	siteName   string
+	plan       *Plan
+	bodyHTML   map[string]string     // ContentHash -> rendered body, rendered once
+	shardCache map[Scope]scopeShards // scope -> shard build, computed once per scope
+}
+
+// scopeShards is the per-scope shard build (months newest-first, parts keyed by
+// "yyyy-mm", and the total entry count). The HTML page, the standalone manifest,
+// and the shard files all read it, so a scope is scanned and packed exactly once.
+type scopeShards struct {
+	months       []ym
+	partsByMonth map[string][]ShardPart
+	total        int
 }
 
 func buildEnvFrom(opts Options) *buildEnv {
 	return &buildEnv{
-		siteBase: opts.BaseURL,
-		now:      opts.Now,
-		pageSize: opts.PageSize,
-		capE:     opts.ShardMaxEntries,
-		capB:     opts.ShardMaxGzipBytes,
-		siteName: opts.SiteName,
+		siteBase:   opts.BaseURL,
+		now:        opts.Now,
+		pageSize:   opts.PageSize,
+		capE:       opts.ShardMaxEntries,
+		capB:       opts.ShardMaxGzipBytes,
+		siteName:   opts.SiteName,
+		shardCache: map[Scope]scopeShards{},
 	}
+}
+
+// shardsFor returns the scope's shard build, computing and caching it on first
+// use so the three collectors that need it (pages, manifest, shards) never re-pack
+// the same scope.
+func (env *buildEnv) shardsFor(sc Scope) (scopeShards, error) {
+	if ss, ok := env.shardCache[sc]; ok {
+		return ss, nil
+	}
+	months, partsByMonth, total, err := buildScopeShards(env, sc)
+	if err != nil {
+		return scopeShards{}, err
+	}
+	ss := scopeShards{months: months, partsByMonth: partsByMonth, total: total}
+	if env.shardCache == nil {
+		env.shardCache = map[Scope]scopeShards{}
+	}
+	env.shardCache[sc] = ss
+	return ss, nil
+}
+
+// manifestFor builds a scope's PageManifest from its cached shard build.
+func (env *buildEnv) manifestFor(sc Scope) (PageManifest, error) {
+	ss, err := env.shardsFor(sc)
+	if err != nil {
+		return PageManifest{}, err
+	}
+	return BuildManifest(sc, env.capE, env.capB, ss.months, ss.partsByMonth, ss.total), nil
 }
 
 // collectors returns the collectors in fixed registration order; the order is a
@@ -43,6 +82,8 @@ func collectors() []collector {
 		tierAPageCollector{},
 		articleCollector{},
 		shardCollector{},
+		manifestCollector{},
+		assetCollector{},
 		metaCollector{},
 	}
 }
@@ -116,11 +157,11 @@ func (tierAPageCollector) collect(ctx context.Context, env *buildEnv, out *Artif
 		pagesByScope[pg.Scope] = append(pagesByScope[pg.Scope], pg)
 	}
 	for _, sc := range env.plan.Index.Scopes() {
-		months, partsByMonth, total, err := buildScopeShards(env, sc)
+		pm, err := env.manifestFor(sc)
 		if err != nil {
 			return err
 		}
-		manifest, err := ManifestScript(BuildManifest(sc, env.capE, env.capB, months, partsByMonth, total))
+		manifest, err := ManifestScript(pm)
 		if err != nil {
 			return err
 		}
@@ -174,12 +215,12 @@ func (shardCollector) name() string { return "shards" }
 
 func (shardCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
 	for _, sc := range env.plan.Index.Scopes() {
-		months, partsByMonth, _, err := buildScopeShards(env, sc)
+		ss, err := env.shardsFor(sc)
 		if err != nil {
 			return err
 		}
-		for _, m := range months {
-			for _, part := range partsByMonth[monthKey(m.Year, m.Month)] {
+		for _, m := range ss.months {
+			for _, part := range ss.partsByMonth[monthKey(m.Year, m.Month)] {
 				if err := out.Add(Artifact{
 					Path:  part.Path,
 					URL:   "/" + part.Path,
@@ -194,17 +235,105 @@ func (shardCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactS
 	return nil
 }
 
-// metaCollector emits the sitemap and the three /latest/ feeds.
+// manifestCollector emits one standalone PageManifest file per scope at
+// manifest/<ShardKey>/index.json. Its bytes are byte-identical to the inline
+// #cnz-manifest payload on the scope's landing. It is KindShard (purged when the
+// scope's tail grows), and the referencing <link rel="manifest"> href on the page
+// depends only on the scope, so sealed-page HTML stays byte-stable.
+type manifestCollector struct{}
+
+func (manifestCollector) name() string { return "manifests" }
+
+func (manifestCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
+	for _, sc := range env.plan.Index.Scopes() {
+		pm, err := env.manifestFor(sc)
+		if err != nil {
+			return err
+		}
+		b, err := MarshalManifest(pm)
+		if err != nil {
+			return err
+		}
+		key := sc.ShardKey()
+		if err := out.Add(Artifact{
+			Path:  manifestPath(key),
+			URL:   manifestURL(key),
+			Kind:  KindShard,
+			Bytes: b,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// assetCollector emits the CSS and JS at stable, non-content-hashed URLs. The
+// constant hrefs keep sealed-page HTML byte-immutable even when the asset bytes
+// later change: only the asset files are rewritten (and purged, KindMeta), never
+// the HTML that references them.
+type assetCollector struct{}
+
+func (assetCollector) name() string { return "assets" }
+
+func (assetCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
+	for _, a := range []struct{ src, path, url string }{
+		{"templates/assets/style.css", "assets/style.css", "/assets/style.css"},
+		{"templates/assets/app.js", "assets/app.js", "/assets/app.js"},
+	} {
+		b, err := assetFS.ReadFile(a.src)
+		if err != nil {
+			return err
+		}
+		if err := out.Add(Artifact{Path: a.path, URL: a.url, Kind: KindMeta, Bytes: b}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// metaCollector emits robots.txt, the sitemap index plus its child sitemaps, and
+// the three /latest/ feeds.
 type metaCollector struct{}
 
 func (metaCollector) name() string { return "meta" }
 
 func (metaCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
-	sm, err := BuildSitemap(env.siteBase, env.plan)
+	if err := out.Add(Artifact{Path: "robots.txt", URL: "/robots.txt", Kind: KindMeta, Bytes: buildRobots(env.siteBase)}); err != nil {
+		return err
+	}
+
+	// Listings sitemap: the Tier-A pages + root that BuildSitemap produces.
+	listings, err := BuildSitemap(env.siteBase, env.plan)
 	if err != nil {
 		return err
 	}
-	if err := out.Add(Artifact{Path: "sitemap.xml", URL: "/sitemap.xml", Kind: KindMeta, Bytes: sm}); err != nil {
+	if err := out.Add(Artifact{Path: listingsSitemapPath, URL: "/" + listingsSitemapPath, Kind: KindMeta, Bytes: listings}); err != nil {
+		return err
+	}
+	children := []string{"/" + listingsSitemapPath}
+
+	// Per publication-month article sitemaps. A month with unchanged articles is
+	// byte-identical run to run, so only growing months purge.
+	idx := env.plan.Index
+	for _, m := range sortedMonths(monthKeys(idx.months)) {
+		arts := idx.articlesAt(idx.months[m])
+		b, serr := buildArticleSitemap(env.siteBase, arts)
+		if serr != nil {
+			return serr
+		}
+		p := articleSitemapPath(m.Year, m.Month)
+		if err := out.Add(Artifact{Path: p, URL: "/" + p, Kind: KindMeta, Bytes: b}); err != nil {
+			return err
+		}
+		children = append(children, "/"+p)
+	}
+
+	// The sitemap index references every child sitemap (absolute URLs).
+	smi, err := BuildSitemapIndex(env.siteBase, children)
+	if err != nil {
+		return err
+	}
+	if err := out.Add(Artifact{Path: "sitemap.xml", URL: "/sitemap.xml", Kind: KindMeta, Bytes: smi}); err != nil {
 		return err
 	}
 

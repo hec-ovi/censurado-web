@@ -5,20 +5,20 @@
 <link rel="{{.Rel}}" type="{{.Type}}" href="{{.Href}}" title="{{.Title}}">
 {{- end}}{{end}}
 {{- end}}
-{{define "main"}}
-<main>
-<h1>{{.Heading}}</h1>
-<ol>
+{{define "content"}}
+<h1 class="listing-heading">{{.Heading}}</h1>
+<section class="facet-controls" data-facets aria-label="Refine">
+<ol class="article-list" data-articles>
 {{- range .Items}}
-<li>
-<article>
-<h2><a href="{{.URL}}">{{.Title}}</a></h2>
-<p class="byline">By <a href="{{.AuthorURL}}">{{.AuthorLabel}}</a> in <a href="{{.SectionURL}}">{{.Section}}</a></p>
-<time datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+<li class="article-item" data-author="{{.AuthorSlug}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
+<article class="card">
+<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
+<p class="byline">By <a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a> in <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
+<time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 {{- if .Topics}}
-<ul class="topics">
+<ul class="topics" data-topics>
 {{- range .Topics}}
-<li><a href="{{.URL}}">{{.Label}}</a></li>
+<li><a class="topic-link" href="{{.URL}}">{{.Label}}</a></li>
 {{- end}}
 </ul>
 {{- end}}
@@ -27,19 +27,21 @@
 {{- end}}
 </ol>
 {{- if gt (len .Pager.Pages) 1}}
-<nav class="pager">
+<nav class="pager" data-pager aria-label="Pages">
 {{- range .Pager.Pages}}
-<a href="{{.URL}}">{{.N}}</a>
+<a class="pager-link" href="{{.URL}}">{{.N}}</a>
 {{- end}}
 </nav>
 {{- end}}
 {{- if .Months}}
-<nav class="months">
+<nav class="months" data-months aria-label="Months">
 {{- range .Months}}
-<a href="{{.URL}}">{{.Label}}</a>
+<a class="month-link" href="{{.URL}}" data-month="{{.Slug}}">{{.Label}}</a>
 {{- end}}
 </nav>
 {{- end}}
-</main>
+</section>
+{{- if .IsLanding}}
 {{.Manifest}}
+{{- end}}
 {{end}}

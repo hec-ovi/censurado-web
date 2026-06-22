@@ -1,19 +1,22 @@
-{{define "main"}}
-<main>
-<article>
-<h1>{{.Title}}</h1>
-<p class="byline">By <a href="{{.AuthorURL}}">{{.AuthorLabel}}</a> in <a href="{{.SectionURL}}">{{.Section}}</a></p>
-<time datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+{{define "content"}}
+<article class="article" data-article>
+{{- if .HeroImage}}
+<figure class="hero">
+<img class="hero-img" src="{{.HeroImage}}" alt="{{.HeroAlt}}">
+</figure>
+{{- end}}
+<h1 class="article-title">{{.Title}}</h1>
+<p class="byline">By <a class="author-link" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a> in <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
+<time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 {{- if .Topics}}
-<ul class="topics">
+<ul class="topics" data-topics>
 {{- range .Topics}}
-<li><a href="{{.URL}}">{{.Label}}</a></li>
+<li><a class="topic-link" href="{{.URL}}">{{.Label}}</a></li>
 {{- end}}
 </ul>
 {{- end}}
-<div class="body">
+<div class="body article-body">
 {{.BodyHTML}}
 </div>
 </article>
-</main>
 {{end}}

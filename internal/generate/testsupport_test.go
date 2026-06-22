@@ -31,6 +31,7 @@ type seedSpec struct {
 	Body      string
 	Published time.Time
 	Created   time.Time
+	Metadata  map[string]any
 }
 
 // newStore opens a fresh sqlite store in a temp dir, closed on cleanup.
@@ -58,11 +59,12 @@ func seed(t *testing.T, repo store.Repository, s seedSpec) domain.Article {
 	}
 	pub := s.Published
 	in := domain.PublishInput{
-		Title:   s.Title,
-		Body:    body,
-		Author:  s.Author,
-		Section: s.Section,
-		Topics:  s.Topics,
+		Title:    s.Title,
+		Body:     body,
+		Author:   s.Author,
+		Section:  s.Section,
+		Topics:   s.Topics,
+		Metadata: s.Metadata,
 	}
 	if !pub.IsZero() {
 		in.PublishedAt = &pub
@@ -89,7 +91,8 @@ func seed(t *testing.T, repo store.Repository, s seedSpec) domain.Article {
 //	science : authors{bob,ada,lin}=3 topics{bio,space}=2 months{05,06}=2
 //
 // ScopeCount = 1 + S + A + T + M + sum_s(A_active+T_active+M_active)
-//            = 1 + 2 + 3 + 4 + 2 + (2+2+2) + (3+2+2) = 25.
+//
+//	= 1 + 2 + 3 + 4 + 2 + (2+2+2) + (3+2+2) = 25.
 func matrixSpecs(t *testing.T) []seedSpec {
 	t.Helper()
 	b, err := os.ReadFile("testdata/fixture.json")

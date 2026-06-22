@@ -4,11 +4,48 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
+<meta name="description" content="{{.Description}}">
+<meta name="robots" content="index,follow">
 <link rel="canonical" href="{{.Canonical}}">
+<link rel="stylesheet" href="/assets/style.css">
+<meta property="og:type" content="{{.OGType}}">
+<meta property="og:title" content="{{.Title}}">
+<meta property="og:description" content="{{.Description}}">
+<meta property="og:url" content="{{.Canonical}}">
+<meta property="og:site_name" content="{{.SiteName}}">
+{{- if .OGImage}}
+<meta property="og:image" content="{{.OGImage}}">
+{{- end}}
+{{- if .OGVideo}}
+<meta property="og:video" content="{{.OGVideo}}">
+{{- end}}
+<meta name="twitter:card" content="{{.TwitterCard}}">
+<meta name="twitter:title" content="{{.Title}}">
+<meta name="twitter:description" content="{{.Description}}">
+{{- if .OGImage}}
+<meta name="twitter:image" content="{{.OGImage}}">
+{{- end}}
+{{- if .ManifestURL}}
+<link rel="manifest" href="{{.ManifestURL}}">
+{{- end}}
+{{.JSONLD}}
 {{- block "headextra" .}}{{end}}
 </head>
 <body>
-{{- block "main" .}}{{end}}
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header" data-site-header>
+<p class="masthead"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
+<nav class="site-nav" data-nav="primary" aria-label="Primary">
+<a class="site-nav-link" href="/latest/" data-scope="latest">Latest</a>
+</nav>
+</header>
+<main class="site-main" id="main">
+{{- block "content" .}}{{end}}
+</main>
+<footer class="site-footer" data-site-footer>
+<p class="site-footer-text"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
+</footer>
+<script src="/assets/app.js" defer></script>
 </body>
 </html>
 {{end}}

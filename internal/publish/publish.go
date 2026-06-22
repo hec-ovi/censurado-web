@@ -5,13 +5,15 @@
 package publish
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"errors"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/content"
 	"github.com/hec-ovi/censurado-web/internal/domain"
 	"github.com/hec-ovi/censurado-web/internal/store"
 )
@@ -25,18 +27,46 @@ const maxBody = 8 << 20 // 8 MiB
 
 // Handler serves POST /articles.
 type Handler struct {
-	repo store.Repository
-	log  store.SubmissionLog
-	auth Authenticator
-	now  func() time.Time
+	repo    store.Repository
+	log     store.SubmissionLog
+	auth    Authenticator
+	now     func() time.Time
+	archive PayloadArchive                   // optional; nil = no payload archiving
+	logf    func(format string, args ...any) // optional; nil = log.Printf
 }
 
 // NewHandler wires the publish handler. now may be nil (defaults to time.Now).
+// Payload archiving is off by default; attach it with WithArchive.
 func NewHandler(repo store.Repository, log store.SubmissionLog, auth Authenticator, now func() time.Time) *Handler {
 	if now == nil {
 		now = time.Now
 	}
 	return &Handler{repo: repo, log: log, auth: auth, now: now}
+}
+
+// WithArchive attaches an append-only payload archive and returns the handler for
+// chaining. Every NEWLY created publish (not an idempotent replay) is recorded to
+// it after the write commits, so an operator can replay payloads received after a
+// restore point and recover writes lost in the asynchronous replication window.
+// Archiving is best-effort: a Record failure is logged and never fails the publish
+// that already succeeded. A nil archive leaves behavior exactly as without it.
+func (h *Handler) WithArchive(a PayloadArchive) *Handler {
+	h.archive = a
+	return h
+}
+
+// WithLogger sets where archive warnings go. Defaults to log.Printf.
+func (h *Handler) WithLogger(logf func(format string, args ...any)) *Handler {
+	h.logf = logf
+	return h
+}
+
+func (h *Handler) warnf(format string, args ...any) {
+	if h.logf != nil {
+		h.logf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 type problem struct {
@@ -68,8 +98,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
-	dec.DisallowUnknownFields() // additionalProperties:false from the contract
+	// Read the raw body first so the exact bytes can be archived, then decode from
+	// them with the same strict (additionalProperties:false) contract as before.
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	if err != nil {
+		writeProblem(w, problem{Status: http.StatusBadRequest, Code: "invalid_json", Detail: err.Error()})
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
 	var in domain.PublishInput
 	if err := dec.Decode(&in); err != nil {
 		writeProblem(w, problem{Status: http.StatusBadRequest, Code: "invalid_json", Detail: err.Error()})
@@ -83,60 +120,58 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	article, err := domain.NewArticle(in, h.now())
-	if err != nil {
-		var ve *domain.ValidationError
-		if errors.As(err, &ve) {
-			writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "validation_failed", Fields: ve.Fields})
-			return
-		}
-		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "invalid_article", Detail: err.Error()})
-		return
-	}
-
-	// Safety gate: the body must render to sanitized HTML without error.
-	if _, err := content.RenderMarkdown(article.Body); err != nil {
-		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "unrenderable_body", Detail: err.Error()})
-		return
-	}
-
+	// The accept core (NewArticle -> safety gate -> idempotency -> Upsert -> audit)
+	// lives in Apply so the replay tool runs the identical, exactly-once path. now is
+	// read once and used as both the article clock and the submission CreatedAt.
 	ctx := r.Context()
-	if prev, found, err := h.log.FindSubmission(ctx, key); err != nil {
-		writeProblem(w, problem{Status: http.StatusInternalServerError, Code: "internal"})
-		return
-	} else if found {
-		if prev.ContentHash != article.ContentHash {
-			writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "idempotency_key_reused", Detail: "this key was used for a different article"})
-			return
+	now := h.now()
+	res, _ := Apply(ctx, h.repo, h.log, in, key, id.Scopes, now)
+	switch res.Failure {
+	case FailureNone:
+		// Archive every newly created publish exactly once, after the write commits.
+		// A 200 replay/dedup is not re-archived, so retries do not bloat the sink.
+		if res.Created {
+			h.recordArchive(ctx, key, id.Author, now, raw)
 		}
-		writeJSON(w, http.StatusOK, createResponse{ID: prev.ArticleID, Slug: prev.Slug})
-		return
-	}
-
-	res, err := h.repo.Upsert(ctx, article)
-	if err != nil {
+		status := http.StatusOK // article already existed (deduplicated)
+		if res.Created {
+			status = http.StatusCreated
+		}
+		writeJSON(w, status, createResponse{ID: res.Article.ID, Slug: res.Article.Slug})
+	case FailureValidation:
+		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "validation_failed", Fields: res.Fields})
+	case FailureInvalidArticle:
+		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "invalid_article", Detail: res.Err.Error()})
+	case FailureUnrenderableBody:
+		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "unrenderable_body", Detail: res.Err.Error()})
+	case FailureIdempotencyConflict:
+		writeProblem(w, problem{Status: http.StatusUnprocessableEntity, Code: "idempotency_key_reused", Detail: "this key was used for a different article"})
+	case FailureLookup:
+		writeProblem(w, problem{Status: http.StatusInternalServerError, Code: "internal"})
+	case FailureStore:
 		writeProblem(w, problem{Status: http.StatusInternalServerError, Code: "store_error"})
-		return
-	}
-
-	if err := h.log.RecordSubmission(ctx, store.Submission{
-		IdempotencyKey: key,
-		ContentHash:    res.Article.ContentHash,
-		ArticleID:      res.Article.ID,
-		Slug:           res.Article.Slug,
-		Author:         id.Author,
-		Scopes:         id.Scopes,
-		CreatedAt:      h.now().UTC(),
-	}); err != nil {
+	case FailureAudit:
 		writeProblem(w, problem{Status: http.StatusInternalServerError, Code: "audit_error"})
+	}
+}
+
+// recordArchive writes the raw payload to the configured archive, if any. It is
+// best-effort: a failure is logged but never propagated, because the publish it
+// describes has already committed. The raw bytes are copied so the archive never
+// aliases a reused request buffer.
+func (h *Handler) recordArchive(ctx context.Context, key, author string, now time.Time, raw []byte) {
+	if h.archive == nil {
 		return
 	}
-
-	status := http.StatusOK // article already existed (deduplicated)
-	if res.Created {
-		status = http.StatusCreated
+	body := append([]byte(nil), raw...)
+	if err := h.archive.Record(ctx, ArchivedPayload{
+		IdempotencyKey: key,
+		Author:         author,
+		ReceivedAt:     now,
+		Body:           body,
+	}); err != nil {
+		h.warnf("publish: archive record failed (idempotency_key=%q author=%q): %v", key, author, err)
 	}
-	writeJSON(w, status, createResponse{ID: res.Article.ID, Slug: res.Article.Slug})
 }
 
 func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (Identity, bool) {

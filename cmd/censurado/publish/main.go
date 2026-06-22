@@ -60,14 +60,15 @@ func (s *stringSlice) Set(v string) error {
 
 // cliFlags holds the parsed flag pointers so run and the tests share one wiring.
 type cliFlags struct {
-	addr   *string
-	db     *string
-	keys   *string
-	rate   *float64
-	burst  *int
-	genKey *bool
-	author *string
-	scopes *stringSlice
+	addr    *string
+	db      *string
+	keys    *string
+	archive *string
+	rate    *float64
+	burst   *int
+	genKey  *bool
+	author  *string
+	scopes  *stringSlice
 }
 
 // newFlagSet builds the flag set with env-derived defaults. It is factored out so a
@@ -78,13 +79,14 @@ func newFlagSet(getenv func(string) string, stderr io.Writer) (*flag.FlagSet, *c
 
 	var scopes stringSlice
 	f := &cliFlags{
-		addr:   fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
-		db:     fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
-		keys:   fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
-		rate:   fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
-		burst:  fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
-		genKey: fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
-		author: fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
+		addr:    fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
+		db:      fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
+		keys:    fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
+		archive: fs.String("payload-archive", envOr(getenv, "CENSURADO_PUBLISH_ARCHIVE", ""), "directory to append accepted raw payloads to for replay recovery (or CENSURADO_PUBLISH_ARCHIVE); empty = no archiving"),
+		rate:    fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
+		burst:   fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
+		genKey:  fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
+		author:  fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
 	}
 	fs.Var(&scopes, "scope", "scope to grant the minted key; repeatable (default articles:write)")
 	f.scopes = &scopes
@@ -97,6 +99,10 @@ func newFlagSet(getenv func(string) string, stderr io.Writer) (*flag.FlagSet, *c
 		fmt.Fprintln(stderr, "\nThe keys file (-keys / CENSURADO_PUBLISH_KEYS_FILE) is a JSON array:")
 		fmt.Fprintln(stderr, `  [ {"prefix":"ak_ada","hash":"<hex sha256 of the secret>","author":"ada","scopes":["articles:write"]} ]`)
 		fmt.Fprintln(stderr, "It carries only secret hashes, never secrets. Mint entries with -gen-key.")
+		fmt.Fprintln(stderr, "\nSet -payload-archive DIR (or CENSURADO_PUBLISH_ARCHIVE) to append every accepted")
+		fmt.Fprintln(stderr, "payload to DIR. After a restore, replay payloads received past the restore point")
+		fmt.Fprintln(stderr, "with censurado-replay to recover writes lost in the replication window. DIR holds")
+		fmt.Fprintln(stderr, "article content (files 0600); access-control it and ship it to durable storage.")
 		fmt.Fprintln(stderr, "\nFlags:")
 		fs.PrintDefaults()
 	}
@@ -152,6 +158,20 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 
 	// The same *sqlite.Store is both the article Repository and the SubmissionLog.
 	h := publish.NewHandler(repo, repo, auth, time.Now)
+
+	// Optional payload archive: when configured, every newly created publish is
+	// appended to this directory so an operator can replay payloads received after a
+	// restore point (see cmd/censurado/replay) and close the replication-window RPO.
+	archiveDir := strings.TrimSpace(*f.archive)
+	if archiveDir != "" {
+		arch, err := publish.NewDirArchive(archiveDir)
+		if err != nil {
+			fmt.Fprintln(stderr, "config:", err)
+			return exitConfig
+		}
+		h = h.WithArchive(arch)
+	}
+
 	limiter := publish.NewRateLimiter(*f.rate, *f.burst, time.Now)
 	handler := publish.NewServerHandler(h, limiter)
 
@@ -163,7 +183,11 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	// Log the bind address and key count only, never tokens or hashes, then serve
 	// until a signal or a listener failure.
 	listen := func() error {
-		fmt.Fprintf(stdout, "censurado-publish listening on %s (%d key(s) loaded)\n", *f.addr, len(entries))
+		archiveNote := "off"
+		if archiveDir != "" {
+			archiveNote = archiveDir
+		}
+		fmt.Fprintf(stdout, "censurado-publish listening on %s (%d key(s) loaded, payload archive: %s)\n", *f.addr, len(entries), archiveNote)
 		return srv.ListenAndServe()
 	}
 	return serve(ctx, stop, srv, listen, shutdownGrace, stderr)

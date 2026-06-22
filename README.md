@@ -50,8 +50,9 @@ admin (planned, private) ── reads a snapshot ──> SQLite
 | **Domain** | Canonical `Article` model and the rules: slugify, content-hash identity, validation. Depends on nothing. | Implemented, tested |
 | **Store** | Source-of-truth repository interface in domain terms. SQLite (WAL) is the default adapter; a Postgres adapter satisfies the same interface. | Implemented, tested |
 | **Publish** | The only write path: authenticated HTTP endpoint plus the CLI and its agent skill. | Implemented, tested |
-| **Generator** | Turns the store into a fully pre-rendered static site (HTML + JSON), regenerating only changed URLs. | In progress |
-| **Public site + admin** | Reader-facing static site with faceted filtering, and a separate private admin. | Planned |
+| **Generator** | Turns the store into a fully pre-rendered static site (HTML + JSON), regenerating only changed URLs. | Implemented, tested |
+| **Public site** | Reader-facing static site: redaction-brutalist templates and CSS, SEO and social meta, and a no-search-box client refiner as progressive enhancement. | Implemented, tested |
+| **Admin** | A separate private surface for operators, reading a snapshot. | Planned |
 
 Each layer depends only on the ones below it. The domain model sits at the bottom; the store, publish, generator, and admin layers depend on it, never the reverse.
 
@@ -86,19 +87,27 @@ The HTTP handler (`POST /articles`) authenticates the caller, binds the article 
 
 The CLI (`cli/main.go`, built as `censurado-publish`) reads one article as JSON on stdin or `--file`, validates it locally against the same contract the server enforces (strict decode, then build), posts it with the caller's token and an idempotency key, prints the JSON response, and returns a distinct exit code per outcome. An agent loads `cli/skill/SKILL.md` to learn the token, the payload shape, and the idempotent-retry flow. The future inference layer plugs in here, behind the same contract, with nothing downstream changing.
 
-### 4. Static generator (`internal/generate`, in progress)
+### 4. Static generator (`internal/generate`)
 
-A pure reader of the store (`Find`/`Count` only, never writes) that turns the archive into the complete set of static artifacts a CDN serves. It is being implemented now; the design below is the locked spec.
+A pure reader of the store (`Find`/`Count` only, never writes) that turns the archive into the complete set of static artifacts a CDN serves.
 
 - **Deterministic and incremental.** Identical store state yields byte-identical artifacts and an empty purge. Each run rebuilds the artifact set, diffs it against the previous run by content hash, writes only what changed, deletes what is gone, and emits a `purge.json` listing exactly the changed and removed URLs for the CDN to invalidate.
 - **Two tiers.** Tier-A is pre-rendered HTML for a bounded set of canonical pages (latest, section, author, topic, month, and section-anchored combinations). Tier-B is month-bucketed JSON shards that the browser uses to refine combinations client-side, with no request-time backend.
 - **Append-only pagination.** Page and shard seal boundaries are cut on insertion order (a new row always sorts last), so sealed pages are byte-stable under inserts, even back-dated ones. Display order within a page is newest-published-first. The result: one insert mutates only the open landing page and the current month's shard, not the whole archive.
 - **Shards are capped.** Each shard part is bounded by entry count (500) and gzipped size (200 KB), so the client payload is bounded by recency, not by lifetime volume. Old buckets are immutable and served cold.
-- **Feeds and sitemap.** RSS 2.0, Atom 1.0, and JSON Feed 1.1 for `/latest/`, and a sitemap of Tier-A URLs. Feeds carry full article HTML (no truncation) and derive their timestamps from the newest item, not the build clock, so a no-op batch leaves them byte-identical.
+- **A standalone per-scope manifest.** Each scope writes its shard index to `/manifest/<scope>/index.json`, and every listing page (landing and sealed) links to it. The inline copy lives on the landing page only, where it can grow with the tail; deep and sealed pages reach the manifest by fetch, so they stay byte-immutable while client refine still works from any page.
+- **Feeds, sitemap, robots.** RSS 2.0, Atom 1.0, and JSON Feed 1.1 for `/latest/`; a `robots.txt`; and a `sitemap.xml` index over a listings sitemap plus per-month article sitemaps, so article permalinks are crawlable and each file stays well under the 50,000-URL limit. Feeds carry full article HTML (no truncation) and derive their timestamps from the newest item, not the build clock, so a no-op batch leaves them byte-identical.
+- **SEO and social metadata.** Each page carries a canonical URL, a meta description, Open Graph and Twitter Card tags, and JSON-LD (`NewsArticle` on articles, `CollectionPage` on listings), all derived from the page's own fixed fields, never the build clock or the live archive size, so sealed pages stay byte-stable. An optional `metadata.image` URL adds a hero image and the matching social image tags.
 
-### 5. Public site and admin (planned)
+### 5. Public site (`internal/generate/templates`)
 
-The reader-facing static site renders the generator's output: clean URLs per facet, a global "latest" feed, and client-side refine as progressive enhancement over already-rendered pages (so it works with no JS and is visible to crawlers that do not run JS). The admin is a separate private surface for operators, reading a snapshot so heavy queries never fight the writer.
+The reader-facing layer the generator emits, served as static files. Clean URLs per facet, a global "latest" feed, and a visual identity that makes the name literal: a redaction-bar accent, bold grotesque headlines, monospace metadata, high contrast with automatic light and dark, and facet chips instead of checkboxes. The styling is one framework-free stylesheet with system fonts only (no external font fetch), responsive and accessible (WCAG AA in both schemes, visible focus, a skip link, reduced-motion support).
+
+The client refiner (`/assets/app.js`, an ES module) is pure progressive enhancement over the rendered pages. With JavaScript off, every facet is a real pre-built link to a static scope page, so navigation and crawling work without it. With JavaScript on, it reads the manifest and shards, filters the list in place, and updates the URL to that same pre-built page, so reload and back or forward always land on real HTML. There is no free-text search box; refine membership and order match the server pages exactly, including back-dated inserts across capped shard parts.
+
+### 6. Admin (planned)
+
+A separate private surface for operators, reading a snapshot so heavy queries never fight the writer.
 
 ## Data layer and why SQLite
 
@@ -245,8 +254,9 @@ Unknown top-level fields are rejected by both the CLI and the server.
 ## Testing and CI
 
 - **Backend tests exercise the real adapters.** Two conformance suites (`internal/store/storetest`) run against a real SQLite database and, when a DSN is set, a real Postgres: the `Repository` suite checks content-hash dedup, slug lookup, filtering by each axis, date ranges, ordering, and paging; the `SubmissionLog` suite checks the audit and idempotency ledger. Both adapters store timestamps at whole-second resolution, so the same write returns the identical instant on either engine. Running the identical suites against both is the proof that the store is swappable.
-- **The publish path, the renderer, the domain model, and the CLI all have their own tests** (`internal/publish`, `internal/content`, `internal/domain`, `cli`).
-- **CI** (`.github/workflows/ci.yml`) runs `go vet ./...` then `go test ./...` on push and pull request, with a Postgres 17 service container. It sets `CENSURADO_TEST_POSTGRES_DSN`, which is what makes the Postgres conformance run execute (the test skips when the variable is unset, so a local `go test ./...` stays dependency-free).
+- **The publish path, the renderer, the domain model, the CLI, and the generator all have their own tests** (`internal/publish`, `internal/content`, `internal/domain`, `cli`, `internal/generate`). The generator suite drives the real `Generate` entry point through to emitted bytes and pins the load-bearing invariant: a sealed page stays byte-identical as the archive grows, including when a new month grows the shard manifest.
+- **The client refiner has a JavaScript test suite** (`web/`, Node 22, run with `npm ci && npm test`) that renders the real listing DOM in jsdom, drives it with Testing Library and `user-event`, and mocks the manifest and shard responses with MSW. It checks that the in-place refine matches the server pages exactly, that it degrades to plain links with no JavaScript, and that a back-dated insert across capped shard parts still reproduces the server order.
+- **CI** (`.github/workflows/ci.yml`) runs two parallel jobs on push and pull request: a Go job (`go vet ./...` then `go test ./...`) with a Postgres 17 service container, and a Node job that runs the JavaScript suite. The Go job sets `CENSURADO_TEST_POSTGRES_DSN`, which is what makes the Postgres conformance run execute (the test skips when the variable is unset, so a local `go test ./...` stays dependency-free).
 
 ## Repository layout
 
@@ -261,7 +271,10 @@ internal/
     postgres/        swap-proof adapter (pgx), same interface
     storetest/       the shared conformance suite run against both engines
   publish/           the authenticated write API (auth, idempotency, audit)
-  generate/          the incremental static generator (in progress)
+  generate/          the incremental static generator
+    templates/       html/template files and static assets (style.css, app.js)
+cmd/censurado/       the generator command entry point
+web/                 the client refiner's JavaScript tests (Vitest + Testing Library + MSW)
 Makefile             dockerized build/test/vet commands
 ```
 
@@ -269,9 +282,8 @@ Makefile             dockerized build/test/vet commands
 
 Honest current state:
 
-- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill.
-- **In progress:** the static generator (`internal/generate`, `cmd/censurado/generate`).
-- **Planned:** the reader-facing public site and the private admin.
+- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; and the reader-facing public site with its client refiner.
+- **Planned:** the private admin (Go and HTMX); media support beyond the optional hero image (responsive images and video); and the operations work (durable replication, restore drills, container and IaC packaging, manifest-driven CDN purge).
 
 Nothing is deployed yet.
 

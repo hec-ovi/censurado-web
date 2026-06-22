@@ -24,10 +24,11 @@ Planning complete, build underway. The architecture is locked and stress-tested.
 Done so far: the article contract and domain model (Phase 0); the data layer
 (Phase 1: a repository interface plus SQLite and Postgres adapters, with a shared
 conformance suite run against both engines in CI); the publish API, the CLI, and
-the SKILL.md (Phase 2); the incremental static generator (Phase 3); and the
-reader-facing public site with its no-search-box client refiner (Phase 4). Next:
-the private admin (Phase 5), then operations and deploy (Phase 6). Nothing is
-deployed yet.
+the SKILL.md (Phase 2); the incremental static generator (Phase 3); the
+reader-facing public site with its no-search-box client refiner (Phase 4); and
+the private admin console (Phase 5: Go and HTMX, session auth, combinable
+multi-value filtering, archive search, the audit log, and a regenerate trigger).
+Next: operations and deploy (Phase 6). Nothing is deployed yet.
 
 ## Topics in scope
 

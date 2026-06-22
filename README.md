@@ -42,7 +42,7 @@ author agents ──(CLI + SKILL.md)──> Publish API (Go, the only writer) �
                                               ▼
                                             CDN ──> millions of readers   (zero data-layer access)
 
-admin (planned, private) ── reads a snapshot ──> SQLite
+admin (Go + HTMX, private) ── reads a snapshot ──> SQLite
 ```
 
 | Layer | What it does | Status |
@@ -52,7 +52,7 @@ admin (planned, private) ── reads a snapshot ──> SQLite
 | **Publish** | The only write path: authenticated HTTP endpoint plus the CLI and its agent skill. | Implemented, tested |
 | **Generator** | Turns the store into a fully pre-rendered static site (HTML + JSON), regenerating only changed URLs. | Implemented, tested |
 | **Public site** | Reader-facing static site: redaction-brutalist templates and CSS, SEO and social meta, and a no-search-box client refiner as progressive enhancement. | Implemented, tested |
-| **Admin** | A separate private surface for operators, reading a snapshot. | Planned |
+| **Admin** | A private operator console (Go + HTMX): combinable filtering, archive search, the audit log, and a regenerate trigger, reading a snapshot. | Implemented, tested |
 
 Each layer depends only on the ones below it. The domain model sits at the bottom; the store, publish, generator, and admin layers depend on it, never the reverse.
 
@@ -72,8 +72,8 @@ The canonical `Article` and the rules that define identity. It imports nothing f
 The article source of truth, behind a repository interface expressed purely in domain terms. No SQL or storage detail leaks through the interface, which is what keeps it swappable.
 
 - **`Repository`** is the article contract: `Upsert`, `BySlug`, `Find`, `Count`, `Close`. `Upsert` deduplicates on content hash, so a second call with the same hash returns the existing row with `Created=false`. That single behavior is what makes publishing both idempotent and deduplicated.
-- **`Filter`** selects on the stable hot axes: section, author, topic, and a `[From, To)` publish-time range (inclusive lower, exclusive upper), with ordering and paging. A zero-valued field is ignored, so the empty filter matches everything.
-- **`SubmissionLog`** is a separate interface for the append-only publish ledger (`FindSubmission`, `RecordSubmission`). It is the audit log and the idempotency ledger in one record.
+- **`Filter`** selects on the stable hot axes: section, author, topic, and a `[From, To)` publish-time range (inclusive lower, exclusive upper), with ordering and paging. A zero-valued field is ignored, so the empty filter matches everything. The admin also drives multi-value section, author, and topic sets (OR within an axis, AND across) and a case-insensitive full-text query over title and body; a separate `Facets` aggregate lists the distinct values with counts for the filter UI.
+- **`SubmissionLog`** is a separate interface for the append-only publish ledger (`FindSubmission`, `RecordSubmission`, `ListSubmissions`). It is the audit log and the idempotency ledger in one record.
 - **SQLite adapter (`internal/store/sqlite`)** is the default. It uses the pure-Go `modernc.org/sqlite` driver (no cgo), opens one file in WAL mode with foreign keys and a busy timeout, and caps the pool at a single connection so one writer serializes all writes. STRICT tables reject the loose typing Postgres would also reject. The hot axes (publish date, author, section) are indexed columns; topics are normalized into a join table so `/topic/<slug>` is an indexed lookup; the metadata tail is a JSON column.
 - **Postgres adapter (`internal/store/postgres`)** satisfies the same `Repository` and `SubmissionLog` interfaces via the `pgx` stdlib driver, with a matching schema (JSONB tail, same indexes). It is not the default. It exists to prove the swap.
 
@@ -105,16 +105,22 @@ The reader-facing layer the generator emits, served as static files. Clean URLs 
 
 The client refiner (`/assets/app.js`, an ES module) is pure progressive enhancement over the rendered pages. With JavaScript off, every facet is a real pre-built link to a static scope page, so navigation and crawling work without it. With JavaScript on, it reads the manifest and shards, filters the list in place, and updates the URL to that same pre-built page, so reload and back or forward always land on real HTML. There is no free-text search box; refine membership and order match the server pages exactly, including back-dated inserts across capped shard parts.
 
-### 6. Admin (planned)
+### 6. Admin (`internal/adminweb`, `cmd/censurado/admin`)
 
-A separate private surface for operators, reading a snapshot so heavy queries never fight the writer.
+A private, server-rendered operator console (Go `html/template` plus vendored htmx, no CDN), reading the store directly so its heavy combinable queries never fight the writer. It is the one place a human can search and slice the archive; the public site deliberately cannot. It is read-only over content: there is no editing or takedown here.
+
+- **Browse and filter.** Combinable multi-value filters (several sections, authors, or topics at once), a full-text box over title and body, a date range, and pagination. htmx swaps just the results and pushes the URL, so a filtered view reloads to the same state and stays shareable; with JavaScript off the form still submits as a plain GET. The filter options come from a facet count of the archive.
+- **Article detail.** The full article with its sanitized rendered body (the same markdown renderer the publish and generate layers use), metadata, content hash, and timestamps.
+- **Audit log.** The append-only publish ledger (timestamp, author, slug, content hash, scopes, idempotency key) with the same filters and pagination.
+- **Regenerate.** A button that runs the static generator in process and shows the exact CDN purge list. The action is an injected closure, so the admin never imports the generator package.
+- **Auth.** A single operator logs in with a high-entropy token (compared constant-time against its stored hash) and gets a stateless, HMAC-signed session cookie (HttpOnly, SameSite=Strict). Every mutating POST carries a session-bound CSRF token, also checked constant-time. The binary mints credentials with `-gen-credentials`, binds to localhost by default, and shuts down gracefully. It is meant to run off the public internet.
 
 ## Data layer and why SQLite
 
 SQLite in WAL mode is the source of truth, behind the repository interface. The reasoning:
 
 - **The single-writer ceiling is orders of magnitude above the workload.** Publishing is a controlled batch a few times a day. The write rate is roughly hundreds to a few thousand inserts per day in small bursts, against a single-writer ceiling far above that. One Go connection serializes writes, which sidesteps lock churn and matches the batch shape.
-- **Readers never hit the DB.** The reader fan-out is served as static files from a CDN. The database serves only the write inbox, the build, and (later) the admin. The part that scales to millions has no database in it.
+- **Readers never hit the DB.** The reader fan-out is served as static files from a CDN. The database serves only the write inbox, the build, and the admin. The part that scales to millions has no database in it.
 - **Pure-Go driver, tiny containers.** `modernc.org/sqlite` is cgo-free, so builds produce small static binaries and tiny containers with near-zero runtime dependencies. One file: no server, no port, no connection pool, less attack surface.
 - **STRICT tables and a normalized topic join.** STRICT tables catch type laxity that the Postgres adapter would also reject, keeping the two dialects honest. Topics live in a join table so topic navigation is an indexed lookup.
 
@@ -255,6 +261,7 @@ Unknown top-level fields are rejected by both the CLI and the server.
 
 - **Backend tests exercise the real adapters.** Two conformance suites (`internal/store/storetest`) run against a real SQLite database and, when a DSN is set, a real Postgres: the `Repository` suite checks content-hash dedup, slug lookup, filtering by each axis, date ranges, ordering, and paging; the `SubmissionLog` suite checks the audit and idempotency ledger. Both adapters store timestamps at whole-second resolution, so the same write returns the identical instant on either engine. Running the identical suites against both is the proof that the store is swappable.
 - **The publish path, the renderer, the domain model, the CLI, and the generator all have their own tests** (`internal/publish`, `internal/content`, `internal/domain`, `cli`, `internal/generate`). The generator suite drives the real `Generate` entry point through to emitted bytes and pins the load-bearing invariant: a sealed page stays byte-identical as the archive grows, including when a new month grows the shard manifest.
+- **The admin has end-to-end tests** (`internal/adminweb`) that drive the real HTTP handler against a real SQLite store: login with the session and CSRF checks, the auth gate (including the htmx redirect), multi-value filtering, partial versus full-page rendering, pagination, article detail with an XSS gate, the audit log and its filters, and the regenerate trigger. The store conformance suites also cover the multi-value filters, the facet aggregate, and the submission listing against both engines.
 - **The client refiner has a JavaScript test suite** (`web/`, Node 22, run with `npm ci && npm test`) that renders the real listing DOM in jsdom, drives it with Testing Library and `user-event`, and mocks the manifest and shard responses with MSW. It checks that the in-place refine matches the server pages exactly, that it degrades to plain links with no JavaScript, and that a back-dated insert across capped shard parts still reproduces the server order.
 - **CI** (`.github/workflows/ci.yml`) runs two parallel jobs on push and pull request: a Go job (`go vet ./...` then `go test ./...`) with a Postgres 17 service container, and a Node job that runs the JavaScript suite. The Go job sets `CENSURADO_TEST_POSTGRES_DSN`, which is what makes the Postgres conformance run execute (the test skips when the variable is unset, so a local `go test ./...` stays dependency-free).
 
@@ -273,7 +280,10 @@ internal/
   publish/           the authenticated write API (auth, idempotency, audit)
   generate/          the incremental static generator
     templates/       html/template files and static assets (style.css, app.js)
-cmd/censurado/       the generator command entry point
+  adminweb/          the private admin: session auth, htmx browse/filter/audit/regenerate
+cmd/censurado/
+  generate/          the static generator command
+  admin/             the private admin server
 web/                 the client refiner's JavaScript tests (Vitest + Testing Library + MSW)
 Makefile             dockerized build/test/vet commands
 ```
@@ -282,8 +292,8 @@ Makefile             dockerized build/test/vet commands
 
 Honest current state:
 
-- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; and the reader-facing public site with its client refiner.
-- **Planned:** the private admin (Go and HTMX); media support beyond the optional hero image (responsive images and video); and the operations work (durable replication, restore drills, container and IaC packaging, manifest-driven CDN purge).
+- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; the reader-facing public site with its client refiner; and the private admin console (Go and HTMX).
+- **Planned:** media support beyond the optional hero image (responsive images and video); and the operations work (durable replication, restore drills, container and IaC packaging, manifest-driven CDN purge).
 
 Nothing is deployed yet.
 

@@ -1,0 +1,19 @@
+{{define "main"}}
+<main>
+<article>
+<h1>{{.Title}}</h1>
+<p class="byline">By <a href="{{.AuthorURL}}">{{.AuthorLabel}}</a> in <a href="{{.SectionURL}}">{{.Section}}</a></p>
+<time datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+{{- if .Topics}}
+<ul class="topics">
+{{- range .Topics}}
+<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{- end}}
+</ul>
+{{- end}}
+<div class="body">
+{{.BodyHTML}}
+</div>
+</article>
+</main>
+{{end}}

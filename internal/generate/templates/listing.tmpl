@@ -1,0 +1,45 @@
+{{define "headextra"}}
+{{- if .PrevURL}}<link rel="prev" href="{{.PrevURL}}">{{end}}
+{{- if .NextURL}}<link rel="next" href="{{.NextURL}}">{{end}}
+{{- if .IsLanding}}{{range .FeedLinks}}
+<link rel="{{.Rel}}" type="{{.Type}}" href="{{.Href}}" title="{{.Title}}">
+{{- end}}{{end}}
+{{- end}}
+{{define "main"}}
+<main>
+<h1>{{.Heading}}</h1>
+<ol>
+{{- range .Items}}
+<li>
+<article>
+<h2><a href="{{.URL}}">{{.Title}}</a></h2>
+<p class="byline">By <a href="{{.AuthorURL}}">{{.AuthorLabel}}</a> in <a href="{{.SectionURL}}">{{.Section}}</a></p>
+<time datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+{{- if .Topics}}
+<ul class="topics">
+{{- range .Topics}}
+<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{- end}}
+</ul>
+{{- end}}
+</article>
+</li>
+{{- end}}
+</ol>
+{{- if gt (len .Pager.Pages) 1}}
+<nav class="pager">
+{{- range .Pager.Pages}}
+<a href="{{.URL}}">{{.N}}</a>
+{{- end}}
+</nav>
+{{- end}}
+{{- if .Months}}
+<nav class="months">
+{{- range .Months}}
+<a href="{{.URL}}">{{.Label}}</a>
+{{- end}}
+</nav>
+{{- end}}
+</main>
+{{.Manifest}}
+{{end}}

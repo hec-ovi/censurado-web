@@ -1,0 +1,8 @@
+[
+  {"title": "Tech Ada May",     "author": "ada", "section": "tech",    "topics": ["ai", "go"],      "published": "2026-05-10T09:00:00Z"},
+  {"title": "Tech Lin June",    "author": "lin", "section": "tech",    "topics": ["go"],            "published": "2026-06-02T09:00:00Z"},
+  {"title": "Science Bob May",  "author": "bob", "section": "science", "topics": ["bio"],           "published": "2026-05-15T09:00:00Z"},
+  {"title": "Science Ada June", "author": "ada", "section": "science", "topics": ["space", "bio"],  "published": "2026-06-05T09:00:00Z"},
+  {"title": "Tech Ada June",    "author": "ada", "section": "tech",    "topics": ["ai"],            "published": "2026-06-08T09:00:00Z"},
+  {"title": "Science Lin May",  "author": "lin", "section": "science", "topics": ["space"],         "published": "2026-05-20T09:00:00Z"}
+]

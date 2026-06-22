@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://censurado.local/contracts/manifest.schema.json",
+  "title": "PageManifest",
+  "description": "Embedded in each Tier-A page as <script type=application/json id=cnz-manifest>. Describes the scope's shard set (newest-month-first) and the facet equalities the scope guarantees, so the client-side Tier-B refiner can fetch and filter shards. Field set is frozen.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope", "axis", "shards", "total", "cap"],
+  "properties": {
+    "scope": { "type": "string", "pattern": "^/" },
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "section": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "author":  { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "topic":   { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "month":   { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$" }
+      }
+    },
+    "shards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "month", "count"],
+        "properties": {
+          "url":   { "type": "string", "pattern": "^/shards/.+/[0-9]{4}/[0-9]{2}\\.json$" },
+          "month": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$" },
+          "count": { "type": "integer", "minimum": 0 },
+          "parts": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string", "pattern": "^/shards/.+/[0-9]{4}/[0-9]{2}(\\.[0-9]+)?\\.json$" }
+          }
+        }
+      }
+    },
+    "total": { "type": "integer", "minimum": 0 },
+    "cap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries", "bytes"],
+      "properties": {
+        "entries": { "type": "integer", "minimum": 1 },
+        "bytes":   { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

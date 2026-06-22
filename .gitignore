@@ -19,7 +19,13 @@ node_modules/
 
 # Build output and local databases
 /dist/
+/public/
+/.generated/
 /tmp/
 *.db
 *.db-wal
 *.db-shm
+
+# Compiled binaries (go build outputs at the repo root)
+/generate
+/censurado-publish

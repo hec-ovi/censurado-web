@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/hec-ovi/censurado-web/internal/adminweb"
+	"github.com/hec-ovi/censurado-web/internal/generate"
+	"github.com/hec-ovi/censurado-web/internal/store"
 	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
 )
 
@@ -47,6 +49,9 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	fs.SetOutput(stderr)
 	addr := fs.String("addr", envOr(getenv, "CENSURADO_ADMIN_ADDR", "127.0.0.1:8081"), "listen address (or CENSURADO_ADMIN_ADDR); localhost by default")
 	db := fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)")
+	out := fs.String("out", envOr(getenv, "CENSURADO_ADMIN_OUT", ""), "static-site output dir for the regenerate action (or CENSURADO_ADMIN_OUT); empty disables regenerate")
+	baseURL := fs.String("base-url", envOr(getenv, "CENSURADO_BASE_URL", ""), "absolute base URL for generated links (or CENSURADO_BASE_URL); required with -out to enable regenerate")
+	pageSize := fs.Int("page-size", 20, "articles per generated page for the regenerate action (generator default)")
 	genCreds := fs.Bool("gen-credentials", false, "generate a fresh operator token + session key, print them, and exit without serving")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -73,6 +78,15 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	}
 	defer repo.Close()
 	cfg.Repo = repo
+	// The sqlite store also implements store.SubmissionLog, so it backs the audit
+	// view directly.
+	cfg.Log = repo
+
+	// The regenerate action is enabled only when both an output dir and a base URL
+	// are supplied; buildRegenerate returns nil otherwise, leaving the route in its
+	// disabled state. It keeps internal/generate out of adminweb: the binary imports
+	// the generator and adapts its Result to adminweb.RegenResult.
+	cfg.Regenerate = buildRegenerate(repo, *out, *baseURL, *pageSize)
 
 	handler, err := adminweb.New(cfg)
 	if err != nil {
@@ -152,6 +166,33 @@ func buildConfig(getenv func(string) string) (adminweb.Config, error) {
 		cfg.SecureCookies = b
 	}
 	return cfg, nil
+}
+
+// buildRegenerate returns the closure the admin handler runs from
+// POST /admin/regenerate, or nil when the action is disabled. It is the seam that
+// keeps internal/generate out of adminweb: the binary imports the generator here
+// and adapts generate.Result to adminweb.RegenResult (Purge passed through whole,
+// never truncated). The action is enabled only when both an output dir and a base
+// URL are supplied; either empty yields nil, so adminweb shows the disabled state
+// and the POST returns a friendly "not configured" response instead of panicking.
+func buildRegenerate(repo store.Repository, out, baseURL string, pageSize int) func(context.Context) (adminweb.RegenResult, error) {
+	outDir, base := strings.TrimSpace(out), strings.TrimSpace(baseURL)
+	if outDir == "" || base == "" {
+		return nil
+	}
+	return func(ctx context.Context) (adminweb.RegenResult, error) {
+		res, err := generate.Generate(ctx, repo, generate.Options{OutDir: outDir, BaseURL: base, PageSize: pageSize})
+		if err != nil {
+			return adminweb.RegenResult{}, err
+		}
+		return adminweb.RegenResult{
+			Written:    res.Written,
+			Unchanged:  res.Unchanged,
+			Deleted:    res.Deleted,
+			ScopeCount: res.ScopeCount,
+			Purge:      res.Purge,
+		}, nil
+	}
 }
 
 // genCredentials mints a fresh operator token and session key, printing the token

@@ -2,11 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
 )
 
 // envFromMap returns a getenv-shaped lookup over a fixed map, so the config and
@@ -149,6 +156,139 @@ func TestBuildConfig(t *testing.T) {
 			t.Errorf("decoded key = %d bytes, want >=32", len(cfg.SessionKey))
 		}
 	})
+}
+
+// TestBuildRegenerate_Disabled proves the action is off (nil closure) unless both
+// an output dir and a base URL are supplied, so adminweb stays in its disabled
+// state and the POST returns a friendly "not configured" response, never a panic.
+// A nil repo is safe here because buildRegenerate returns before touching it.
+func TestBuildRegenerate_Disabled(t *testing.T) {
+	cases := []struct {
+		name, out, base string
+	}{
+		{"empty out", "", "https://news.example"},
+		{"empty base", t.TempDir(), ""},
+		{"blank out", "   ", "https://news.example"},
+		{"blank base", t.TempDir(), "   "},
+		{"both blank", "  ", "  "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if buildRegenerate(nil, c.out, c.base, 20) != nil {
+				t.Errorf("buildRegenerate(out=%q, base=%q) = non-nil, want nil (disabled)", c.out, c.base)
+			}
+		})
+	}
+}
+
+// seedAdminArticle inserts one published article into a fresh sqlite store so the
+// generator has real content to materialize.
+func seedAdminArticle(t *testing.T, repo *sqlite.Store) {
+	t.Helper()
+	pub := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	a, err := domain.NewArticle(domain.PublishInput{
+		Title:       "Regenerate wiring fixture",
+		Body:        "A seeded article so the generator produces real artifacts.",
+		Author:      "ada",
+		Section:     "tech",
+		Topics:      []string{"censorship"},
+		PublishedAt: &pub,
+	}, pub)
+	if err != nil {
+		t.Fatalf("NewArticle: %v", err)
+	}
+	if _, err := repo.Upsert(context.Background(), a); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+}
+
+// TestBuildRegenerate_WiresGenerate smoke-covers the binary's generate.Generate ->
+// RegenResult adapter end to end: it opens a real sqlite store, seeds an article,
+// and asserts the closure threads OutDir/BaseURL/PageSize through and maps the
+// Result fields (including the whole, untruncated Purge list) back.
+func TestBuildRegenerate_WiresGenerate(t *testing.T) {
+	repo, err := sqlite.Open(filepath.Join(t.TempDir(), "admin.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	seedAdminArticle(t, repo)
+
+	outDir := t.TempDir()
+	const base = "https://news.example"
+	const pageSize = 7
+
+	// Surrounding whitespace on the out dir proves buildRegenerate trims its inputs.
+	regen := buildRegenerate(repo, "  "+outDir+"  ", base, pageSize)
+	if regen == nil {
+		t.Fatal("buildRegenerate returned nil with out dir + base set, want enabled closure")
+	}
+
+	res, err := regen(context.Background())
+	if err != nil {
+		t.Fatalf("regenerate closure: %v", err)
+	}
+
+	// Result -> RegenResult mapping: a first run writes artifacts and lists every
+	// one to purge, with at least one scope and nothing unchanged/deleted yet.
+	if res.Written == 0 {
+		t.Errorf("Written = 0, want >0 on a first run")
+	}
+	if len(res.Purge) == 0 {
+		t.Errorf("Purge is empty, want the first-run invalidation list")
+	}
+	if res.ScopeCount < 1 {
+		t.Errorf("ScopeCount = %d, want >=1", res.ScopeCount)
+	}
+	if res.Unchanged != 0 || res.Deleted != 0 {
+		t.Errorf("first run Unchanged=%d Deleted=%d, want 0/0", res.Unchanged, res.Deleted)
+	}
+
+	// OutDir + BaseURL plumbing: robots.txt landed under the trimmed dir and points
+	// crawlers at the configured base, so both options reached generate.Options.
+	robots, err := os.ReadFile(filepath.Join(outDir, "robots.txt"))
+	if err != nil {
+		t.Fatalf("read robots.txt under out dir: %v", err)
+	}
+	if !strings.Contains(string(robots), base+"/sitemap.xml") {
+		t.Errorf("robots.txt = %q, want it to carry base URL %q", robots, base)
+	}
+
+	// A second run over the unchanged store is idempotent, and the mapping reflects
+	// it: nothing rewritten or purged, everything counted as unchanged.
+	res2, err := regen(context.Background())
+	if err != nil {
+		t.Fatalf("second regenerate: %v", err)
+	}
+	if res2.Written != 0 || res2.Deleted != 0 || len(res2.Purge) != 0 {
+		t.Errorf("second run not idempotent: written=%d deleted=%d purge=%d", res2.Written, res2.Deleted, len(res2.Purge))
+	}
+	if res2.Unchanged == 0 {
+		t.Errorf("second run Unchanged = 0, want the full artifact count")
+	}
+}
+
+// TestBuildRegenerate_PropagatesError proves a generate.Generate failure surfaces
+// as (zero RegenResult, err) rather than a partial result or panic. PageSize is
+// threaded straight into generate.Options, so a negative value fails Validate.
+func TestBuildRegenerate_PropagatesError(t *testing.T) {
+	repo, err := sqlite.Open(filepath.Join(t.TempDir(), "admin.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	regen := buildRegenerate(repo, t.TempDir(), "https://news.example", -1)
+	if regen == nil {
+		t.Fatal("buildRegenerate returned nil with out dir + base set, want enabled closure")
+	}
+	res, err := regen(context.Background())
+	if err == nil {
+		t.Fatal("want an error from Generate for PageSize=-1, got nil")
+	}
+	if res.Written != 0 || res.Unchanged != 0 || res.Deleted != 0 || res.ScopeCount != 0 || len(res.Purge) != 0 {
+		t.Errorf("on error, want a zero RegenResult, got %+v", res)
+	}
 }
 
 // TestRun_MissingEnvNoServer proves a config error returns a distinct nonzero

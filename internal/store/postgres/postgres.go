@@ -257,11 +257,14 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 	if f.Author != "" {
 		fmt.Fprintf(&b, " AND a.author = %s", ab.next(f.Author))
 	}
+	// Date bounds are second-resolution: stored timestamps are whole-second and the
+	// SQLite adapter binds them as RFC3339 (which drops sub-second), so truncate the
+	// bounds here too so a fractional bound returns the identical rows on both engines.
 	if !f.From.IsZero() {
-		fmt.Fprintf(&b, " AND a.published_at >= %s", ab.next(f.From.UTC()))
+		fmt.Fprintf(&b, " AND a.published_at >= %s", ab.next(f.From.UTC().Truncate(time.Second)))
 	}
 	if !f.To.IsZero() {
-		fmt.Fprintf(&b, " AND a.published_at < %s", ab.next(f.To.UTC()))
+		fmt.Fprintf(&b, " AND a.published_at < %s", ab.next(f.To.UTC().Truncate(time.Second)))
 	}
 	// Multi-value axes (admin only). Each ANDs with the scalar fields above and
 	// ORs within itself via IN/EXISTS. Blank entries are dropped first; an
@@ -423,25 +426,81 @@ func loadTopics(ctx context.Context, q querier, ids []int64) (map[int64][]string
 	return out, rows.Err()
 }
 
-// FindSubmission returns a prior submission for the idempotency key, or found=false.
-func (s *Store) FindSubmission(ctx context.Context, key string) (store.Submission, bool, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT idempotency_key,content_hash,article_id,slug,author,scopes,created_at FROM submissions WHERE idempotency_key = $1`, key)
+const submissionCols = "idempotency_key,content_hash,article_id,slug,author,scopes,created_at"
+
+// scanSubmission decodes one submissions row. Scopes are space-joined on write
+// (RecordSubmission), so they split back on the same separator; created_at is a
+// TIMESTAMPTZ normalized to UTC. Shared by FindSubmission and ListSubmissions so
+// every read path round-trips a submission identically to the SQLite adapter.
+func scanSubmission(sc scanner) (store.Submission, error) {
 	var sub store.Submission
 	var scopes string
 	var created time.Time
-	err := row.Scan(&sub.IdempotencyKey, &sub.ContentHash, &sub.ArticleID, &sub.Slug, &sub.Author, &scopes, &created)
+	if err := sc.Scan(&sub.IdempotencyKey, &sub.ContentHash, &sub.ArticleID, &sub.Slug, &sub.Author, &scopes, &created); err != nil {
+		return store.Submission{}, err
+	}
+	if scopes != "" {
+		sub.Scopes = strings.Split(scopes, " ")
+	}
+	sub.CreatedAt = created.UTC()
+	return sub, nil
+}
+
+// FindSubmission returns a prior submission for the idempotency key, or found=false.
+func (s *Store) FindSubmission(ctx context.Context, key string) (store.Submission, bool, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+submissionCols+` FROM submissions WHERE idempotency_key = $1`, key)
+	sub, err := scanSubmission(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.Submission{}, false, nil
 	}
 	if err != nil {
 		return store.Submission{}, false, err
 	}
-	if scopes != "" {
-		sub.Scopes = strings.Split(scopes, " ")
-	}
-	sub.CreatedAt = created.UTC()
 	return sub, true, nil
+}
+
+// ListSubmissions returns recorded submissions newest first for the admin audit
+// log. Ordering is created_at DESC then idempotency_key DESC (the table's primary
+// key) so it is deterministic, and identical to the SQLite adapter. The
+// idempotency_key tiebreak is pinned to COLLATE "C" (raw byte order) so it
+// matches SQLite's default BINARY collation for ANY key set, not just the ASCII
+// ones the conformance suite seeds. The Author filter is exact equality; From/To
+// bound created_at (>= From, < To). All values are bound via $n.
+func (s *Store) ListSubmissions(ctx context.Context, f store.ListSubmissionsFilter) ([]store.Submission, error) {
+	var b strings.Builder
+	ab := &argBuilder{}
+	b.WriteString("SELECT " + submissionCols + " FROM submissions WHERE 1=1")
+	if f.Author != "" {
+		fmt.Fprintf(&b, " AND author = %s", ab.next(f.Author))
+	}
+	if !f.From.IsZero() {
+		fmt.Fprintf(&b, " AND created_at >= %s", ab.next(f.From.UTC().Truncate(time.Second)))
+	}
+	if !f.To.IsZero() {
+		fmt.Fprintf(&b, " AND created_at < %s", ab.next(f.To.UTC().Truncate(time.Second)))
+	}
+	b.WriteString(` ORDER BY created_at DESC, idempotency_key COLLATE "C" DESC`)
+	if f.Limit > 0 {
+		fmt.Fprintf(&b, " LIMIT %s", ab.next(f.Limit))
+	}
+	if f.Offset > 0 {
+		fmt.Fprintf(&b, " OFFSET %s", ab.next(f.Offset))
+	}
+	rows, err := s.db.QueryContext(ctx, b.String(), ab.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Submission
+	for rows.Next() {
+		sub, err := scanSubmission(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
 }
 
 // RecordSubmission appends a submission record (audit log + idempotency ledger).

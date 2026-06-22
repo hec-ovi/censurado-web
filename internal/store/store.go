@@ -123,6 +123,18 @@ type Submission struct {
 	CreatedAt      time.Time
 }
 
+// ListSubmissionsFilter selects audit-log entries. Zero-valued fields impose no
+// constraint, so the empty filter lists every submission. The bounds match the
+// Filter date semantics: From is an inclusive lower bound, To an exclusive upper
+// bound, both on CreatedAt.
+type ListSubmissionsFilter struct {
+	Author string    // optional exact author; "" = all
+	From   time.Time // inclusive lower bound on CreatedAt; zero = open
+	To     time.Time // exclusive upper bound; zero = open
+	Limit  int       // 0 = no limit
+	Offset int
+}
+
 // SubmissionLog records publish attempts and looks them up by idempotency key.
 // It is a separate concern from the article Repository so the article contract
 // stays focused, even when one adapter implements both.
@@ -131,4 +143,7 @@ type SubmissionLog interface {
 	FindSubmission(ctx context.Context, idempotencyKey string) (Submission, bool, error)
 	// RecordSubmission appends a submission record.
 	RecordSubmission(ctx context.Context, s Submission) error
+	// ListSubmissions returns recorded submissions newest first (CreatedAt DESC,
+	// then a stable tiebreak), for the admin audit log. Read-only.
+	ListSubmissions(ctx context.Context, f ListSubmissionsFilter) ([]Submission, error)
 }

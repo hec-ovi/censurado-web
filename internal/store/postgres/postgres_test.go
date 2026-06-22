@@ -101,3 +101,23 @@ func TestPostgresSubmissionLog(t *testing.T) {
 
 	storetest.RunSubmissionLog(t, repo)
 }
+
+// TestPostgresListSubmissions runs the shared ListSubmissions conformance suite
+// against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
+// audit-log ordering (created_at DESC, idempotency_key COLLATE "C" DESC), the
+// author and date-range filters, paging, and the full field+scopes round-trip are
+// byte-identical to SQLite.
+func TestPostgresListSubmissions(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunListSubmissions(t, repo)
+}

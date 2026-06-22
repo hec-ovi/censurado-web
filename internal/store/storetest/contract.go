@@ -668,6 +668,114 @@ func RunSubmissionLog(t *testing.T, log store.SubmissionLog) {
 	})
 }
 
+// RunListSubmissions executes the ListSubmissions conformance suite against log,
+// which must back an empty submissions table. Running the identical suite against
+// both SQLite and Postgres is what proves the audit-log read path orders, filters,
+// pages, and round-trips submissions identically on the two engines. The seed
+// includes two submissions sharing one CreatedAt so the stable idempotency-key
+// DESC tiebreak is exercised in byte order (SQLite BINARY default; Postgres
+// COLLATE "C" pin), which is the same parity guarantee the Facets suite relies on.
+// It does not call t.Parallel so subtests share the seeded state; none mutate it.
+func RunListSubmissions(t *testing.T, log store.SubmissionLog) {
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+
+	// Authors and timestamps spread so author and date-range filters are distinct,
+	// plus a same-CreatedAt pair (idem-z1/idem-z9) to pin the key tiebreak.
+	seed := []store.Submission{
+		{IdempotencyKey: "idem-a1", ContentHash: "hash-a1", ArticleID: "1", Slug: "alpha", Author: "ada", Scopes: []string{"section:tech", "author:ada"}, CreatedAt: base},
+		{IdempotencyKey: "idem-b1", ContentHash: "hash-b1", ArticleID: "2", Slug: "bravo", Author: "bo", Scopes: []string{"section:politics"}, CreatedAt: base.Add(1 * time.Hour)},
+		{IdempotencyKey: "idem-a2", ContentHash: "hash-a2", ArticleID: "3", Slug: "charlie", Author: "ada", Scopes: nil, CreatedAt: base.Add(2 * time.Hour)},
+		{IdempotencyKey: "idem-c1", ContentHash: "hash-c1", ArticleID: "4", Slug: "delta", Author: "cy", Scopes: []string{"topic:go", "topic:ai"}, CreatedAt: base.Add(3 * time.Hour)},
+		{IdempotencyKey: "idem-a3", ContentHash: "hash-a3", ArticleID: "5", Slug: "echo", Author: "ada", Scopes: []string{"section:economics"}, CreatedAt: base.Add(4 * time.Hour)},
+		{IdempotencyKey: "idem-z1", ContentHash: "hash-z1", ArticleID: "6", Slug: "foxtrot", Author: "di", Scopes: []string{"section:tech"}, CreatedAt: base.Add(5 * time.Hour)},
+		{IdempotencyKey: "idem-z9", ContentHash: "hash-z9", ArticleID: "7", Slug: "golf", Author: "di", Scopes: []string{"section:tech"}, CreatedAt: base.Add(5 * time.Hour)},
+	}
+	for _, s := range seed {
+		if err := log.RecordSubmission(ctx, s); err != nil {
+			t.Fatalf("seed RecordSubmission %q: %v", s.IdempotencyKey, err)
+		}
+	}
+
+	keysOf := func(subs []store.Submission) []string {
+		out := make([]string, len(subs))
+		for i, s := range subs {
+			out[i] = s.IdempotencyKey
+		}
+		return out
+	}
+	list := func(t *testing.T, f store.ListSubmissionsFilter) []store.Submission {
+		t.Helper()
+		got, err := log.ListSubmissions(ctx, f)
+		if err != nil {
+			t.Fatalf("ListSubmissions(%+v): %v", f, err)
+		}
+		return got
+	}
+
+	t.Run("Newest first with stable idempotency-key tiebreak", func(t *testing.T) {
+		// created_at DESC, then idempotency_key DESC. The +5h pair ties on time, so
+		// idem-z9 leads idem-z1 (byte order, DESC), identical on both engines.
+		want := []string{"idem-z9", "idem-z1", "idem-a3", "idem-c1", "idem-a2", "idem-b1", "idem-a1"}
+		if got := keysOf(list(t, store.ListSubmissionsFilter{})); !equalOrdered(got, want) {
+			t.Errorf("order = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Author filter is exact equality", func(t *testing.T) {
+		want := []string{"idem-a3", "idem-a2", "idem-a1"}
+		if got := keysOf(list(t, store.ListSubmissionsFilter{Author: "ada"})); !equalOrdered(got, want) {
+			t.Errorf("author=ada -> %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Date range (inclusive From, exclusive To)", func(t *testing.T) {
+		// [base+1h, base+4h): b1(+1h), a2(+2h), c1(+3h); a3(+4h) excluded (exclusive To).
+		f := store.ListSubmissionsFilter{From: base.Add(1 * time.Hour), To: base.Add(4 * time.Hour)}
+		want := []string{"idem-c1", "idem-a2", "idem-b1"}
+		if got := keysOf(list(t, f)); !equalOrdered(got, want) {
+			t.Errorf("date range -> %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Sub-second From bound truncates to a whole second on both engines", func(t *testing.T) {
+		// idem-a1 is stored at exactly base (whole second), so a From just past it
+		// (base+500ms) must still include it: the bound truncates down to base.
+		// Before truncation, Postgres bound the raw fractional instant and dropped
+		// idem-a1 while SQLite (RFC3339) kept it -- a cross-engine divergence.
+		want := []string{"idem-z9", "idem-z1", "idem-a3", "idem-c1", "idem-a2", "idem-b1", "idem-a1"}
+		if got := keysOf(list(t, store.ListSubmissionsFilter{From: base.Add(500 * time.Millisecond)})); !equalOrdered(got, want) {
+			t.Errorf("From=base+500ms -> %v, want %v (bound must truncate to whole second; idem-a1 stays)", got, want)
+		}
+	})
+
+	t.Run("Limit and Offset page newest-first", func(t *testing.T) {
+		if got := keysOf(list(t, store.ListSubmissionsFilter{Limit: 2})); !equalOrdered(got, []string{"idem-z9", "idem-z1"}) {
+			t.Errorf("page1(limit2) -> %v, want [idem-z9 idem-z1]", got)
+		}
+		if got := keysOf(list(t, store.ListSubmissionsFilter{Limit: 2, Offset: 2})); !equalOrdered(got, []string{"idem-a3", "idem-c1"}) {
+			t.Errorf("page2(limit2,offset2) -> %v, want [idem-a3 idem-c1]", got)
+		}
+		if got := keysOf(list(t, store.ListSubmissionsFilter{Offset: 5})); !equalOrdered(got, []string{"idem-b1", "idem-a1"}) {
+			t.Errorf("offset5(no limit) -> %v, want [idem-b1 idem-a1]", got)
+		}
+	})
+
+	t.Run("Every field and scopes round-trip", func(t *testing.T) {
+		got := list(t, store.ListSubmissionsFilter{Author: "cy"})
+		if len(got) != 1 {
+			t.Fatalf("author=cy returned %d, want 1", len(got))
+		}
+		assertSubmissionEqual(t, got[0], seed[3]) // idem-c1, including its two scopes
+	})
+
+	t.Run("Empty filter lists every submission", func(t *testing.T) {
+		if got := list(t, store.ListSubmissionsFilter{}); len(got) != len(seed) {
+			t.Errorf("listed %d, want %d", len(got), len(seed))
+		}
+	})
+}
+
 func assertSubmissionEqual(t *testing.T, got, want store.Submission) {
 	t.Helper()
 	if got.IdempotencyKey != want.IdempotencyKey {

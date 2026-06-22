@@ -51,3 +51,14 @@ func TestSQLiteSubmissionLog(t *testing.T) {
 
 	storetest.RunSubmissionLog(t, repo)
 }
+
+func TestSQLiteListSubmissions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "list-sub.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunListSubmissions(t, repo)
+}

@@ -25,6 +25,14 @@ var (
 	browseTmpl  = template.Must(template.New("browse").ParseFS(tmplFS, "templates/layout.tmpl", "templates/browse.tmpl", "templates/results.tmpl"))
 	detailTmpl  = template.Must(template.New("detail").ParseFS(tmplFS, "templates/layout.tmpl", "templates/detail.tmpl"))
 	resultsTmpl = template.Must(template.New("results").ParseFS(tmplFS, "templates/results.tmpl"))
+	// audit embeds its results fragment, which is also parsed standalone so the
+	// HX-Request partial renders in isolation (same split as browse/results).
+	auditTmpl        = template.Must(template.New("audit").ParseFS(tmplFS, "templates/layout.tmpl", "templates/audit.tmpl", "templates/audit_results.tmpl"))
+	auditResultsTmpl = template.Must(template.New("audit_results").ParseFS(tmplFS, "templates/audit_results.tmpl"))
+	// regenerate embeds its result fragment, also parsed standalone for the HX
+	// POST swap that updates only the result region.
+	regenerateTmpl  = template.Must(template.New("regenerate").ParseFS(tmplFS, "templates/layout.tmpl", "templates/regenerate.tmpl"))
+	regenResultTmpl = template.Must(template.New("regen_result").ParseFS(tmplFS, "templates/regenerate.tmpl"))
 )
 
 // layoutData is embedded by every full-page view so the shared layout can read
@@ -117,6 +125,65 @@ type detailView struct {
 	Meta         []kv
 	ContentHash  string
 	CreatedAt    string
+}
+
+// auditRow is one submission row in the audit-log table. Every field is a plain
+// string or string slice rendered through html/template auto-escaping; none is
+// trusted HTML.
+type auditRow struct {
+	CreatedAt      string // RFC3339 UTC
+	Author         string
+	Slug           string
+	DetailURL      string
+	ContentHash    string
+	Scopes         []string
+	IdempotencyKey string
+}
+
+// auditResultsView is the audit table plus pagination. It is rendered both inside
+// the audit page and as the standalone HX fragment. There is no Total: paging is
+// driven by an over-fetched extra row (HasNext), since SubmissionLog has no Count.
+type auditResultsView struct {
+	Rows     []auditRow
+	Shown    int
+	Page     int
+	PageSize int
+	HasPrev  bool
+	HasNext  bool
+	PrevURL  string
+	NextURL  string
+}
+
+// auditView is the full audit page: the filter controls (pre-filled) and the
+// embedded results region. NotConfigured swaps the whole body for a friendly note
+// when no SubmissionLog is wired.
+type auditView struct {
+	layoutData
+	NotConfigured bool
+	Author        string
+	From          string
+	To            string
+	Results       auditResultsView
+}
+
+// regenResultView is the summary of one regenerate run. Purge is shown in full
+// (every URL); it is never truncated.
+type regenResultView struct {
+	Written    int
+	Unchanged  int
+	Deleted    int
+	ScopeCount int
+	Purge      []string
+}
+
+// regenerateView is the regenerate page. Configured gates the button vs the
+// disabled note. Ran marks that a POST happened; Error/Result carry the outcome.
+type regenerateView struct {
+	layoutData
+	Configured bool
+	Ran        bool
+	Error      string
+	Result     *regenResultView
 }
 
 // renderTemplate executes name from t into a buffer first, so a template error

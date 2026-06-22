@@ -35,6 +35,26 @@ type Config struct {
 	SessionTTL    time.Duration    // default 12h if zero
 	SecureCookies bool             // set Secure on cookies (true in prod)
 	PageSize      int              // default 50
+
+	// Log backs the operator audit view (/admin/audit). When nil, that route
+	// returns a friendly "not configured" page instead of an error.
+	Log store.SubmissionLog
+	// Regenerate triggers a static-site rebuild from /admin/regenerate. It is an
+	// injected closure so adminweb stays decoupled from internal/generate: the
+	// binary supplies it. When nil, the route shows a disabled state and the POST
+	// returns a friendly "not configured" response (never a 500/panic).
+	Regenerate func(ctx context.Context) (RegenResult, error)
+}
+
+// RegenResult is the outcome of one Regenerate call, surfaced on the regenerate
+// page. It mirrors the generator's Result counts and purge list without importing
+// internal/generate, so the two packages stay decoupled.
+type RegenResult struct {
+	Written    int
+	Unchanged  int
+	Deleted    int
+	ScopeCount int
+	Purge      []string // every root-relative URL to invalidate; never truncated
 }
 
 // Handler serves the whole /admin surface. It is safe for concurrent use.
@@ -46,6 +66,8 @@ type Handler struct {
 	sessionTTL    time.Duration
 	secureCookies bool
 	pageSize      int
+	log           store.SubmissionLog
+	regenerate    func(ctx context.Context) (RegenResult, error)
 	mux           *http.ServeMux
 }
 
@@ -86,6 +108,8 @@ func New(cfg Config) (*Handler, error) {
 		sessionTTL:    ttl,
 		secureCookies: cfg.SecureCookies,
 		pageSize:      pageSize,
+		log:           cfg.Log,        // optional; nil disables the audit view
+		regenerate:    cfg.Regenerate, // optional; nil disables the regenerate action
 	}
 	h.routes()
 	return h, nil
@@ -106,6 +130,9 @@ func (h *Handler) routes() {
 	mux.HandleFunc("GET /admin/{$}", h.handleRoot)
 	mux.HandleFunc("GET /admin/articles", h.requireSession(h.handleArticles))
 	mux.HandleFunc("GET /admin/articles/{slug}", h.requireSession(h.handleDetail))
+	mux.HandleFunc("GET /admin/audit", h.requireSession(h.handleAudit))
+	mux.HandleFunc("GET /admin/regenerate", h.requireSession(h.handleRegenerateForm))
+	mux.HandleFunc("POST /admin/regenerate", h.requireSession(h.requireCSRF(h.handleRegenerateSubmit)))
 	mux.HandleFunc("GET /admin/assets/{file}", h.handleAsset)
 	mux.HandleFunc("GET /admin/healthz", h.handleHealthz)
 	h.mux = mux
@@ -281,6 +308,97 @@ func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    a.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	h.renderPage(w, detailTmpl, view)
+}
+
+// handleAudit renders the operator audit log: recorded submissions newest first,
+// with optional author and date-range filters and pagination. When no Log is
+// configured it returns a friendly 503 page rather than an error. Mirrors the
+// browse dual-render: an HX-Request gets only the results fragment.
+func (h *Handler) handleAudit(w http.ResponseWriter, r *http.Request) {
+	if h.log == nil {
+		view := auditView{
+			layoutData:    h.layoutFor(r, "Audit log"),
+			NotConfigured: true,
+		}
+		h.renderTemplate(w, http.StatusServiceUnavailable, auditTmpl, "layout", view)
+		return
+	}
+	ctx := r.Context()
+	sel := h.parseAuditSelection(r)
+	f := store.ListSubmissionsFilter{
+		Author: sel.Author,
+		From:   sel.FromTime,
+		To:     sel.ToTime,
+		// Over-fetch one row past the page so we can report a next page without a
+		// separate count query (SubmissionLog has no Count). buildAuditResults trims.
+		Limit:  h.pageSize + 1,
+		Offset: (sel.Page - 1) * h.pageSize,
+	}
+	subs, err := h.log.ListSubmissions(ctx, f)
+	if err != nil {
+		h.serverError(w, "list submissions", err)
+		return
+	}
+	results := h.buildAuditResults(sel, subs)
+
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderTemplate(w, http.StatusOK, auditResultsTmpl, "audit_results", results)
+		return
+	}
+	view := auditView{
+		layoutData: h.layoutFor(r, "Audit log"),
+		Author:     sel.Author,
+		From:       sel.From,
+		To:         sel.To,
+		Results:    results,
+	}
+	h.renderPage(w, auditTmpl, view)
+}
+
+// handleRegenerateForm renders the regenerate page: a POST form with the CSRF
+// token and a submit button when Regenerate is configured, or a disabled note
+// when it is nil. The action runs on POST only.
+func (h *Handler) handleRegenerateForm(w http.ResponseWriter, r *http.Request) {
+	view := regenerateView{
+		layoutData: h.layoutFor(r, "Regenerate"),
+		Configured: h.regenerate != nil,
+	}
+	h.renderPage(w, regenerateTmpl, view)
+}
+
+// handleRegenerateSubmit runs the regenerate closure (under requireSession +
+// requireCSRF) and renders the summary. A nil closure yields a friendly
+// "not configured" page rather than a 500/panic. On error it shows the error; on
+// success it shows the counts and the FULL purge URL list (never truncated).
+func (h *Handler) handleRegenerateSubmit(w http.ResponseWriter, r *http.Request) {
+	view := regenerateView{
+		layoutData: h.layoutFor(r, "Regenerate"),
+		Configured: h.regenerate != nil,
+	}
+	if h.regenerate == nil {
+		// Feature disabled: render the full page (with its disabled note) so the
+		// operator sees a clear, friendly state. Not an error.
+		h.renderPage(w, regenerateTmpl, view)
+		return
+	}
+	view.Ran = true
+	res, err := h.regenerate(r.Context())
+	if err != nil {
+		view.Error = err.Error()
+	} else {
+		view.Result = &regenResultView{
+			Written:    res.Written,
+			Unchanged:  res.Unchanged,
+			Deleted:    res.Deleted,
+			ScopeCount: res.ScopeCount,
+			Purge:      res.Purge,
+		}
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderTemplate(w, http.StatusOK, regenResultTmpl, "regen_result", view)
+		return
+	}
+	h.renderPage(w, regenerateTmpl, view)
 }
 
 // assetTypes is the allowlist of servable embedded assets and their MIME types.
@@ -547,6 +665,105 @@ func facetOptionsFor(facets []store.Facet, selected []string) []facetOption {
 		})
 	}
 	return out
+}
+
+// auditSelection is the parsed, validated audit-log filter request. Raw date
+// strings are kept to re-populate the form; the parsed times drive the store
+// filter. The date semantics match browse: 'to' is an inclusive day (the store's
+// To is the exclusive upper bound, so the whole named day is included by +24h).
+type auditSelection struct {
+	Author   string
+	From     string // raw YYYY-MM-DD echoed into the input (only set when valid)
+	To       string
+	FromTime time.Time
+	ToTime   time.Time
+	Page     int // 1-based
+}
+
+// parseAuditSelection reads the audit filter query params. Invalid dates and
+// pages are ignored gracefully (no error page; just no constraint / page 1).
+func (h *Handler) parseAuditSelection(r *http.Request) auditSelection {
+	q := r.URL.Query()
+	sel := auditSelection{
+		Author: strings.TrimSpace(q.Get("author")),
+		Page:   1,
+	}
+	if t, err := time.Parse(dateLayout, strings.TrimSpace(q.Get("from"))); err == nil {
+		sel.FromTime = t.UTC()
+		sel.From = t.UTC().Format(dateLayout)
+	}
+	if t, err := time.Parse(dateLayout, strings.TrimSpace(q.Get("to"))); err == nil {
+		sel.ToTime = t.UTC().Add(24 * time.Hour)
+		sel.To = t.UTC().Format(dateLayout)
+	}
+	if n, err := strconv.Atoi(q.Get("page")); err == nil && n > 1 {
+		sel.Page = n
+	}
+	return sel
+}
+
+// values renders the audit selection back into url.Values (without page) for
+// building shareable, filter-preserving pagination links.
+func (sel auditSelection) values() url.Values {
+	v := url.Values{}
+	if sel.Author != "" {
+		v.Set("author", sel.Author)
+	}
+	if sel.From != "" {
+		v.Set("from", sel.From)
+	}
+	if sel.To != "" {
+		v.Set("to", sel.To)
+	}
+	return v
+}
+
+func auditURL(v url.Values) string {
+	if len(v) == 0 {
+		return "/admin/audit"
+	}
+	return "/admin/audit?" + v.Encode()
+}
+
+// buildAuditResults projects the over-fetched submissions into the results view.
+// The extra row past the page (if present) only signals a next page; it is
+// trimmed off before rendering.
+func (h *Handler) buildAuditResults(sel auditSelection, subs []store.Submission) auditResultsView {
+	hasNext := len(subs) > h.pageSize
+	if hasNext {
+		subs = subs[:h.pageSize]
+	}
+	rows := make([]auditRow, 0, len(subs))
+	for _, s := range subs {
+		rows = append(rows, auditRow{
+			CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
+			Author:         s.Author,
+			Slug:           s.Slug,
+			DetailURL:      "/admin/articles/" + s.Slug,
+			ContentHash:    s.ContentHash,
+			Scopes:         s.Scopes,
+			IdempotencyKey: s.IdempotencyKey,
+		})
+	}
+	rv := auditResultsView{
+		Rows:     rows,
+		Shown:    len(rows),
+		Page:     sel.Page,
+		PageSize: h.pageSize,
+		HasPrev:  sel.Page > 1,
+		HasNext:  hasNext,
+	}
+	if rv.HasPrev {
+		v := sel.values()
+		v.Set("page", strconv.Itoa(sel.Page-1))
+		rv.PrevURL = auditURL(v)
+	}
+	if rv.HasNext {
+		v := sel.values()
+		v.Set("page", strconv.Itoa(sel.Page+1))
+		rv.NextURL = auditURL(v)
+	}
+	return rv
 }
 
 // metaRows projects an article's open-ended metadata into stable key/value rows,

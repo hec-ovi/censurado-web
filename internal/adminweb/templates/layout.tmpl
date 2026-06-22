@@ -11,10 +11,17 @@
 <body class="admin-body">
 <header class="admin-masthead">
 <a class="admin-brand" href="/admin/articles"><span class="admin-mark">Censurado</span> Admin</a>
+{{if .CSRFToken}}
+<nav class="admin-nav" aria-label="Sections">
+<a class="admin-btn admin-btn-ghost" href="/admin/articles">Browse</a>
+<a class="admin-btn admin-btn-ghost" href="/admin/audit">Audit</a>
+<a class="admin-btn admin-btn-ghost" href="/admin/regenerate">Regenerate</a>
+</nav>
 <form class="admin-logout" method="post" action="/admin/logout">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <button class="admin-btn admin-btn-ghost" type="submit">Log out</button>
 </form>
+{{end}}
 </header>
 <main class="admin-main">
 {{template "content" .}}

@@ -1,0 +1,21 @@
+# Research data (project-scoped, private by default)
+.research/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Node / deps (if any appear)
+node_modules/
+
+# Go build/module caches (kept in-tree so the dockerized toolchain can write them)
+.gocache/
+.gomodcache/
+
+# Build output and local databases
+/dist/
+/tmp/
+*.db
+*.db-wal
+*.db-shm

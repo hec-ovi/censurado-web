@@ -1,0 +1,24 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} | Censurado Admin</title>
+<meta name="csrf-token" content="{{.CSRFToken}}">
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<script src="/admin/assets/htmx.min.js" defer></script>
+</head>
+<body class="admin-body">
+<header class="admin-masthead">
+<a class="admin-brand" href="/admin/articles"><span class="admin-mark">Censurado</span> Admin</a>
+<form class="admin-logout" method="post" action="/admin/logout">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button class="admin-btn admin-btn-ghost" type="submit">Log out</button>
+</form>
+</header>
+<main class="admin-main">
+{{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

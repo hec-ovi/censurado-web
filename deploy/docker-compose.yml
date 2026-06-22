@@ -1,0 +1,163 @@
+# =============================================================================
+# Censurado self-hosting topology (Phase 6B)
+#
+# Single-writer sqlite. Three Go binaries share ONE database file on the db-data
+# volume:
+#   - publish  : the ONLY writer. Serves the authenticated write API (POST
+#                /articles + GET /healthz). Creates and writes /data/censurado.db.
+#   - admin    : a READER. The private operator console (/admin/*). It only writes
+#                the db when an operator triggers a regenerate of the static site.
+#   - generate : a READER. One-shot static site generator (run on demand).
+#
+# The database runs in WAL mode (set in the sqlite DSN), which lets the readers run
+# concurrently with the single writer. NOTE: the db-data volume is mounted READ-WRITE
+# for all three services on purpose. WAL readers must be able to create/update the
+# -wal and -shm sidecar files, so a ":ro" mount would break them. Only publish writes
+# article data; admin/generate are logical readers.
+#
+# Private by default: the publish API and the admin console are off the public
+# internet. Their host ports are bound to 127.0.0.1 only (see the port mappings), so
+# nothing is reachable from 0.0.0.0. The binaries bind 0.0.0.0 INSIDE the container
+# (set in each image CMD) so they are reachable across the compose network; the
+# 127.0.0.1 host mapping is what restricts real exposure. Reach them over an SSH
+# tunnel or a private network.
+#
+# The only public surface is the generated static site on the site-data volume.
+# It is served by an external CDN or web server (Nginx, Caddy, a CDN origin, ...)
+# that is NOT part of this compose: point that server at the site-data volume (or
+# sync it out), and keep this compose private.
+#
+# Secrets/config come from deploy/.env (see .env.example). Fixed internal paths are
+# set per-service below.
+# =============================================================================
+
+services:
+  # --- publish: the write API, the ONLY db writer ----------------------------
+  publish:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.publish
+    image: censurado-publish:dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Fixed internal paths (not secrets). The keys file is mounted read-only below.
+      CENSURADO_DB: /data/censurado.db
+      CENSURADO_PUBLISH_KEYS_FILE: /etc/censurado/keys.json
+    ports:
+      # Private: bound to localhost on the host. The container listens on 0.0.0.0:8080.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - db-data:/data
+      # Seed this as an empty JSON array FIRST (`printf '[]\n' > keys.json`) before
+      # any `compose run`: Docker creates an empty DIRECTORY here if the host file is
+      # missing, which breaks the documented first-run. Then mint entries with
+      # `docker compose run --rm publish -gen-key -author NAME` and replace the [].
+      - ./keys.json:/etc/censurado/keys.json:ro
+    read_only: true
+    # These are pure-Go HTTP servers binding ports >1024 as the distroless nonroot
+    # user: they need zero Linux capabilities. Drop the default set and forbid
+    # privilege escalation to shrink the post-compromise blast radius.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- admin: the private operator console, a db reader ----------------------
+  admin:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.admin
+    image: censurado-admin:dev
+    restart: unless-stopped
+    # depends_on so publish initializes the db-data volume (and its ownership) first.
+    depends_on:
+      - publish
+    env_file: .env
+    environment:
+      CENSURADO_DB: /data/censurado.db
+      # Out dir for the in-console "regenerate" action; writes the static site volume.
+      CENSURADO_ADMIN_OUT: /site
+      # CENSURADO_BASE_URL, CENSURADO_ADMIN_TOKEN_HASH, CENSURADO_ADMIN_SESSION_KEY,
+      # and CENSURADO_ADMIN_SECURE_COOKIES come from .env.
+    ports:
+      # Private: bound to localhost on the host. The container listens on 0.0.0.0:8081.
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - db-data:/data
+      - site-data:/site
+    read_only: true
+    # These are pure-Go HTTP servers binding ports >1024 as the distroless nonroot
+    # user: they need zero Linux capabilities. Drop the default set and forbid
+    # privilege escalation to shrink the post-compromise blast radius.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- generate: one-shot static site builder, a db reader -------------------
+  # On-demand only (profiles: build). Run a batch with:
+  #   docker compose run --rm generate
+  generate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.generate
+    image: censurado-generate:dev
+    profiles: ["build"]
+    restart: "no"
+    env_file: .env
+    environment:
+      CENSURADO_DB: /data/censurado.db
+      # CENSURADO_BASE_URL comes from .env. The image CMD passes -out /site.
+    volumes:
+      - db-data:/data
+      - site-data:/site
+    read_only: true
+    # These are pure-Go HTTP servers binding ports >1024 as the distroless nonroot
+    # user: they need zero Linux capabilities. Drop the default set and forbid
+    # privilege escalation to shrink the post-compromise blast radius.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+
+  # --- litestream backup sidecar: ADDED IN PHASE 6C --------------------------
+  # Extension point only. Phase 6C will add a litestream service that continuously
+  # replicates /data/censurado.db (the WAL) to an object store. Sketch (do NOT
+  # enable yet; needs a litestream image, config, and credentials):
+  #
+  # litestream:
+  #   image: litestream/litestream:0.3
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - publish
+  #   volumes:
+  #     - db-data:/data:ro                       # read the live db (WAL frames)
+  #     - ./litestream.yml:/etc/litestream.yml:ro
+  #     - litestream-replica:/replica            # local/staging replica target
+  #   command: ["replicate"]
+
+volumes:
+  # The single sqlite database (WAL): written by publish, read by admin/generate.
+  db-data:
+  # The generated static site: written by generate (and admin regenerate), served
+  # by an external CDN/web server outside this compose.
+  site-data:
+  # Replica target for the Phase 6C litestream sidecar (extension point above).
+  # litestream-replica:

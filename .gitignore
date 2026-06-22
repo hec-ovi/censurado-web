@@ -29,3 +29,9 @@ node_modules/
 # Compiled binaries (go build outputs at the repo root)
 /generate
 /censurado-publish
+
+# Operator secrets created in deploy/ during setup. The image build context already
+# excludes all of deploy/ via .dockerignore; these rules keep the live admin/session
+# secrets and the publish keys file out of git too. (.env.example stays tracked.)
+deploy/.env
+deploy/keys.json

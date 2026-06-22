@@ -82,7 +82,11 @@ func (s *Store) Upsert(ctx context.Context, a domain.Article) (store.UpsertResul
 		 VALUES (?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(content_hash) DO NOTHING`,
 		a.Slug, a.Title, a.Body, a.Author, a.Section,
-		a.PublishedAt.UTC().Format(timeLayout), a.ContentHash, meta, a.CreatedAt.UTC().Format(timeLayout),
+		// Whole-second resolution so both adapters return the identical instant
+		// through the Repository interface. RFC3339 already drops sub-second
+		// precision, so the Truncate is documentary here, but it keeps the
+		// whole-second contract explicit and symmetric with the Postgres adapter.
+		a.PublishedAt.UTC().Truncate(time.Second).Format(timeLayout), a.ContentHash, meta, a.CreatedAt.UTC().Truncate(time.Second).Format(timeLayout),
 	)
 	if err != nil {
 		return store.UpsertResult{}, fmt.Errorf("insert article: %w", err)
@@ -340,7 +344,11 @@ func (s *Store) RecordSubmission(ctx context.Context, sub store.Submission) erro
 		`INSERT INTO submissions (idempotency_key,content_hash,article_id,slug,author,scopes,created_at)
 		 VALUES (?,?,?,?,?,?,?)`,
 		sub.IdempotencyKey, sub.ContentHash, sub.ArticleID, sub.Slug, sub.Author,
-		strings.Join(sub.Scopes, " "), sub.CreatedAt.UTC().Format(timeLayout))
+		// Truncate to whole seconds, the shared second-granularity contract with
+		// the Postgres adapter. RFC3339 already drops sub-second precision, so
+		// this is explicit rather than load-bearing here, but it keeps both
+		// adapters visibly identical and guards against a future layout change.
+		strings.Join(sub.Scopes, " "), sub.CreatedAt.UTC().Truncate(time.Second).Format(timeLayout))
 	if err != nil {
 		return fmt.Errorf("record submission: %w", err)
 	}

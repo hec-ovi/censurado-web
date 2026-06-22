@@ -96,7 +96,11 @@ func (s *Store) Upsert(ctx context.Context, a domain.Article) (store.UpsertResul
 		 ON CONFLICT (content_hash) DO NOTHING
 		 RETURNING id`,
 		a.Slug, a.Title, a.Body, a.Author, a.Section,
-		a.PublishedAt.UTC(), a.ContentHash, meta, a.CreatedAt.UTC(),
+		// Whole-second resolution so both adapters return the identical instant
+		// through the Repository interface. TIMESTAMPTZ would otherwise keep
+		// microseconds while SQLite's RFC3339 drops them, diverging on the
+		// sub-second inputs production feeds (domain.NewArticle uses time.Now()).
+		a.PublishedAt.UTC().Truncate(time.Second), a.ContentHash, meta, a.CreatedAt.UTC().Truncate(time.Second),
 	).Scan(&id)
 
 	created := true
@@ -304,6 +308,44 @@ func loadTopics(ctx context.Context, q querier, ids []int64) (map[int64][]string
 		out[aid] = append(out[aid], topic)
 	}
 	return out, rows.Err()
+}
+
+// FindSubmission returns a prior submission for the idempotency key, or found=false.
+func (s *Store) FindSubmission(ctx context.Context, key string) (store.Submission, bool, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT idempotency_key,content_hash,article_id,slug,author,scopes,created_at FROM submissions WHERE idempotency_key = $1`, key)
+	var sub store.Submission
+	var scopes string
+	var created time.Time
+	err := row.Scan(&sub.IdempotencyKey, &sub.ContentHash, &sub.ArticleID, &sub.Slug, &sub.Author, &scopes, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Submission{}, false, nil
+	}
+	if err != nil {
+		return store.Submission{}, false, err
+	}
+	if scopes != "" {
+		sub.Scopes = strings.Split(scopes, " ")
+	}
+	sub.CreatedAt = created.UTC()
+	return sub, true, nil
+}
+
+// RecordSubmission appends a submission record (audit log + idempotency ledger).
+func (s *Store) RecordSubmission(ctx context.Context, sub store.Submission) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO submissions (idempotency_key,content_hash,article_id,slug,author,scopes,created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		sub.IdempotencyKey, sub.ContentHash, sub.ArticleID, sub.Slug, sub.Author,
+		// Truncate to whole seconds so both adapters return the identical instant
+		// through the SubmissionLog interface. The caller writes time.Now().UTC()
+		// (sub-second), and TIMESTAMPTZ would otherwise keep microseconds while
+		// SQLite's RFC3339 drops them, diverging on the exact inputs production feeds.
+		strings.Join(sub.Scopes, " "), sub.CreatedAt.UTC().Truncate(time.Second))
+	if err != nil {
+		return fmt.Errorf("record submission: %w", err)
+	}
+	return nil
 }
 
 func marshalMeta(m map[string]any) (string, error) {

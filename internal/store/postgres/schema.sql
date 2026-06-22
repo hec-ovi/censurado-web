@@ -27,3 +27,17 @@ CREATE TABLE IF NOT EXISTS article_topics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_article_topics_topic ON article_topics (topic, article_id);
+
+-- submissions is the append-only audit log and idempotency ledger for the
+-- publish path: one row per accepted publish attempt, keyed by idempotency key.
+-- scopes is a space-joined TEXT (not a TEXT[]) so the encoding is byte-identical
+-- to the SQLite adapter; created_at is TIMESTAMPTZ like articles.created_at.
+CREATE TABLE IF NOT EXISTS submissions (
+  idempotency_key TEXT PRIMARY KEY,
+  content_hash    TEXT NOT NULL,
+  article_id      TEXT NOT NULL,
+  slug            TEXT NOT NULL,
+  author          TEXT NOT NULL,
+  scopes          TEXT NOT NULL DEFAULT '',
+  created_at      TIMESTAMPTZ NOT NULL
+);

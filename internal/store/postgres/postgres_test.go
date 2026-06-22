@@ -1,12 +1,31 @@
 package postgres_test
 
 import (
+	"database/sql"
 	"os"
 	"testing"
 
 	"github.com/hec-ovi/censurado-web/internal/store/postgres"
 	"github.com/hec-ovi/censurado-web/internal/store/storetest"
 )
+
+// resetPostgres truncates every table the conformance suites touch so the tests
+// are re-runnable against a persistent Postgres. The pgx driver is registered
+// by importing the postgres package above; postgres.Open has already applied
+// the CREATE TABLE IF NOT EXISTS schema by the time callers invoke this, so the
+// tables exist. RESTART IDENTITY resets serial IDs and CASCADE clears the
+// article_topics rows that reference articles.
+func resetPostgres(t *testing.T, dsn string) {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("reset open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`TRUNCATE articles, article_topics, submissions RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("reset truncate: %v", err)
+	}
+}
 
 // TestPostgresRepository runs the shared conformance suite against a real
 // Postgres when CENSURADO_TEST_POSTGRES_DSN is set (CI and the local docker
@@ -22,6 +41,25 @@ func TestPostgresRepository(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
 
 	storetest.Run(t, repo)
+}
+
+// TestPostgresSubmissionLog runs the shared SubmissionLog conformance suite
+// against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
+// Postgres adapter records and roundtrips submissions identically to SQLite.
+func TestPostgresSubmissionLog(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunSubmissionLog(t, repo)
 }

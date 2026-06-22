@@ -35,3 +35,9 @@ node_modules/
 # secrets and the publish keys file out of git too. (.env.example stays tracked.)
 deploy/.env
 deploy/keys.json
+
+# OpenTofu / Terraform working files (the skeleton is init'd by the operator)
+deploy/tofu/.terraform/
+deploy/tofu/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*

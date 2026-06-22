@@ -277,25 +277,34 @@ internal/
     sqlite/          default adapter (modernc.org/sqlite, WAL, STRICT tables)
     postgres/        swap-proof adapter (pgx), same interface
     storetest/       the shared conformance suite run against both engines
-  publish/           the authenticated write API (auth, idempotency, audit)
+  publish/           the write API plus rate limiter, payload archive, and apply core
   generate/          the incremental static generator
     templates/       html/template files and static assets (style.css, app.js)
   adminweb/          the private admin: session auth, htmx browse/filter/audit/regenerate
+  purge/             reads the generator's purge.json, invalidates exactly those CDN URLs
 cmd/censurado/
-  generate/          the static generator command
+  publish/           the always-running write service (POST /articles, healthz, rate limit)
+  generate/          the static site generator (one-shot batch)
   admin/             the private admin server
+  purge/             the manifest-driven CDN purge tool
+  replay/            idempotent payload replay for restore recovery
+  restorecheck/      asserts a restored database matches the live one (used by the drill)
+deploy/              Dockerfiles, docker compose, litestream config, the OpenTofu skeleton
+scripts/             restore-drill.sh, the automated restore drill (also a CI job)
 web/                 the client refiner's JavaScript tests (Vitest + Testing Library + MSW)
 Makefile             dockerized build/test/vet commands
 ```
+
+Operating it (deploy, the publish-build-purge cycle, backups, restore, and replay) is in [OPERATIONS.md](OPERATIONS.md); the container quick-start is in [deploy/README.md](deploy/README.md).
 
 ## Status and roadmap
 
 Honest current state:
 
-- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; the reader-facing public site with its client refiner; and the private admin console (Go and HTMX).
-- **Planned:** media support beyond the optional hero image (responsive images and video); and the operations work (durable replication, restore drills, container and IaC packaging, manifest-driven CDN purge).
+- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; the reader-facing public site with its client refiner; the private admin console (Go and HTMX); and the operations layer (containerized services with a self-hostable compose, Litestream backups with an automated restore drill gated in CI, a manifest-driven CDN purge tool, idempotent payload replay for restore recovery, an OpenTofu skeleton for the backup bucket, and an operations runbook).
+- **Planned:** media support beyond the optional hero image (responsive images and video).
 
-Nothing is deployed yet.
+Nothing is deployed yet; [OPERATIONS.md](OPERATIONS.md) is the runbook for when it is.
 
 ## License
 

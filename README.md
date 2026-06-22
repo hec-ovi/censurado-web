@@ -74,7 +74,7 @@ The article source of truth, behind a repository interface expressed purely in d
 - **`Filter`** selects on the stable hot axes: section, author, topic, and a `[From, To)` publish-time range (inclusive lower, exclusive upper), with ordering and paging. A zero-valued field is ignored, so the empty filter matches everything.
 - **`SubmissionLog`** is a separate interface for the append-only publish ledger (`FindSubmission`, `RecordSubmission`). It is the audit log and the idempotency ledger in one record.
 - **SQLite adapter (`internal/store/sqlite`)** is the default. It uses the pure-Go `modernc.org/sqlite` driver (no cgo), opens one file in WAL mode with foreign keys and a busy timeout, and caps the pool at a single connection so one writer serializes all writes. STRICT tables reject the loose typing Postgres would also reject. The hot axes (publish date, author, section) are indexed columns; topics are normalized into a join table so `/topic/<slug>` is an indexed lookup; the metadata tail is a JSON column.
-- **Postgres adapter (`internal/store/postgres`)** satisfies the same `Repository` interface via the `pgx` stdlib driver, with a matching schema (JSONB tail, same indexes). It is not the default. It exists to prove the swap.
+- **Postgres adapter (`internal/store/postgres`)** satisfies the same `Repository` and `SubmissionLog` interfaces via the `pgx` stdlib driver, with a matching schema (JSONB tail, same indexes). It is not the default. It exists to prove the swap.
 
 Readers never call into this layer at all. They read static files.
 
@@ -163,7 +163,7 @@ The write path is layered. From `internal/publish`:
 7. **Markdown sanitization as a gate.** The body must render to sanitized HTML without error or the publish is rejected (`422`). Rendering uses goldmark *without* the raw-HTML passthrough option (so raw HTML in the source is escaped, not emitted) and then a bluemonday allowlist as defense in depth (`UGCPolicy`, no script or style or event-handler attributes, links marked `nofollow`). The same renderer runs at publish time and at generation time, so what is validated is what is served.
 8. **Append-only audit and idempotency ledger.** Each accepted submission appends one `submissions` row (idempotency key, content hash, article id, slug, author, scopes, timestamp). It is the audit log and the idempotency check in a single record.
 
-In deployment the publish API is intended to sit off the public internet (private network, VPN, mTLS, or IP-allowlisted ingress); the only public surface is the static site behind the CDN. The submissions ledger is implemented in the SQLite adapter today.
+In deployment the publish API is intended to sit off the public internet (private network, VPN, mTLS, or IP-allowlisted ingress); the only public surface is the static site behind the CDN. Both store adapters implement the submissions ledger, so it survives an engine swap.
 
 ## Getting started
 
@@ -244,7 +244,7 @@ Unknown top-level fields are rejected by both the CLI and the server.
 
 ## Testing and CI
 
-- **Backend tests exercise the real adapters.** The store conformance suite (`internal/store/storetest`) is one set of subtests run against a real SQLite database and, when a DSN is set, a real Postgres. It checks content-hash dedup, slug lookup, filtering by each axis, date ranges, ordering, and paging. Running the identical suite against both engines is the proof that the store is swappable.
+- **Backend tests exercise the real adapters.** Two conformance suites (`internal/store/storetest`) run against a real SQLite database and, when a DSN is set, a real Postgres: the `Repository` suite checks content-hash dedup, slug lookup, filtering by each axis, date ranges, ordering, and paging; the `SubmissionLog` suite checks the audit and idempotency ledger. Both adapters store timestamps at whole-second resolution, so the same write returns the identical instant on either engine. Running the identical suites against both is the proof that the store is swappable.
 - **The publish path, the renderer, the domain model, and the CLI all have their own tests** (`internal/publish`, `internal/content`, `internal/domain`, `cli`).
 - **CI** (`.github/workflows/ci.yml`) runs `go vet ./...` then `go test ./...` on push and pull request, with a Postgres 17 service container. It sets `CENSURADO_TEST_POSTGRES_DSN`, which is what makes the Postgres conformance run execute (the test skips when the variable is unset, so a local `go test ./...` stays dependency-free).
 

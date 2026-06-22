@@ -1,6 +1,10 @@
 # Research data (project-scoped, private by default)
 .research/
 
+# Internal working docs and prior research, kept local and not published
+docs/
+grok-research/
+
 # OS / editor
 .DS_Store
 *.swp

@@ -27,9 +27,7 @@ CLI driven by a SKILL.md.
   is visible to crawlers.
 - Admin: a small server-rendered Go and HTMX panel, private, reading a snapshot.
 
-The full design, including the alternatives that were rejected and why, is in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The document index is in
-[PLAN.md](PLAN.md).
+The plan and current status are in [PLAN.md](PLAN.md).
 
 ## Build and test
 
@@ -54,7 +52,6 @@ Without make, the equivalent directly:
     internal/admin/     the internal admin panel
     cli/                the publish CLI and its SKILL.md
     web/                templates and assets
-    docs/               architecture, requirements, code style
 
 ## Status
 

@@ -215,6 +215,37 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 	if !f.To.IsZero() {
 		fmt.Fprintf(&b, " AND a.published_at < %s", ab.next(f.To.UTC()))
 	}
+	// Multi-value axes (admin only). Each ANDs with the scalar fields above and
+	// ORs within itself via IN/EXISTS. Blank entries are dropped first; an
+	// all-blank slice imposes no constraint. All values are bound via $n.
+	if vals := nonBlank(f.Sections); len(vals) > 0 {
+		fmt.Fprintf(&b, " AND a.section IN (%s)", inList(ab, vals))
+	}
+	if vals := nonBlank(f.Authors); len(vals) > 0 {
+		fmt.Fprintf(&b, " AND a.author IN (%s)", inList(ab, vals))
+	}
+	if vals := nonBlank(f.Topics); len(vals) > 0 {
+		// EXISTS (not a JOIN) so an article matching several of the values is
+		// returned once; coexists with the scalar Topic JOIN above (both AND).
+		fmt.Fprintf(&b, " AND EXISTS (SELECT 1 FROM article_topics att WHERE att.article_id = a.id AND att.topic IN (%s))", inList(ab, vals))
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		// Full-text substring over title OR body. LIKE wildcards in the user value
+		// are escaped in Go (likeEscape) and the backslash is declared as the
+		// ESCAPE char, so '%'/'_' are matched literally, never as wildcards. We use
+		// lower()+LIKE (NOT ILIKE) so the case-folding is symmetric with SQLite.
+		// standard_conforming_strings is on by default (pg17), so the '\' literal
+		// in ESCAPE '\' is a single backslash, matching the bound pattern.
+		//
+		// ACCEPTED BOUNDARY: this is ASCII-case-insensitive only. Postgres's lower()
+		// is unicode-aware while SQLite's folds ASCII only, so a non-ASCII case fold
+		// (e.g. 'É' vs 'é') would DIVERGE between the engines. The contract is
+		// therefore: case-insensitive for ASCII; non-ASCII (accented) letters match
+		// case-sensitively. An exact non-ASCII substring in the same case DOES match
+		// and is safe to rely on across both engines.
+		pat := "%" + likeEscape(q) + "%"
+		fmt.Fprintf(&b, " AND (lower(a.title) LIKE lower(%s) ESCAPE '\\' OR lower(a.body) LIKE lower(%s) ESCAPE '\\')", ab.next(pat), ab.next(pat))
+	}
 	if count {
 		return b.String(), ab.args
 	}
@@ -230,6 +261,40 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 		fmt.Fprintf(&b, " OFFSET %s", ab.next(f.Offset))
 	}
 	return b.String(), ab.args
+}
+
+// nonBlank returns the entries of in that are not empty or whitespace-only,
+// preserving their original (untrimmed) value so membership matches the exact
+// stored column value, consistent with the scalar equality predicates.
+func nonBlank(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if strings.TrimSpace(v) != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// inList binds each value through the argBuilder and returns the comma-joined
+// "$n,$m,..." placeholder list for an IN clause.
+func inList(ab *argBuilder, vals []string) string {
+	ph := make([]string, len(vals))
+	for i, v := range vals {
+		ph[i] = ab.next(v)
+	}
+	return strings.Join(ph, ",")
+}
+
+// likeEscape escapes the LIKE wildcards in a user value so it is matched as a
+// literal substring under "ESCAPE '\'". The escape char is escaped first, then
+// the '%' and '_' metacharacters. Identical to the SQLite adapter's escaping so
+// the two engines bind byte-identical patterns.
+func likeEscape(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
 
 func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
@@ -252,10 +317,10 @@ func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
 
 func scanArticle(sc scanner) (domain.Article, int64, error) {
 	var (
-		id                                            int64
-		slug, title, body, author, section, hash      string
-		pub, created                                  time.Time
-		meta                                          []byte
+		id                                       int64
+		slug, title, body, author, section, hash string
+		pub, created                             time.Time
+		meta                                     []byte
 	)
 	if err := sc.Scan(&id, &slug, &title, &body, &author, &section, &pub, &hash, &meta, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

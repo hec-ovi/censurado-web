@@ -230,6 +230,196 @@ func Run(t *testing.T, repo store.Repository) {
 	})
 }
 
+// RunFilters executes the multi-value + full-text Filter conformance suite
+// against repo, which must be empty. Running the identical suite against both
+// SQLite and Postgres is what proves the widened Filter behaves identically on
+// the two engines, including the parity-critical LIKE-escaping and the ASCII
+// case-folding boundary. Subtests run sequentially and share the seeded state;
+// none of them mutate it after seeding, so order is irrelevant. It does not call
+// t.Parallel.
+func RunFilters(t *testing.T, repo store.Repository) {
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Eight articles spanning multiple sections, authors, and topics, plus
+	// Spanish-accented text and literal LIKE metacharacters ('50%', 'a_b') and a
+	// near-miss ('axb', '50 points') that a naive (unescaped) LIKE would wrongly
+	// match. Each at = base + i*24h, so newest-first order is strictly i descending.
+	seed := []domain.Article{
+		mustArticle(t, domain.PublishInput{Title: "Election night", Body: "ballots counted across the country", Author: "ada", Section: "politics", Topics: []string{"election"}}, base),
+		mustArticle(t, domain.PublishInput{Title: "Outlook report", Body: "la economía crece despacio", Author: "lin", Section: "economics", Topics: []string{"markets"}}, base.Add(24*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Gadget roundup", Body: "a fresh chip arrives", Author: "bo", Section: "tech", Topics: []string{"ai"}}, base.Add(48*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Models on the floor", Body: "traders watch the screens", Author: "ada", Section: "tech", Topics: []string{"ai", "markets"}}, base.Add(72*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Rate decision", Body: "the central bank cut rates", Author: "lin", Section: "economics", Topics: []string{"markets"}}, base.Add(96*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Sale at 50% off", Body: "queues formed early", Author: "cy", Section: "shopping", Topics: []string{"retail"}}, base.Add(120*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Naming a_b clearly", Body: "small style guide note", Author: "cy", Section: "tech", Topics: []string{"code"}}, base.Add(144*time.Hour)),
+		mustArticle(t, domain.PublishInput{Title: "Naming axb clearly", Body: "earnings rose 50 points", Author: "di", Section: "tech", Topics: []string{"code"}}, base.Add(168*time.Hour)),
+	}
+	for _, a := range seed {
+		res, err := repo.Upsert(ctx, a)
+		if err != nil {
+			t.Fatalf("seed upsert %q: %v", a.Slug, err)
+		}
+		if !res.Created {
+			t.Fatalf("seed upsert %q: Created=false, want true", a.Slug)
+		}
+	}
+	allSlugs := slugsOf(seed)
+
+	// findSlugs runs Find and returns the result slugs in result order.
+	findSlugs := func(t *testing.T, f store.Filter) []string {
+		t.Helper()
+		got, err := repo.Find(ctx, f)
+		if err != nil {
+			t.Fatalf("Find(%+v): %v", f, err)
+		}
+		return slugsOf(got)
+	}
+
+	t.Run("Sections: multi-value OR within axis, order respected", func(t *testing.T) {
+		// politics(i0) + economics(i1,i4); newest-first -> i4,i1,i0.
+		got := findSlugs(t, store.Filter{Sections: []string{"politics", "economics"}})
+		want := []string{seed[4].Slug, seed[1].Slug, seed[0].Slug}
+		if !equalOrdered(got, want) {
+			t.Errorf("Sections=[politics,economics] -> %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Authors: multi-value OR within axis (union)", func(t *testing.T) {
+		got := findSlugs(t, store.Filter{Authors: []string{"ada", "lin"}})
+		want := []string{seed[0].Slug, seed[1].Slug, seed[3].Slug, seed[4].Slug}
+		if !setEqual(got, want) {
+			t.Errorf("Authors=[ada,lin] -> %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Topics: any-of membership, article with several values appears once", func(t *testing.T) {
+		// ai -> i2,i3; markets -> i1,i3,i4. i3 has both yet must appear once.
+		got := findSlugs(t, store.Filter{Topics: []string{"ai", "markets"}})
+		want := []string{seed[1].Slug, seed[2].Slug, seed[3].Slug, seed[4].Slug}
+		if !setEqual(got, want) {
+			t.Errorf("Topics=[ai,markets] -> %v, want %v", got, want)
+		}
+		if len(got) != len(want) {
+			t.Errorf("Topics dedup failed: got %d rows %v, want %d unique", len(got), got, len(want))
+		}
+	})
+
+	t.Run("Query: ASCII case-insensitive over body", func(t *testing.T) {
+		// "bank" appears only in i4's body ("the central bank cut rates").
+		got := findSlugs(t, store.Filter{Query: "BANK"})
+		if !equalOrdered(got, []string{seed[4].Slug}) {
+			t.Errorf("Query=BANK -> %v, want [%s]", got, seed[4].Slug)
+		}
+	})
+
+	t.Run("Query: ASCII case-insensitive over title", func(t *testing.T) {
+		// "roundup" appears only in i2's title ("Gadget roundup"), no body has it.
+		got := findSlugs(t, store.Filter{Query: "ROUNDUP"})
+		if !equalOrdered(got, []string{seed[2].Slug}) {
+			t.Errorf("Query=ROUNDUP -> %v, want [%s]", got, seed[2].Slug)
+		}
+	})
+
+	t.Run("Query: '%' is escaped, not a wildcard", func(t *testing.T) {
+		// Only i5 contains the literal "50%". i7 contains "50 points": a naive
+		// (unescaped) "%50%%" pattern would match it, the escaped one must not.
+		got := findSlugs(t, store.Filter{Query: "50%"})
+		if !equalOrdered(got, []string{seed[5].Slug}) {
+			t.Errorf("Query=50%% -> %v, want only [%s] (literal, '%%' not a wildcard)", got, seed[5].Slug)
+		}
+	})
+
+	t.Run("Query: '_' is escaped, not a wildcard", func(t *testing.T) {
+		// Only i6 contains literal "a_b". i7 contains "axb": an unescaped "_" would
+		// match it (single-char wildcard), the escaped one must not.
+		got := findSlugs(t, store.Filter{Query: "a_b"})
+		if !equalOrdered(got, []string{seed[6].Slug}) {
+			t.Errorf("Query=a_b -> %v, want only [%s] ('_' not a wildcard)", got, seed[6].Slug)
+		}
+	})
+
+	t.Run("Query: exact non-ASCII substring, same case", func(t *testing.T) {
+		// Same-case accented substring is parity-safe on both engines. (We do NOT
+		// assert upper-folding like "ECONOMÍA": sqlite would not fold it.)
+		got := findSlugs(t, store.Filter{Query: "economía"})
+		if !equalOrdered(got, []string{seed[1].Slug}) {
+			t.Errorf("Query=economía -> %v, want [%s]", got, seed[1].Slug)
+		}
+	})
+
+	t.Run("Combination: Sections AND date range AND Query intersect", func(t *testing.T) {
+		// Sections{economics,tech} = {i1,i2,i3,i4,i6,i7}; [base,base+72h) = {i0,i1,i2};
+		// Query "chip" = {i2}. Intersection = {i2}.
+		f := store.Filter{
+			Sections: []string{"economics", "tech"},
+			From:     base,
+			To:       base.Add(72 * time.Hour),
+			Query:    "chip",
+		}
+		got := findSlugs(t, f)
+		if !equalOrdered(got, []string{seed[2].Slug}) {
+			t.Errorf("combination filter -> %v, want [%s]", got, seed[2].Slug)
+		}
+	})
+
+	t.Run("Scalar Section and plural Sections AND together (scalar not overridden)", func(t *testing.T) {
+		// Consistent pair narrows to the scalar: politics IN {politics,economics}.
+		got := findSlugs(t, store.Filter{Section: "politics", Sections: []string{"politics", "economics"}})
+		if !equalOrdered(got, []string{seed[0].Slug}) {
+			t.Errorf("Section=politics + Sections=[politics,economics] -> %v, want [%s]", got, seed[0].Slug)
+		}
+		// Contradictory pair yields empty, proving the scalar is still applied.
+		empty := findSlugs(t, store.Filter{Section: "tech", Sections: []string{"politics", "economics"}})
+		if len(empty) != 0 {
+			t.Errorf("Section=tech + Sections=[politics,economics] -> %v, want [] (AND)", empty)
+		}
+	})
+
+	t.Run("Empty and all-blank slices and blank Query impose no constraint", func(t *testing.T) {
+		cases := []struct {
+			name string
+			f    store.Filter
+		}{
+			{"Sections nil", store.Filter{Sections: nil}},
+			{"Sections empty", store.Filter{Sections: []string{}}},
+			{"Sections all-blank", store.Filter{Sections: []string{"", "  "}}},
+			{"Authors all-blank", store.Filter{Authors: []string{"", "\t"}}},
+			{"Topics all-blank", store.Filter{Topics: []string{"", " "}}},
+			{"Query empty", store.Filter{Query: ""}},
+			{"Query whitespace", store.Filter{Query: "   "}},
+		}
+		for _, tc := range cases {
+			got := findSlugs(t, tc.f)
+			if !setEqual(got, allSlugs) {
+				t.Errorf("%s: -> %v, want full set %v", tc.name, got, allSlugs)
+			}
+		}
+	})
+
+	t.Run("Count applies the same predicates as Find (parity)", func(t *testing.T) {
+		filters := []store.Filter{
+			{Sections: []string{"politics", "economics"}},
+			{Topics: []string{"ai", "markets"}},
+			{Query: "50%"},
+			{Authors: []string{"ada", "lin"}, Query: "the"},
+		}
+		for _, f := range filters {
+			got, err := repo.Find(ctx, f)
+			if err != nil {
+				t.Fatalf("Find(%+v): %v", f, err)
+			}
+			n, err := repo.Count(ctx, f)
+			if err != nil {
+				t.Fatalf("Count(%+v): %v", f, err)
+			}
+			if n != len(got) {
+				t.Errorf("Count(%+v) = %d, want %d (== len(Find))", f, n, len(got))
+			}
+		}
+	})
+}
+
 // assertWholeSecond verifies the article's PublishedAt and CreatedAt carry no
 // sub-second component and equal the truncated inputs, regardless of which
 // engine stored them.

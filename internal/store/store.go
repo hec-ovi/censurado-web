@@ -28,15 +28,43 @@ const (
 
 // Filter selects articles by the stable hot axes. Zero-valued fields are
 // ignored, so the empty Filter matches everything.
+//
+// Axes AND together. The scalar Section/Author/Topic fields are the stable public
+// surface the generator relies on. The plural Sections/Authors/Topics slices and
+// the Query field are an admin-only widening (Phase 5): within a single plural
+// axis the values OR (membership), and a scalar field and its plural counterpart
+// are independent constraints that AND together (the plural never overrides the
+// scalar). Blank or whitespace-only entries inside a slice are ignored, and a
+// slice of only blanks is treated as no constraint.
 type Filter struct {
+	// Scalar hot axes. The public generator uses ONLY these (plus From/To/Order/
+	// paging); they must keep their exact meaning.
 	Section string
 	Author  string
 	Topic   string
-	From    time.Time // inclusive lower bound on PublishedAt; zero = open
-	To      time.Time // exclusive upper bound on PublishedAt; zero = open
-	Order   Order
-	Limit   int // 0 = no limit
-	Offset  int
+
+	// Multi-value axes (admin only). Each is an OR-within-axis membership test:
+	//   Sections -> article.section IN (Sections)
+	//   Authors  -> article.author  IN (Authors)
+	//   Topics   -> article has AT LEAST ONE topic IN (Topics)
+	// They AND with each other and with the scalar fields above. Blank entries are
+	// ignored; an all-blank (or empty) slice imposes no constraint.
+	Sections []string
+	Authors  []string
+	Topics   []string
+
+	// Query is an admin-only full-text filter: a case-insensitive substring match
+	// over title OR body. Blank/whitespace-only imposes no constraint. The match is
+	// ASCII case-insensitive only; non-ASCII (accented) letters match
+	// case-sensitively. See the adapters' buildSelect for why (sqlite vs postgres
+	// lower() differ on unicode folding) and the exact, parity-safe contract.
+	Query string
+
+	From   time.Time // inclusive lower bound on PublishedAt; zero = open
+	To     time.Time // exclusive upper bound on PublishedAt; zero = open
+	Order  Order
+	Limit  int // 0 = no limit
+	Offset int
 }
 
 // UpsertResult reports the stored article and whether it was newly created.

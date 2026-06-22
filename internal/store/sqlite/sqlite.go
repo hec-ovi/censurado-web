@@ -209,6 +209,44 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 		b.WriteString(" AND a.published_at < ?")
 		args = append(args, f.To.UTC().Format(timeLayout))
 	}
+	// Multi-value axes (admin only). Each ANDs with the scalar fields above and
+	// ORs within itself via IN/EXISTS. Blank entries are dropped first; an
+	// all-blank slice imposes no constraint. All values are bound as parameters.
+	if vals := nonBlank(f.Sections); len(vals) > 0 {
+		b.WriteString(" AND a.section IN (" + placeholders(len(vals)) + ")")
+		for _, v := range vals {
+			args = append(args, v)
+		}
+	}
+	if vals := nonBlank(f.Authors); len(vals) > 0 {
+		b.WriteString(" AND a.author IN (" + placeholders(len(vals)) + ")")
+		for _, v := range vals {
+			args = append(args, v)
+		}
+	}
+	if vals := nonBlank(f.Topics); len(vals) > 0 {
+		// EXISTS (not a JOIN) so an article matching several of the values is
+		// returned once; coexists with the scalar Topic JOIN above (both AND).
+		b.WriteString(" AND EXISTS (SELECT 1 FROM article_topics att WHERE att.article_id = a.id AND att.topic IN (" + placeholders(len(vals)) + "))")
+		for _, v := range vals {
+			args = append(args, v)
+		}
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		// Full-text substring over title OR body. LIKE wildcards in the user value
+		// are escaped in Go (likeEscape) and the backslash is declared as the
+		// ESCAPE char, so '%'/'_' are matched literally, never as wildcards.
+		//
+		// ACCEPTED BOUNDARY: this is ASCII-case-insensitive only. SQLite's lower()
+		// folds ASCII only, while Postgres's lower() is unicode-aware, so a
+		// non-ASCII case fold (e.g. 'É' vs 'é') would DIVERGE between the engines.
+		// The contract is therefore: case-insensitive for ASCII; non-ASCII
+		// (accented) letters match case-sensitively. An exact non-ASCII substring
+		// in the same case DOES match and is safe to rely on across both engines.
+		pat := "%" + likeEscape(q) + "%"
+		b.WriteString(" AND (lower(a.title) LIKE lower(?) ESCAPE '\\' OR lower(a.body) LIKE lower(?) ESCAPE '\\')")
+		args = append(args, pat, pat)
+	}
 	if count {
 		return b.String(), args
 	}
@@ -231,6 +269,35 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 	return b.String(), args
 }
 
+// nonBlank returns the entries of in that are not empty or whitespace-only,
+// preserving their original (untrimmed) value so membership matches the exact
+// stored column value, consistent with the scalar equality predicates.
+func nonBlank(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if strings.TrimSpace(v) != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// placeholders returns "?,?,..." with n placeholders for an IN clause.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// likeEscape escapes the LIKE wildcards in a user value so it is matched as a
+// literal substring under "ESCAPE '\'". The escape char is escaped first, then
+// the '%' and '_' metacharacters. Identical to the Postgres adapter's escaping
+// so the two engines bind byte-identical patterns.
+func likeEscape(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
 func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
 	row := q.QueryRowContext(ctx,
 		`SELECT id,slug,title,body,author,section,published_at,content_hash,metadata,created_at
@@ -251,7 +318,7 @@ func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
 
 func scanArticle(sc scanner) (domain.Article, int64, error) {
 	var (
-		id                                                            int64
+		id                                                           int64
 		slug, title, body, author, section, pub, hash, meta, created string
 	)
 	if err := sc.Scan(&id, &slug, &title, &body, &author, &section, &pub, &hash, &meta, &created); err != nil {

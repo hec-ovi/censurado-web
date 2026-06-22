@@ -46,6 +46,25 @@ func TestPostgresRepository(t *testing.T) {
 	storetest.Run(t, repo)
 }
 
+// TestPostgresFilters runs the multi-value + full-text Filter conformance suite
+// against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
+// widened Filter (multi-section/author/topic membership and the LIKE-escaped,
+// ASCII-case-folded Query) behaves identically to SQLite.
+func TestPostgresFilters(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunFilters(t, repo)
+}
+
 // TestPostgresSubmissionLog runs the shared SubmissionLog conformance suite
 // against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
 // Postgres adapter records and roundtrips submissions identically to SQLite.

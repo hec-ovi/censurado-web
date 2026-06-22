@@ -19,6 +19,17 @@ func TestSQLiteRepository(t *testing.T) {
 	storetest.Run(t, repo)
 }
 
+func TestSQLiteFilters(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "filters.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunFilters(t, repo)
+}
+
 func TestSQLiteSubmissionLog(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sub.db")
 	repo, err := sqlite.Open(dbPath)

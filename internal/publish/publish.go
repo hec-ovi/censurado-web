@@ -21,6 +21,13 @@ import (
 // ScopeWrite is the scope a key must hold to publish.
 const ScopeWrite = "articles:write"
 
+// ScopePublishAny is a privileged operator scope: a key that holds it may publish
+// as ANY author, bypassing the author-binding check below. It is meant only for
+// the trusted operator console key (the human newsroom), never for agent keys.
+// Agent keys carry ScopeWrite alone and stay locked to their own persona, so a
+// leaked agent key can never impersonate another author.
+const ScopePublishAny = "articles:publish-any"
+
 // maxBody caps the request entity as a transport safeguard against abuse. It is
 // generous and is not a content limit on the article body.
 const maxBody = 8 << 20 // 8 MiB
@@ -114,8 +121,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The key determines the author: an article may only be published as the
-	// authenticated persona.
-	if strings.TrimSpace(in.Author) != id.Author {
+	// authenticated persona. The sole exception is a key holding ScopePublishAny
+	// (the operator console key), which may publish as any author. A non-empty
+	// author is still required and enforced by NewArticle inside Apply.
+	if !id.HasScope(ScopePublishAny) && strings.TrimSpace(in.Author) != id.Author {
 		writeProblem(w, problem{Status: http.StatusForbidden, Code: "author_mismatch", Detail: "author must match the authenticated key"})
 		return
 	}

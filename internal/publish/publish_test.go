@@ -18,6 +18,7 @@ import (
 const (
 	adaSecret = "ada-secret-value-1234567890"
 	roSecret  = "readonly-secret-1234567890"
+	opSecret  = "operator-secret-1234567890"
 	validBody = `{"title":"Go 1.26 ships","body":"# Hello\n\nbody text","author":"ada","section":"tech","topics":["go","release"]}`
 )
 
@@ -32,6 +33,9 @@ func newHandler(t *testing.T) (*publish.Handler, store.Repository) {
 	auth := publish.NewStaticKeyAuth()
 	auth.Add("ak_ada", publish.HashSecret(adaSecret), "ada", publish.ScopeWrite)
 	auth.Add("ak_ro", publish.HashSecret(roSecret), "ro", "articles:read")
+	// The operator console key: write + the privileged publish-any scope, bound to
+	// the "editor" persona but allowed to author as anyone.
+	auth.Add("ak_op", publish.HashSecret(opSecret), "editor", publish.ScopeWrite, publish.ScopePublishAny)
 
 	now := func() time.Time { return time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC) }
 	// *sqlite.Store satisfies both the article Repository and the SubmissionLog,
@@ -169,6 +173,63 @@ func TestPublish_CreateIdempotencyAndDedup(t *testing.T) {
 		t.Fatalf("second create status = %d, want 201", rec.Code)
 	}
 	assertCount(t, repo, 2)
+}
+
+func TestPublish_PublishAnyScopeAuthorsAsAnyPersona(t *testing.T) {
+	h, repo := newHandler(t)
+	ctx := context.Background()
+
+	// A plain write-only key (ak_ada) cannot publish as someone else: covered by
+	// TestPublish_RejectsBadRequests "author mismatch -> 403". The operator key
+	// (ak_op) holds ScopePublishAny, so the same cross-author submission succeeds
+	// and is stored under the TYPED author, not the key's bound "editor" persona.
+	opToken := "ak_op." + opSecret
+	body := `{"title":"Operator desk note","body":"# H\n\nbody text","author":"zoe","section":"world","topics":["x"]}`
+	rec := post(t, h, opToken, "op-1", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body.String())
+	}
+	_, slug := decodeCreate(t, rec)
+	got, err := repo.BySlug(ctx, slug)
+	if err != nil {
+		t.Fatalf("article not stored: %v", err)
+	}
+	if got.Author != "zoe" {
+		t.Errorf("stored author = %q, want %q (the typed author, not the key's persona)", got.Author, "zoe")
+	}
+
+	// The submission ledger records the typed author too, so operator-authored
+	// pieces remain attributable in the audit log. The sqlite store is also the
+	// SubmissionLog, so assert through that interface.
+	subs, err := repo.(store.SubmissionLog).ListSubmissions(ctx, store.ListSubmissionsFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("list submissions: %v", err)
+	}
+	if len(subs) != 1 || subs[0].Author != "zoe" {
+		t.Errorf("submission author = %+v, want one row authored by zoe", subs)
+	}
+}
+
+func TestPublish_PublishAnyStillRequiresAuthor(t *testing.T) {
+	h, repo := newHandler(t)
+	opToken := "ak_op." + opSecret
+
+	// The publish-any bypass skips the author==key check, but a non-empty author is
+	// still required (NewArticle): a blank or omitted author must 422, never create
+	// an authorless article.
+	for i, body := range []string{
+		`{"title":"x","body":"y text","author":"   ","section":"world"}`,
+		`{"title":"x","body":"y text","section":"world"}`,
+	} {
+		rec := post(t, h, opToken, "op-blank-"+string(rune('a'+i)), body)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("case %d: status = %d, want 422 (%s)", i, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "author") {
+			t.Errorf("case %d: expected an author field error, got %s", i, rec.Body.String())
+		}
+	}
+	assertCount(t, repo, 0)
 }
 
 func assertCount(t *testing.T, repo store.Repository, want int) {

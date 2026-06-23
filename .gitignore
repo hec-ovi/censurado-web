@@ -41,3 +41,8 @@ deploy/tofu/.terraform/
 deploy/tofu/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
+
+# Local agent session markers and task briefs (kept on disk, never published)
+/session
+/codexsession
+/stage_*_instructions.md

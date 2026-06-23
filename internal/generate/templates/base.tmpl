@@ -7,6 +7,8 @@
 <meta name="description" content="{{.Description}}">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="{{.Canonical}}">
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<script>try{var t=localStorage.getItem("cnz-theme");if(t&&t!=="system"){document.documentElement.dataset.theme=t}}catch(e){}</script>
 <link rel="stylesheet" href="/assets/style.css">
 <meta property="og:type" content="{{.OGType}}">
 <meta property="og:title" content="{{.Title}}">
@@ -31,20 +33,13 @@
 {{.JSONLD}}
 {{- block "headextra" .}}{{end}}
 </head>
-<body>
+<body class="site-shell">
 <a class="skip-link" href="#main">Skip to content</a>
-<header class="site-header" data-site-header>
-<p class="masthead"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
-<nav class="site-nav" data-nav="primary" aria-label="Primary">
-<a class="site-nav-link" href="/latest/" data-scope="latest">Latest</a>
-</nav>
-</header>
+{{template "site_header" .}}
 <main class="site-main" id="main">
 {{- block "content" .}}{{end}}
 </main>
-<footer class="site-footer" data-site-footer>
-<p class="site-footer-text"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
-</footer>
+{{template "site_footer" .}}
 <script type="module" src="/assets/app.js"></script>
 </body>
 </html>

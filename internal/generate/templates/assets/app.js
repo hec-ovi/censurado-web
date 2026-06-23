@@ -174,12 +174,14 @@ class Refiner {
     for (const li of items) {
       const author = li.dataset.author;
       const section = li.dataset.section;
+      const avatar = li.dataset.authorAvatar || "";
       const authorLink = li.querySelector(".author-link");
       const sectionLink = li.querySelector(".section-link");
       if (author && authorLink && !(author in this.labelMaps.author)) {
         this.labelMaps.author[author] = {
           label: authorLink.textContent.trim(),
           url: authorLink.getAttribute("href"),
+          avatar,
         };
       }
       if (section && sectionLink && !(section in this.labelMaps.section)) {
@@ -312,6 +314,11 @@ class Refiner {
     return (m && m.label) || fallback || slug;
   }
 
+  avatarFor(slug) {
+    const m = this.labelMaps.author && this.labelMaps.author[slug];
+    return (m && m.avatar) || "";
+  }
+
   onChip(chip) {
     if (chip.disabled || chip.getAttribute("aria-disabled") === "true") return;
     const type = chip.dataset.facetType;
@@ -397,16 +404,44 @@ class Refiner {
   entryToItem(e) {
     const li = el("li", { class: "article-item" });
     li.dataset.author = e.author;
+    li.dataset.authorAvatar = this.avatarFor(e.author);
     li.dataset.section = e.section;
     li.dataset.topics = (e.topics || []).join(" ");
     li.dataset.month = monthOf(e);
 
     const card = el("article", { class: "card" });
+    const media = el("div", { class: "card-media card-media-fallback", "aria-hidden": "true" });
+    const mediaLabel = el("span");
+    mediaLabel.textContent = this.labelFor("section", e.section, e.section);
+    media.appendChild(mediaLabel);
+
+    const kicker = el("div", { class: "card-kicker" });
+    const sectionLink = el("a", {
+      class: "section-link",
+      href: this.facetURL("section", e.section),
+      "data-section": "",
+    });
+    sectionLink.textContent = this.labelFor("section", e.section, e.section);
+    const time = el("time", { class: "published", datetime: e.published_at });
+    time.textContent = (e.published_at || "").slice(0, 10);
+    kicker.append(sectionLink, time);
 
     const h2 = el("h2", { class: "card-title" });
     const cardLink = el("a", { class: "card-link", href: e.url });
     cardLink.textContent = e.title;
     h2.appendChild(cardLink);
+
+    const meta = el("div", { class: "card-meta" });
+    const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
+    const avatarSrc = this.avatarFor(e.author);
+    if (avatarSrc) {
+      const img = el("img", { src: avatarSrc, alt: "", loading: "lazy", decoding: "async" });
+      avatar.appendChild(img);
+    } else {
+      const fallback = el("span");
+      fallback.textContent = initialFor(this.labelFor("author", e.author, e.author_label));
+      avatar.appendChild(fallback);
+    }
 
     const byline = el("p", { class: "byline" });
     byline.append("By ");
@@ -416,19 +451,10 @@ class Refiner {
       "data-author": "",
     });
     authorLink.textContent = this.labelFor("author", e.author, e.author_label);
-    byline.append(authorLink, " in ");
-    const sectionLink = el("a", {
-      class: "section-link",
-      href: this.facetURL("section", e.section),
-      "data-section": "",
-    });
-    sectionLink.textContent = this.labelFor("section", e.section, e.section);
-    byline.appendChild(sectionLink);
+    byline.appendChild(authorLink);
+    meta.append(avatar, byline);
 
-    const time = el("time", { class: "published", datetime: e.published_at });
-    time.textContent = (e.published_at || "").slice(0, 10);
-
-    card.append(h2, byline, time);
+    card.append(media, kicker, h2, meta);
 
     if (e.topics && e.topics.length) {
       const ul = el("ul", { class: "topics", "data-topics": "" });
@@ -519,6 +545,43 @@ class Refiner {
   }
 }
 
+function initialFor(label) {
+  const s = (label || "").trim();
+  return s ? Array.from(s)[0].toUpperCase() : "?";
+}
+
+function initTheme(root = document) {
+  const controls = root.querySelectorAll("[data-theme-choice]");
+  if (!controls.length) return;
+
+  const stored = (() => {
+    try {
+      return localStorage.getItem("cnz-theme") || "system";
+    } catch {
+      return "system";
+    }
+  })();
+
+  const apply = (choice) => {
+    const mode = choice === "light" || choice === "dark" ? choice : "system";
+    if (mode === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.dataset.theme = mode;
+    for (const control of controls) {
+      control.setAttribute("aria-pressed", String(control.dataset.themeChoice === mode));
+    }
+    try {
+      localStorage.setItem("cnz-theme", mode);
+    } catch {
+      /* storage unavailable: the current page still updates */
+    }
+  };
+
+  for (const control of controls) {
+    control.addEventListener("click", () => apply(control.dataset.themeChoice));
+  }
+  apply(stored);
+}
+
 // initRefine enhances one listing root. Returns the controller, or null on an
 // article page / non-listing fragment / unrecoverable manifest failure.
 export async function initRefine(root = document) {
@@ -534,6 +597,7 @@ export async function initRefine(root = document) {
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
+    initTheme(document);
     initRefine(document);
   };
   if (document.readyState !== "loading") boot();

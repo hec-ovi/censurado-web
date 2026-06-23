@@ -6,26 +6,34 @@
 {{- end}}{{end}}
 {{- end}}
 {{define "content"}}
+<header class="listing-hero">
+<p class="eyebrow">Front Page</p>
 <h1 class="listing-heading">{{.Heading}}</h1>
-<section class="facet-controls" data-facets aria-label="Refine">
+<p class="listing-summary">{{.Description}}</p>
+</header>
+<section class="portal-front" data-facets aria-label="Front page">
 <ol class="article-list" data-articles>
 {{- range .Items}}
-<li class="article-item" data-author="{{.AuthorSlug}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
-<article class="card">
-<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
-<p class="byline">By <a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a> in <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
-<time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
-{{- if .Topics}}
-<ul class="topics" data-topics>
-{{- range .Topics}}
-<li><a class="topic-link" href="{{.URL}}">{{.Label}}</a></li>
-{{- end}}
-</ul>
-{{- end}}
-</article>
+<li class="article-item" data-author="{{.AuthorSlug}}" data-author-avatar="{{.AuthorAvatar}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
+{{template "article_card" .}}
 </li>
 {{- end}}
 </ol>
+{{- if .Rail}}
+<aside class="ranked-rail" aria-label="Most read">
+<h2 class="rail-heading">Most Read</h2>
+<ol class="ranked-list">
+{{- range .Rail}}
+<li class="ranked-item">
+<div class="ranked-link">
+<span class="ranked-section">{{.Section}}</span>
+<strong>{{.Title}}</strong>
+</div>
+</li>
+{{- end}}
+</ol>
+</aside>
+{{- end}}
 {{- if gt (len .Pager.Pages) 1}}
 <nav class="pager" data-pager aria-label="Pages">
 {{- range .Pager.Pages}}

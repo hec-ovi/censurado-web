@@ -1,0 +1,37 @@
+{{define "site_header"}}
+<header class="site-header" data-site-header>
+<div class="header-topline">
+<a class="menu-word" href="/latest/">Menu</a>
+<a class="latest-word" href="/latest/">Latest</a>
+<div class="theme-switcher" role="group" aria-label="Theme">
+<button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+<button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+<button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+</div>
+</div>
+<p class="masthead"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
+<nav class="site-nav" data-nav="primary" aria-label="Primary">
+{{- range .NavLinks}}
+<a class="site-nav-link" href="{{.URL}}">{{.Label}}</a>
+{{- else}}
+<a class="site-nav-link" href="/latest/">Latest</a>
+{{- end}}
+</nav>
+</header>
+{{end}}
+
+{{define "site_footer"}}
+<footer class="site-footer" data-site-footer>
+<div class="footer-brand">
+<p class="footer-name"><a href="/" rel="home">{{.SiteName}}</a></p>
+<p class="site-footer-deck">Independent dispatches across technology, power, markets, and policy.</p>
+</div>
+<nav class="footer-links" aria-label="Footer">
+{{- range .NavLinks}}
+<a href="{{.URL}}">{{.Label}}</a>
+{{- else}}
+<a href="/latest/">Latest</a>
+{{- end}}
+</nav>
+</footer>
+{{end}}

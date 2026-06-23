@@ -7,21 +7,23 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hec-ovi/censurado-web/internal/domain"
 )
 
-//go:embed templates/*.tmpl
+//go:embed templates/*.tmpl templates/components/*.tmpl
 var templateFS embed.FS
 
-// assetFS holds the CSS/JS source emitted at stable /assets/ URLs. The bytes are
+// assetFS holds the public frontend assets emitted at stable /assets/ URLs. The bytes are
 // placeholders for now; a later workflow ships the real redaction-brutalist
 // styles and the client-side Tier-B refiner.
 //
-//go:embed templates/assets/style.css templates/assets/app.js
+//go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg
 var assetFS embed.FS
 
 var templateFuncs = template.FuncMap{
@@ -33,8 +35,8 @@ var templateFuncs = template.FuncMap{
 // defines "content". A single combined set is impossible because listing.tmpl and
 // article.tmpl both define "content" (and listing.tmpl also defines "headextra").
 var (
-	listingTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl"))
-	articleTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl"))
+	listingTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
+	articleTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
 )
 
 // headData is the shared <head> model: the SEO/social meta plus the per-scope
@@ -53,6 +55,7 @@ type headData struct {
 	TwitterCard string        // "summary" or "summary_large_image"
 	JSONLD      template.HTML // pre-rendered <script type=application/ld+json>
 	ManifestURL string        // listing pages only; "" on articles
+	NavLinks    []navLink     // page-local portal menu links; stable on sealed pages
 }
 
 type pageView struct {
@@ -63,24 +66,28 @@ type pageView struct {
 	FeedLinks []feedLink
 	Heading   string
 	Items     []itemView
+	Rail      []itemView
 	Pager     pagerView
 	Months    []monthLink
 	Manifest  template.HTML
 }
 
 type itemView struct {
-	Title       string
-	URL         string
-	AuthorLabel string
-	AuthorURL   string
-	AuthorSlug  string // slug form, matching shard/server membership (data-author)
-	Section     string
-	SectionURL  string
-	SectionSlug string // slug form (data-section)
-	Topics      []topicLink
-	TopicsAttr  string // space-joined topic slugs (data-topics)
-	MonthSlug   string // YYYY-MM publication month (data-month)
-	PublishedAt time.Time
+	Title         string
+	URL           string
+	AuthorLabel   string
+	AuthorURL     string
+	AuthorSlug    string // slug form, matching shard/server membership (data-author)
+	AuthorInitial string
+	AuthorAvatar  string
+	Section       string
+	SectionURL    string
+	SectionSlug   string // slug form (data-section)
+	Topics        []topicLink
+	TopicsAttr    string // space-joined topic slugs (data-topics)
+	MonthSlug     string // YYYY-MM publication month (data-month)
+	PublishedAt   time.Time
+	Thumb         mediaView
 }
 
 type topicLink struct{ Label, URL string }
@@ -97,18 +104,30 @@ type pageLink struct {
 	URL string
 }
 type feedLink struct{ Rel, Type, Href, Title string }
+type navLink struct{ Label, URL string }
 
 type articleView struct {
 	headData
-	AuthorLabel string
-	AuthorURL   string
-	Section     string
-	SectionURL  string
-	Topics      []topicLink
-	PublishedAt time.Time
-	BodyHTML    template.HTML
-	HeroImage   string // optional hero <img> src; "" when no metadata.image
-	HeroAlt     string // hero alt text
+	AuthorLabel   string
+	AuthorURL     string
+	AuthorInitial string
+	AuthorAvatar  string
+	Section       string
+	SectionURL    string
+	Topics        []topicLink
+	PublishedAt   time.Time
+	BodyHTML      template.HTML
+	Media         mediaView // optional lead media: image, video, or YouTube
+	HeroImage     string    // compatibility alias for optional hero <img> src
+	HeroAlt       string    // compatibility alias for optional hero alt text
+}
+
+type mediaView struct {
+	Kind   string // "image", "video", "youtube", or ""
+	Src    string
+	Alt    string
+	Title  string
+	Poster string
 }
 
 // renderListing renders one Tier-A listing page.
@@ -144,6 +163,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			JSONLD:      ld,
 			// Pure function of the scope, so it is byte-stable on sealed pages.
 			ManifestURL: manifestURL(sc.ShardKey()),
+			NavLinks:    navLinksForArticles(pg.Articles),
 		},
 		IsLanding: pg.Landing,
 		Heading:   heading,
@@ -156,6 +176,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 	for _, a := range pg.Articles {
 		view.Items = append(view.Items, itemViewOf(a))
 	}
+	view.Rail = railItems(view.Items, 5)
 	if pg.Landing {
 		view.Manifest = manifest
 		view.Pager = pagerFor(env.plan.Index, sc, env.pageSize, pg.Number)
@@ -180,14 +201,11 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 	canonical := absolute(env.siteBase, articleURL(a))
 	bodyHTML := env.bodyHTML[a.ContentHash]
 
-	heroSrc, ogImage := "", ""
-	if img, ok := metadataString(a.Metadata, "image"); ok {
-		heroSrc = img
-		ogImage = resolveURL(env.siteBase, img)
-	}
+	media := mediaForArticle(env.siteBase, a)
+	ogImage := media.ogImage
 	ogVideo := ""
-	if vid, ok := metadataString(a.Metadata, "video"); ok {
-		ogVideo = resolveURL(env.siteBase, vid)
+	if media.ogVideo != "" {
+		ogVideo = media.ogVideo
 	}
 	twitterCard := "summary"
 	if ogImage != "" {
@@ -210,16 +228,22 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			OGVideo:     ogVideo,
 			TwitterCard: twitterCard,
 			JSONLD:      ld,
+			NavLinks:    navLinksForArticle(a),
 		},
-		AuthorLabel: a.Author,
-		AuthorURL:   facetURL("author", a.Author),
-		Section:     a.Section,
-		SectionURL:  facetURL("section", a.Section),
-		Topics:      topicLinksOf(a),
-		PublishedAt: a.PublishedAt,
-		BodyHTML:    template.HTML(bodyHTML),
-		HeroImage:   heroSrc,
-		HeroAlt:     a.Title,
+		AuthorLabel:   a.Author,
+		AuthorURL:     facetURL("author", a.Author),
+		AuthorInitial: authorInitial(a.Author),
+		AuthorAvatar:  metadataMediaSrc(env.siteBase, a.Metadata, "author_avatar", "avatar"),
+		Section:       a.Section,
+		SectionURL:    facetURL("section", a.Section),
+		Topics:        topicLinksOf(a),
+		PublishedAt:   a.PublishedAt,
+		BodyHTML:      template.HTML(bodyHTML),
+		Media:         media.view,
+	}
+	if media.view.Kind == "image" {
+		view.HeroImage = media.view.Src
+		view.HeroAlt = media.view.Alt
 	}
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
@@ -233,19 +257,85 @@ func itemViewOf(a domain.Article) itemView {
 	// client refiner's membership matches the server-rendered shards exactly.
 	se := ShardEntryOf(a)
 	return itemView{
-		Title:       a.Title,
-		URL:         articleURL(a),
-		AuthorLabel: a.Author,
-		AuthorURL:   facetURL("author", a.Author),
-		AuthorSlug:  se.Author,
-		Section:     a.Section,
-		SectionURL:  facetURL("section", a.Section),
-		SectionSlug: se.Section,
-		Topics:      topicLinksOf(a),
-		TopicsAttr:  strings.Join(se.Topics, " "),
-		MonthSlug:   monthKey(a.PublishedAt.Year(), int(a.PublishedAt.Month())),
-		PublishedAt: a.PublishedAt,
+		Title:         a.Title,
+		URL:           articleURL(a),
+		AuthorLabel:   a.Author,
+		AuthorURL:     facetURL("author", a.Author),
+		AuthorSlug:    se.Author,
+		AuthorInitial: authorInitial(a.Author),
+		AuthorAvatar:  metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
+		Section:       a.Section,
+		SectionURL:    facetURL("section", a.Section),
+		SectionSlug:   se.Section,
+		Topics:        topicLinksOf(a),
+		TopicsAttr:    strings.Join(se.Topics, " "),
+		MonthSlug:     monthKey(a.PublishedAt.Year(), int(a.PublishedAt.Month())),
+		PublishedAt:   a.PublishedAt,
+		Thumb:         thumbForArticle(a),
 	}
+}
+
+func navLinksForArticles(arts []domain.Article) []navLink {
+	links := []navLink{{Label: "Latest", URL: "/latest/"}}
+	seen := map[string]struct{}{"/latest/": {}}
+	for _, a := range arts {
+		if len(links) >= 7 {
+			break
+		}
+		if _, ok := facetSlug(a.Section); ok {
+			addNavLink(&links, seen, a.Section, facetURL("section", a.Section))
+		}
+	}
+	for _, a := range arts {
+		if len(links) >= 7 {
+			break
+		}
+		for _, topic := range a.Topics {
+			if len(links) >= 7 {
+				break
+			}
+			if _, ok := facetSlug(topic); ok {
+				addNavLink(&links, seen, topic, facetURL("topic", topic))
+			}
+		}
+	}
+	return links
+}
+
+func navLinksForArticle(a domain.Article) []navLink {
+	return navLinksForArticles([]domain.Article{a})
+}
+
+func addNavLink(links *[]navLink, seen map[string]struct{}, label, href string) {
+	if href == "" {
+		return
+	}
+	if _, ok := seen[href]; ok {
+		return
+	}
+	seen[href] = struct{}{}
+	*links = append(*links, navLink{Label: label, URL: href})
+}
+
+func railItems(items []itemView, n int) []itemView {
+	if n > len(items) {
+		n = len(items)
+	}
+	out := make([]itemView, n)
+	copy(out, items[:n])
+	return out
+}
+
+func thumbForArticle(a domain.Article) mediaView {
+	src := metadataMediaSrc("", a.Metadata, "image")
+	if src == "" {
+		return mediaView{}
+	}
+	alt := firstMetadataString(a.Metadata, "image_alt", "alt")
+	if alt == "" {
+		alt = a.Title
+	}
+	return mediaView{Kind: "image", Src: src, Alt: alt}
 }
 
 // metaDescriptionMax bounds the SEO excerpt at ~160 runes. This is the only
@@ -321,13 +411,139 @@ func metadataString(m map[string]any, key string) (string, bool) {
 	return s, true
 }
 
-// resolveURL makes a root-relative metadata URL absolute against BaseURL; an
-// already-absolute URL is returned unchanged.
-func resolveURL(base, u string) string {
-	if strings.HasPrefix(u, "/") {
-		return base + u
+type articleMedia struct {
+	view    mediaView
+	ogImage string
+	ogVideo string
+}
+
+func mediaForArticle(base string, a domain.Article) articleMedia {
+	imgSrc, imgAbs := metadataMediaURL(base, a.Metadata, "image")
+	imgAlt := firstMetadataString(a.Metadata, "image_alt", "alt")
+	if imgAlt == "" {
+		imgAlt = a.Title
 	}
-	return u
+
+	if yt, ok := metadataString(a.Metadata, "youtube"); ok {
+		if embed := youtubeEmbedURL(yt); embed != "" {
+			return articleMedia{
+				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
+				ogImage: imgAbs,
+				ogVideo: embed,
+			}
+		}
+	}
+	if yt, ok := metadataString(a.Metadata, "youtube_id"); ok {
+		if embed := youtubeEmbedURL(yt); embed != "" {
+			return articleMedia{
+				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
+				ogImage: imgAbs,
+				ogVideo: embed,
+			}
+		}
+	}
+	if vidSrc, vidAbs := metadataMediaURL(base, a.Metadata, "video"); vidSrc != "" {
+		return articleMedia{
+			view:    mediaView{Kind: "video", Src: vidSrc, Title: "Video: " + a.Title, Poster: imgSrc},
+			ogImage: imgAbs,
+			ogVideo: vidAbs,
+		}
+	}
+	if imgSrc != "" {
+		return articleMedia{
+			view:    mediaView{Kind: "image", Src: imgSrc, Alt: imgAlt},
+			ogImage: imgAbs,
+		}
+	}
+	return articleMedia{}
+}
+
+func metadataMediaSrc(base string, m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		src, _ := metadataMediaURL(base, m, key)
+		if src != "" {
+			return src
+		}
+	}
+	return ""
+}
+
+func metadataMediaURL(base string, m map[string]any, key string) (src, absoluteURL string) {
+	raw, ok := metadataString(m, key)
+	if !ok {
+		return "", ""
+	}
+	return safeMediaURL(base, raw)
+}
+
+func firstMetadataString(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if s, ok := metadataString(m, key); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func safeMediaURL(base, raw string) (src, absoluteURL string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		if strings.TrimSpace(base) == "" {
+			return raw, raw
+		}
+		return raw, strings.TrimRight(base, "/") + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() {
+		return "", ""
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", ""
+	}
+	return raw, raw
+}
+
+var youtubeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{6,32}$`)
+
+func youtubeEmbedURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if youtubeIDRe.MatchString(raw) {
+		return "https://www.youtube-nocookie.com/embed/" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	var id string
+	switch host {
+	case "youtu.be":
+		id = strings.Trim(strings.Split(strings.Trim(u.Path, "/"), "/")[0], " ")
+	case "youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com":
+		switch {
+		case u.Query().Get("v") != "":
+			id = u.Query().Get("v")
+		case strings.HasPrefix(u.Path, "/embed/"):
+			id = strings.TrimPrefix(u.Path, "/embed/")
+		case strings.HasPrefix(u.Path, "/shorts/"):
+			id = strings.TrimPrefix(u.Path, "/shorts/")
+		}
+	}
+	id = strings.Split(strings.Trim(id, "/"), "/")[0]
+	if !youtubeIDRe.MatchString(id) {
+		return ""
+	}
+	return "https://www.youtube-nocookie.com/embed/" + id
+}
+
+func authorInitial(name string) string {
+	for _, r := range strings.TrimSpace(name) {
+		return strings.ToUpper(string(unicode.ToUpper(r)))
+	}
+	return "?"
 }
 
 type ldPerson struct {

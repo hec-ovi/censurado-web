@@ -1,0 +1,37 @@
+{{define "author_avatar"}}
+<span class="author-avatar" aria-hidden="true">{{if .AuthorAvatar}}<img src="{{.AuthorAvatar}}" alt="" loading="lazy" decoding="async">{{else}}<span>{{.AuthorInitial}}</span>{{end}}</span>
+{{end}}
+
+{{define "topic_list"}}
+{{- if .}}
+<ul class="topics" data-topics>
+{{- range .}}
+<li><a class="topic-link" href="{{.URL}}">{{.Label}}</a></li>
+{{- end}}
+</ul>
+{{- end}}
+{{end}}
+
+{{define "article_card"}}
+<article class="card">
+{{- if eq .Thumb.Kind "image"}}
+<figure class="card-media">
+<img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
+</figure>
+{{- else}}
+<div class="card-media card-media-fallback" aria-hidden="true">
+<span>{{.Section}}</span>
+</div>
+{{- end}}
+<div class="card-kicker">
+<a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a>
+<time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+</div>
+<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
+<div class="card-meta">
+{{template "author_avatar" .}}
+<p class="byline">By <a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
+</div>
+{{template "topic_list" .Topics}}
+</article>
+{{end}}

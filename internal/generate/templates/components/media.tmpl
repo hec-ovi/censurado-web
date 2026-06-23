@@ -1,0 +1,15 @@
+{{define "lead_media"}}
+{{- if .Media.Kind}}
+<figure class="hero">
+{{- if eq .Media.Kind "image"}}
+<img class="hero-img" src="{{.Media.Src}}" alt="{{.Media.Alt}}" loading="eager" decoding="async">
+{{- else if eq .Media.Kind "video"}}
+<video class="hero-video" src="{{.Media.Src}}"{{if .Media.Poster}} poster="{{.Media.Poster}}"{{end}} controls preload="metadata"></video>
+{{- else if eq .Media.Kind "youtube"}}
+<div class="embed-shell">
+<iframe class="hero-embed" src="{{.Media.Src}}" title="{{.Media.Title}}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+</div>
+{{- end}}
+</figure>
+{{- end}}
+{{end}}

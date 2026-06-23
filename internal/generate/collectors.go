@@ -279,6 +279,7 @@ func (assetCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactS
 	for _, a := range []struct{ src, path, url string }{
 		{"templates/assets/style.css", "assets/style.css", "/assets/style.css"},
 		{"templates/assets/app.js", "assets/app.js", "/assets/app.js"},
+		{"templates/assets/favicon.svg", "assets/favicon.svg", "/assets/favicon.svg"},
 	} {
 		b, err := assetFS.ReadFile(a.src)
 		if err != nil {

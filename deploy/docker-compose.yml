@@ -85,8 +85,13 @@ services:
       CENSURADO_DB: /data/censurado.db
       # Out dir for the in-console "regenerate" action; writes the static site volume.
       CENSURADO_ADMIN_OUT: /site
+      # The manual "New article" form POSTs to the publish service over the compose
+      # network, so the admin stays a NON-WRITER of the db (publish remains the only
+      # writer). The operator token (CENSURADO_ADMIN_PUBLISH_TOKEN) comes from .env;
+      # leave it blank there to disable the create form.
+      CENSURADO_ADMIN_PUBLISH_URL: http://publish:8080
       # CENSURADO_BASE_URL, CENSURADO_ADMIN_TOKEN_HASH, CENSURADO_ADMIN_SESSION_KEY,
-      # and CENSURADO_ADMIN_SECURE_COOKIES come from .env.
+      # CENSURADO_ADMIN_SECURE_COOKIES, and CENSURADO_ADMIN_PUBLISH_TOKEN come from .env.
     ports:
       # Private: bound to localhost on the host. The container listens on 0.0.0.0:8081.
       - "127.0.0.1:8081:8081"

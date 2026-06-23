@@ -10,6 +10,7 @@ package adminweb
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -44,6 +45,58 @@ type Config struct {
 	// binary supplies it. When nil, the route shows a disabled state and the POST
 	// returns a friendly "not configured" response (never a 500/panic).
 	Regenerate func(ctx context.Context) (RegenResult, error)
+
+	// Publish creates one article from /admin/create. It is an injected closure so
+	// the admin stays a NON-WRITER of the database: the closure POSTs to the
+	// publish service (the single writer) exactly as an author agent would, instead
+	// of opening the store for writing. This keeps the single-writer invariant
+	// intact and dogfoods the real write boundary. The binary supplies it from an
+	// operator publish key. When nil, the create route shows a disabled state and
+	// the POST returns a friendly "not configured" response (never a 500/panic).
+	Publish func(ctx context.Context, in CreateArticleInput) (CreateArticleResult, error)
+}
+
+// CreateArticleInput is one operator-entered article handed to the Publish
+// closure. It mirrors the publish contract's input fields; the closure marshals
+// it to the write API. PublishedAt is nil when the operator left it blank (the
+// server then stamps the receipt time); Metadata is nil when none was given.
+type CreateArticleInput struct {
+	Title       string
+	Body        string
+	Author      string
+	Section     string
+	Topics      []string
+	PublishedAt *time.Time
+	Metadata    map[string]any
+}
+
+// CreateArticleResult is the outcome of a successful create. Created is true for a
+// brand-new article (HTTP 201) and false when the write API deduplicated or
+// idempotently replayed an identical one (HTTP 200).
+type CreateArticleResult struct {
+	ID      string
+	Slug    string
+	Created bool
+}
+
+// CreateValidationError is returned by the Publish closure when the write API
+// rejects the article with field-level problems (HTTP 422/400). The handler
+// renders Fields inline against each input without losing the operator's typed
+// values, so it is recoverable user error rather than a server fault. Any other
+// error from the closure (auth, network, 5xx) is treated as a server-side problem.
+type CreateValidationError struct {
+	Message string
+	Fields  map[string]string
+}
+
+func (e *CreateValidationError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "validation failed"
 }
 
 // RegenResult is the outcome of one Regenerate call, surfaced on the regenerate
@@ -68,6 +121,7 @@ type Handler struct {
 	pageSize      int
 	log           store.SubmissionLog
 	regenerate    func(ctx context.Context) (RegenResult, error)
+	publish       func(ctx context.Context, in CreateArticleInput) (CreateArticleResult, error)
 	mux           *http.ServeMux
 }
 
@@ -110,6 +164,7 @@ func New(cfg Config) (*Handler, error) {
 		pageSize:      pageSize,
 		log:           cfg.Log,        // optional; nil disables the audit view
 		regenerate:    cfg.Regenerate, // optional; nil disables the regenerate action
+		publish:       cfg.Publish,    // optional; nil disables the create action
 	}
 	h.routes()
 	return h, nil
@@ -128,6 +183,8 @@ func (h *Handler) routes() {
 	mux.HandleFunc("POST /admin/login", h.handleLoginSubmit)
 	mux.HandleFunc("POST /admin/logout", h.requireSession(h.requireCSRF(h.handleLogout)))
 	mux.HandleFunc("GET /admin/{$}", h.handleRoot)
+	mux.HandleFunc("GET /admin/create", h.requireSession(h.handleCreateForm))
+	mux.HandleFunc("POST /admin/create", h.requireSession(h.requireCSRF(h.handleCreateSubmit)))
 	mux.HandleFunc("GET /admin/articles", h.requireSession(h.handleArticles))
 	mux.HandleFunc("GET /admin/articles/{slug}", h.requireSession(h.handleDetail))
 	mux.HandleFunc("GET /admin/audit", h.requireSession(h.handleAudit))
@@ -399,6 +456,207 @@ func (h *Handler) handleRegenerateSubmit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.renderPage(w, regenerateTmpl, view)
+}
+
+// handleCreateForm renders the manual "new article" form. The form posts to the
+// publish service (the single db writer); the admin never writes the store. When
+// no Publish closure is wired the page shows a friendly disabled note instead.
+func (h *Handler) handleCreateForm(w http.ResponseWriter, r *http.Request) {
+	h.renderPage(w, createTmpl, h.newCreateView(r.Context(), r))
+}
+
+// handleCreateSubmit validates the operator's input, calls the Publish closure
+// (which POSTs to the write API), and re-renders the page with the result. Field
+// errors (admin-side parse failures or the write API's 422) are shown inline
+// while preserving every typed value, so nothing is retyped on a fix. A nil
+// closure yields the friendly "not configured" page rather than a 500/panic.
+func (h *Handler) handleCreateSubmit(w http.ResponseWriter, r *http.Request) {
+	view := h.newCreateView(r.Context(), r)
+	if h.publish == nil {
+		h.renderPage(w, createTmpl, view)
+		return
+	}
+	view.Ran = true
+
+	// requireCSRF already parsed the form. Body is preserved verbatim (markdown
+	// whitespace matters); only validation trims it.
+	form := createForm{
+		Title:       r.PostFormValue("title"),
+		Body:        r.PostFormValue("body"),
+		Author:      r.PostFormValue("author"),
+		Section:     r.PostFormValue("section"),
+		Topics:      r.PostFormValue("topics"),
+		PublishedAt: r.PostFormValue("published_at"),
+		Metadata:    r.PostFormValue("metadata"),
+	}
+	view.Form = form
+
+	in, fields := buildCreateInput(form)
+	if len(fields) > 0 {
+		view.Fields = fields
+		h.renderTemplate(w, http.StatusUnprocessableEntity, createTmpl, "layout", view)
+		return
+	}
+
+	res, err := h.publish(r.Context(), in)
+	if err != nil {
+		var ve *CreateValidationError
+		if errors.As(err, &ve) {
+			view.Fields = ve.Fields
+			// A field-less validation error still needs a visible message.
+			if len(ve.Fields) == 0 {
+				view.Error = ve.Error()
+			}
+			h.renderTemplate(w, http.StatusUnprocessableEntity, createTmpl, "layout", view)
+			return
+		}
+		// Auth / network / 5xx: a server-side problem, not the operator's input.
+		view.Error = err.Error()
+		h.renderTemplate(w, http.StatusBadGateway, createTmpl, "layout", view)
+		return
+	}
+
+	view.Result = &createResultView{
+		ID:        res.ID,
+		Slug:      res.Slug,
+		Created:   res.Created,
+		DetailURL: "/admin/articles/" + res.Slug,
+	}
+	// Clear the form on success so the next entry starts blank.
+	view.Form = createForm{}
+	h.renderPage(w, createTmpl, view)
+}
+
+// newCreateView seeds the create view with the layout, the configured flag, and
+// datalist suggestions (existing sections/authors/topics) for typeahead. The
+// suggestions are a convenience: a Facets error degrades to no suggestions rather
+// than failing the form.
+func (h *Handler) newCreateView(ctx context.Context, r *http.Request) createView {
+	view := createView{
+		layoutData: h.layoutFor(r, "New article"),
+		Configured: h.publish != nil,
+	}
+	if facets, err := h.repo.Facets(ctx); err == nil {
+		view.Sections = facetValues(facets.Sections)
+		view.Authors = facetValues(facets.Authors)
+		view.Topics = facetValues(facets.Topics)
+	}
+	return view
+}
+
+func facetValues(fs []store.Facet) []string {
+	out := make([]string, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, f.Value)
+	}
+	return out
+}
+
+// buildCreateInput maps the raw form into a CreateArticleInput, collecting
+// field-level errors for anything the admin can check before the network call:
+// the four required fields, the optional published_at timestamp, and the optional
+// metadata JSON. The write API re-validates everything (it is the contract), but
+// catching these here gives one-pass feedback without a round trip.
+func buildCreateInput(f createForm) (CreateArticleInput, map[string]string) {
+	fields := map[string]string{}
+	title := strings.TrimSpace(f.Title)
+	body := strings.TrimSpace(f.Body)
+	author := strings.TrimSpace(f.Author)
+	section := strings.TrimSpace(f.Section)
+	if title == "" {
+		fields["title"] = "required"
+	}
+	if body == "" {
+		fields["body"] = "required"
+	}
+	if author == "" {
+		fields["author"] = "required"
+	}
+	if section == "" {
+		fields["section"] = "required"
+	}
+
+	in := CreateArticleInput{
+		Title:   title,
+		Body:    body,
+		Author:  author,
+		Section: section,
+		Topics:  splitTopics(f.Topics),
+	}
+	if pa := strings.TrimSpace(f.PublishedAt); pa != "" {
+		if t, err := parsePublishedAt(pa); err != nil {
+			fields["published_at"] = "use YYYY-MM-DD, a datetime-local value, or RFC 3339"
+		} else {
+			in.PublishedAt = &t
+		}
+	}
+	if md := strings.TrimSpace(f.Metadata); md != "" {
+		if m, err := parseMetadataObject(md); err != nil {
+			fields["metadata"] = `must be a JSON object, e.g. {"image":"https://example/x.jpg"}`
+		} else {
+			in.Metadata = m
+		}
+	}
+	if len(fields) == 0 {
+		return in, nil
+	}
+	return in, fields
+}
+
+// splitTopics splits a comma- or newline-separated topic string into trimmed,
+// non-blank tags. The write API normalizes and de-duplicates them further.
+func splitTopics(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// parsePublishedAt accepts the common ways an operator might type a timestamp and
+// normalizes to UTC. A bare datetime-local or date is read as UTC (no zone), which
+// is deterministic and matches the "UTC" hint on the form.
+func parsePublishedAt(s string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04", // HTML datetime-local
+		"2006-01-02",       // date only
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp %q", s)
+}
+
+// parseMetadataObject parses the optional metadata textarea as a single JSON
+// object. Anything else (an array, a scalar, trailing junk, null) is an error so
+// the operator gets a clear message instead of a confusing server rejection.
+func parseMetadataObject(s string) (map[string]any, error) {
+	dec := json.NewDecoder(strings.NewReader(s))
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	if dec.More() {
+		return nil, errors.New("trailing data after the JSON object")
+	}
+	if m == nil {
+		return nil, errors.New("must be a JSON object, not null")
+	}
+	return m, nil
 }
 
 // assetTypes is the allowlist of servable embedded assets and their MIME types.

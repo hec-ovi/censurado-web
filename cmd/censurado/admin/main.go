@@ -8,11 +8,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,6 +28,7 @@ import (
 	"time"
 
 	"github.com/hec-ovi/censurado-web/internal/adminweb"
+	"github.com/hec-ovi/censurado-web/internal/domain"
 	"github.com/hec-ovi/censurado-web/internal/generate"
 	"github.com/hec-ovi/censurado-web/internal/store"
 	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
@@ -87,6 +90,11 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	// disabled state. It keeps internal/generate out of adminweb: the binary imports
 	// the generator and adapts its Result to adminweb.RegenResult.
 	cfg.Regenerate = buildRegenerate(repo, *out, *baseURL, *pageSize)
+
+	// The manual create action POSTs to the publish service so the admin stays a
+	// non-writer of the db. It is enabled only when the publish URL and an operator
+	// token are both set; otherwise nil leaves the route in its disabled state.
+	cfg.Publish = buildPublish(getenv)
 
 	handler, err := adminweb.New(cfg)
 	if err != nil {
@@ -193,6 +201,135 @@ func buildRegenerate(repo store.Repository, out, baseURL string, pageSize int) f
 			Purge:      res.Purge,
 		}, nil
 	}
+}
+
+// buildPublish returns the closure the admin create form runs, or nil when manual
+// publishing is disabled. It is the seam that keeps the admin a NON-WRITER of the
+// database: instead of opening the store for writing (which would break the
+// single-writer invariant), it POSTs each article to the publish service over
+// HTTP, exactly as an author agent would, reusing publish's validation,
+// sanitization, idempotency, and audit logging. The action is enabled only when
+// both CENSURADO_ADMIN_PUBLISH_URL and CENSURADO_ADMIN_PUBLISH_TOKEN are set;
+// either empty yields nil, so adminweb shows the disabled state. The token must be
+// an operator key holding the articles:publish-any scope so the operator can
+// author as any persona.
+func buildPublish(getenv func(string) string) func(context.Context, adminweb.CreateArticleInput) (adminweb.CreateArticleResult, error) {
+	base := strings.TrimRight(strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_URL")), "/")
+	token := strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_TOKEN"))
+	if base == "" || token == "" {
+		return nil
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	return func(ctx context.Context, in adminweb.CreateArticleInput) (adminweb.CreateArticleResult, error) {
+		payload := domain.PublishInput{
+			Title:       in.Title,
+			Body:        in.Body,
+			Author:      in.Author,
+			Section:     in.Section,
+			Topics:      in.Topics,
+			PublishedAt: in.PublishedAt,
+			Metadata:    in.Metadata,
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return adminweb.CreateArticleResult{}, fmt.Errorf("encode article: %w", err)
+		}
+		key, err := randomIdempotencyKey()
+		if err != nil {
+			return adminweb.CreateArticleResult{}, fmt.Errorf("generate idempotency key: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/articles", bytes.NewReader(raw))
+		if err != nil {
+			return adminweb.CreateArticleResult{}, fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Idempotency-Key", key)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return adminweb.CreateArticleResult{}, fmt.Errorf("contact publish API: %w", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return mapPublishResponse(resp.StatusCode, body)
+	}
+}
+
+// publishProblem mirrors the publish API's application/problem+json body.
+type publishProblem struct {
+	Status int               `json:"status"`
+	Code   string            `json:"code"`
+	Detail string            `json:"detail"`
+	Fields map[string]string `json:"fields"`
+}
+
+// mapPublishResponse turns the write API's reply into a result or a typed error.
+// 200/201 -> success (Created distinguishes a new write from an idempotent/dedup
+// replay). 400/422 -> a CreateValidationError carrying the field map for inline
+// display. Anything else (401/403 auth, 5xx, unexpected) -> a generic error the
+// handler shows as a server-side problem, not the operator's input.
+func mapPublishResponse(status int, body []byte) (adminweb.CreateArticleResult, error) {
+	switch {
+	case status == http.StatusOK || status == http.StatusCreated:
+		var ok struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+		}
+		if err := json.Unmarshal(body, &ok); err != nil {
+			return adminweb.CreateArticleResult{}, fmt.Errorf("decode publish response: %w", err)
+		}
+		return adminweb.CreateArticleResult{ID: ok.ID, Slug: ok.Slug, Created: status == http.StatusCreated}, nil
+	case status == http.StatusUnprocessableEntity || status == http.StatusBadRequest:
+		p := decodeProblem(body)
+		// 422 is always a content-validation problem (the operator's article), shown
+		// inline as recoverable. A 400 from publish is a protocol/transport fault
+		// (invalid_json, missing_idempotency_key) with no field map, so it is a
+		// server-side problem UNLESS it actually carries field errors. Only the
+		// validation case becomes a CreateValidationError.
+		if status == http.StatusUnprocessableEntity || len(p.Fields) > 0 || p.Code == "validation_failed" {
+			return adminweb.CreateArticleResult{}, &adminweb.CreateValidationError{
+				Message: firstNonEmpty(p.Detail, p.Code),
+				Fields:  p.Fields,
+			}
+		}
+		return adminweb.CreateArticleResult{}, serverProblem(status, p, body)
+	default:
+		return adminweb.CreateArticleResult{}, serverProblem(status, decodeProblem(body), body)
+	}
+}
+
+// serverProblem formats a non-validation failure for the operator, falling back to
+// the status text so an empty/unparseable body never yields a dangling separator.
+func serverProblem(status int, p publishProblem, body []byte) error {
+	detail := firstNonEmpty(p.Detail, p.Code, strings.TrimSpace(string(body)))
+	if detail == "" {
+		return fmt.Errorf("publish API returned %d: %s", status, http.StatusText(status))
+	}
+	return fmt.Errorf("publish API returned %d: %s", status, detail)
+}
+
+func decodeProblem(body []byte) publishProblem {
+	var p publishProblem
+	_ = json.Unmarshal(body, &p)
+	return p
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func randomIdempotencyKey() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // genCredentials mints a fresh operator token and session key, printing the token

@@ -387,6 +387,29 @@ a { color: inherit; }
 
 .admin-h1 { font-family: var(--font-display); font-weight: 800; }
 
+/* Manual "new article" form. */
+.admin-create { max-width: 52rem; }
+.admin-create-form { display: block; margin-top: 1rem; }
+.admin-create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+@media (max-width: 38rem) { .admin-create-row { grid-template-columns: 1fr; } }
+.admin-textarea {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 14rem;
+}
+.admin-textarea-short { min-height: 4.5rem; }
+.admin-field-error {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--mark);
+  margin: 0.25rem 0 0;
+}
+.admin-create-actions { margin-top: 1.1rem; }
+.admin-create-summary { border: 2px solid var(--ink); padding: 1rem; margin: 0 0 1.2rem; }
+.admin-create-summary .admin-provenance { margin: 0.5rem 0; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

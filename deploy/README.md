@@ -45,6 +45,21 @@ Everything below runs from the `deploy/` directory.
    (the file is a JSON array of entries), and hand the printed `TOKEN` to the agent
    as `CENSURADO_PUBLISH_TOKEN`.
 
+4. (Optional) Enable the admin's manual "New article" form. The form publishes
+   through the write API, so the admin never writes the database directly. Mint an
+   operator key with the privileged publish-any scope so the operator can author as
+   any persona, then set `CENSURADO_ADMIN_PUBLISH_TOKEN` in `.env`:
+
+   ```
+   docker compose run --rm publish -gen-key -author editor -scope articles:write -scope articles:publish-any
+   ```
+
+   Add the printed entry to `keys.json` (next to the agent keys) and put the printed
+   `TOKEN` in `.env` as `CENSURADO_ADMIN_PUBLISH_TOKEN`. Leave it blank to keep the
+   create form disabled. `CENSURADO_ADMIN_PUBLISH_URL` is already set in the compose
+   file. Only the operator key gets `articles:publish-any`; agent keys carry
+   `articles:write` alone and stay locked to their own author.
+
 ## Run
 
 Bring up the private services (publish + admin):

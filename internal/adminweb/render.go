@@ -33,6 +33,9 @@ var (
 	// POST swap that updates only the result region.
 	regenerateTmpl  = template.Must(template.New("regenerate").ParseFS(tmplFS, "templates/layout.tmpl", "templates/regenerate.tmpl"))
 	regenResultTmpl = template.Must(template.New("regen_result").ParseFS(tmplFS, "templates/regenerate.tmpl"))
+	// create is a plain full-page form: the POST re-renders the whole page so field
+	// errors can repopulate inputs, so no standalone fragment is needed.
+	createTmpl = template.Must(template.New("create").ParseFS(tmplFS, "templates/layout.tmpl", "templates/create.tmpl"))
 )
 
 // layoutData is embedded by every full-page view so the shared layout can read
@@ -184,6 +187,45 @@ type regenerateView struct {
 	Ran        bool
 	Error      string
 	Result     *regenResultView
+}
+
+// createForm holds the raw, operator-typed values, echoed back verbatim so a
+// validation error never makes the operator retype. Topics/PublishedAt/Metadata
+// are the raw strings as entered; the handler parses them into CreateArticleInput.
+type createForm struct {
+	Title       string
+	Body        string
+	Author      string
+	Section     string
+	Topics      string
+	PublishedAt string
+	Metadata    string
+}
+
+// createResultView is the success summary for one published article. Created is
+// true for a brand-new write (201) and false for an idempotent/deduplicated 200.
+type createResultView struct {
+	ID        string
+	Slug      string
+	Created   bool
+	DetailURL string
+}
+
+// createView is the manual create page. Configured gates the form vs the disabled
+// note. Fields carries per-input validation messages (nil when clean); Error is a
+// top-level message for a config/network/server failure; Result is set on success.
+// Sections/Authors/Topics seed datalist typeahead from existing facet values.
+type createView struct {
+	layoutData
+	Configured bool
+	Sections   []string
+	Authors    []string
+	Topics     []string
+	Form       createForm
+	Ran        bool
+	Error      string
+	Fields     map[string]string
+	Result     *createResultView
 }
 
 // renderTemplate executes name from t into a buffer first, so a template error

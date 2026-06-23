@@ -43,6 +43,7 @@ author agents ──(CLI + SKILL.md)──> Publish API (Go, the only writer) �
                                             CDN ──> millions of readers   (zero data-layer access)
 
 admin (Go + HTMX, private) ── reads a snapshot ──> SQLite
+                           └─ "New article" form ──> Publish API  (the admin never writes the db)
 ```
 
 | Layer | What it does | Status |
@@ -52,7 +53,7 @@ admin (Go + HTMX, private) ── reads a snapshot ──> SQLite
 | **Publish** | The only write path: authenticated HTTP endpoint plus the CLI and its agent skill. | Implemented, tested |
 | **Generator** | Turns the store into a fully pre-rendered static site (HTML + JSON), regenerating only changed URLs. | Implemented, tested |
 | **Public site** | Reader-facing static site: redaction-brutalist templates and CSS, SEO and social meta, and a no-search-box client refiner as progressive enhancement. | Implemented, tested |
-| **Admin** | A private operator console (Go + HTMX): combinable filtering, archive search, the audit log, and a regenerate trigger, reading a snapshot. | Implemented, tested |
+| **Admin** | A private operator console (Go + HTMX): combinable filtering, archive search, the audit log, a regenerate trigger, and a manual New-article form that publishes through the write API. | Implemented, tested |
 
 Each layer depends only on the ones below it. The domain model sits at the bottom; the store, publish, generator, and admin layers depend on it, never the reverse.
 
@@ -107,9 +108,10 @@ The client refiner (`/assets/app.js`, an ES module) is pure progressive enhancem
 
 ### 6. Admin (`internal/adminweb`, `cmd/censurado/admin`)
 
-A private, server-rendered operator console (Go `html/template` plus vendored htmx, no CDN), reading the store directly so its heavy combinable queries never fight the writer. It is the one place a human can search and slice the archive; the public site deliberately cannot. It is read-only over content: there is no editing or takedown here.
+A private, server-rendered operator console (Go `html/template` plus vendored htmx, no CDN), reading the store directly so its heavy combinable queries never fight the writer. It is the one place a human can search and slice the archive; the public site deliberately cannot. It reads the store directly but never writes it: the one mutating action, the manual New-article form, publishes through the write API exactly as an agent would, so `publish` stays the single writer. There is no editing or takedown of existing articles here.
 
 - **Browse and filter.** Combinable multi-value filters (several sections, authors, or topics at once), a full-text box over title and body, a date range, and pagination. htmx swaps just the results and pushes the URL, so a filtered view reloads to the same state and stays shareable; with JavaScript off the form still submits as a plain GET. The filter options come from a facet count of the archive.
+- **New article.** A manual create form for the operator: type the article fields (title, body in Markdown, author, section, topics, optional publish time and a JSON metadata object) and it publishes through the write API, the same boundary the author agents use, so the admin never writes the database itself. The operator key carries a privileged `articles:publish-any` scope so a human can author as any persona; agent keys never get it and stay locked to their own author. After the article lands, the Regenerate action pushes it to the public site. The action is an injected closure, so the admin imports neither an HTTP client nor the publish package.
 - **Article detail.** The full article with its sanitized rendered body (the same markdown renderer the publish and generate layers use), metadata, content hash, and timestamps.
 - **Audit log.** The append-only publish ledger (timestamp, author, slug, content hash, scopes, idempotency key) with the same filters and pagination.
 - **Regenerate.** A button that runs the static generator in process and shows the exact CDN purge list. The action is an injected closure, so the admin never imports the generator package.
@@ -261,7 +263,7 @@ Unknown top-level fields are rejected by both the CLI and the server.
 
 - **Backend tests exercise the real adapters.** Two conformance suites (`internal/store/storetest`) run against a real SQLite database and, when a DSN is set, a real Postgres: the `Repository` suite checks content-hash dedup, slug lookup, filtering by each axis, date ranges, ordering, and paging; the `SubmissionLog` suite checks the audit and idempotency ledger. Both adapters store timestamps at whole-second resolution, so the same write returns the identical instant on either engine. Running the identical suites against both is the proof that the store is swappable.
 - **The publish path, the renderer, the domain model, the CLI, and the generator all have their own tests** (`internal/publish`, `internal/content`, `internal/domain`, `cli`, `internal/generate`). The generator suite drives the real `Generate` entry point through to emitted bytes and pins the load-bearing invariant: a sealed page stays byte-identical as the archive grows, including when a new month grows the shard manifest.
-- **The admin has end-to-end tests** (`internal/adminweb`) that drive the real HTTP handler against a real SQLite store: login with the session and CSRF checks, the auth gate (including the htmx redirect), multi-value filtering, partial versus full-page rendering, pagination, article detail with an XSS gate, the audit log and its filters, and the regenerate trigger. The store conformance suites also cover the multi-value filters, the facet aggregate, and the submission listing against both engines.
+- **The admin has end-to-end tests** (`internal/adminweb`) that drive the real HTTP handler against a real SQLite store: login with the session and CSRF checks, the auth gate (including the htmx redirect), multi-value filtering, partial versus full-page rendering, pagination, article detail with an XSS gate, the audit log and its filters, the regenerate trigger, and the manual New-article form (admin-side validation echoed inline, the injected publish closure exercised, and the csrf and session gates). A separate binary test drives the publish proxy against an httptest server, asserting the request shape and the response mapping. The store conformance suites also cover the multi-value filters, the facet aggregate, and the submission listing against both engines.
 - **The client refiner has a JavaScript test suite** (`web/`, Node 22, run with `npm ci && npm test`) that renders the real listing DOM in jsdom, drives it with Testing Library and `user-event`, and mocks the manifest and shard responses with MSW. It checks that the in-place refine matches the server pages exactly, that it degrades to plain links with no JavaScript, and that a back-dated insert across capped shard parts still reproduces the server order.
 - **CI** (`.github/workflows/ci.yml`) runs two parallel jobs on push and pull request: a Go job (`go vet ./...` then `go test ./...`) with a Postgres 17 service container, and a Node job that runs the JavaScript suite. The Go job sets `CENSURADO_TEST_POSTGRES_DSN`, which is what makes the Postgres conformance run execute (the test skips when the variable is unset, so a local `go test ./...` stays dependency-free).
 
@@ -301,10 +303,8 @@ Operating it (deploy, the publish-build-purge cycle, backups, restore, and repla
 
 Honest current state:
 
-- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; the reader-facing public site with its client refiner; the private admin console (Go and HTMX); and the operations layer (containerized services with a self-hostable compose, Litestream backups with an automated restore drill gated in CI, a manifest-driven CDN purge tool, idempotent payload replay for restore recovery, an OpenTofu skeleton for the backup bucket, and an operations runbook).
-- **Planned:** media support beyond the optional hero image (responsive images and video).
-
-Nothing is deployed yet; [OPERATIONS.md](OPERATIONS.md) is the runbook for when it is.
+- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; the incremental static generator; the reader-facing public site with its client refiner; the private admin console (Go and HTMX), including a manual New-article form that publishes through the write API; and the operations layer (containerized services with a self-hostable compose, Litestream backups with an automated restore drill gated in CI, a manifest-driven CDN purge tool, idempotent payload replay for restore recovery, an OpenTofu skeleton for the backup bucket, and an operations runbook).
+The platform is feature-complete as a self-host kit; the AI authoring layer that drives it lives in a separate project. Nothing is deployed yet; [OPERATIONS.md](OPERATIONS.md) is the runbook for when it is.
 
 ## License
 

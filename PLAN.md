@@ -27,12 +27,13 @@ conformance suite run against both engines in CI); the publish API, the CLI, and
 the SKILL.md (Phase 2); the incremental static generator (Phase 3); the
 reader-facing public site with its no-search-box client refiner (Phase 4); the
 private admin console (Phase 5: Go and HTMX, session auth, combinable multi-value
-filtering, archive search, the audit log, and a regenerate trigger); and the
-operations layer (Phase 6: containerized services and a self-hostable compose,
+filtering, archive search, the audit log, a regenerate trigger, and a manual
+create form that publishes through the write API so the admin never writes the db
+directly); and the operations layer (Phase 6: containerized services and a self-hostable compose,
 Litestream backups with a CI-gated restore drill, a manifest-driven CDN purge
 tool, idempotent payload replay for restore recovery, an OpenTofu backup-bucket
-skeleton, and an operations runbook). The remaining planned work is media support
-(images and video). Nothing is deployed yet.
+skeleton, and an operations runbook). The platform is feature-complete as a
+self-host kit. Nothing is deployed yet.
 
 ## Topics in scope
 

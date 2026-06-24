@@ -32,8 +32,12 @@ create form that publishes through the write API so the admin never writes the d
 directly); and the operations layer (Phase 6: containerized services and a self-hostable compose,
 Litestream backups with a CI-gated restore drill, a manifest-driven CDN purge
 tool, idempotent payload replay for restore recovery, an OpenTofu backup-bucket
-skeleton, and an operations runbook). The platform is feature-complete as a
-self-host kit. Nothing is deployed yet.
+skeleton, and an operations runbook). A self-hosted image store (authenticated
+upload, immutable serve) plus YouTube support was added after Phase 6, with media
+attached through the article metadata so the contract is unchanged. The platform
+is feature-complete as a self-host kit. Nothing is deployed yet. The AI authoring
+layer that drives it is the sibling repo censurado-web-brain, which publishes over
+the same contract.
 
 ## Topics in scope
 

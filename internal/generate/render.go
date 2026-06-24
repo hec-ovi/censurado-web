@@ -19,9 +19,8 @@ import (
 //go:embed templates/*.tmpl templates/components/*.tmpl
 var templateFS embed.FS
 
-// assetFS holds the public frontend assets emitted at stable /assets/ URLs. The bytes are
-// placeholders for now; a later workflow ships the real redaction-brutalist
-// styles and the client-side Tier-B refiner.
+// assetFS holds the public frontend assets emitted at stable /assets/ URLs: the shipped
+// stylesheet and the client-side Tier-B facet refiner.
 //
 //go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg
 var assetFS embed.FS

@@ -6,8 +6,9 @@ description: Publish a news article to the Censurado portal as an authenticated 
 # Publishing an article
 
 You publish through the `censurado-publish` CLI. It takes one article as JSON on
-stdin, validates it locally, and POSTs it to the portal's write API. It is the
-only way content enters the portal.
+stdin (or from a file with `--file`), validates it locally, and POSTs it to the
+portal's write API. It is how author personas publish; the human operator console
+can also publish, using a privileged key.
 
 ## Setup
 
@@ -33,6 +34,7 @@ A single JSON object with these fields:
   `politics`, `economics`.
 - `topics` (optional) an array of topic tags, for example `["ai","policy"]`.
 - `published_at` (optional) RFC 3339 timestamp; defaults to the time of receipt.
+- `slug` (optional) the URL slug; derived from the title when omitted. Pattern `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
 - `metadata` (optional) an object of extra attributes; new keys need no schema change.
 
 Unknown top-level fields are rejected. The full machine-readable contract is
@@ -44,6 +46,10 @@ Pipe the JSON to the CLI:
 
     echo '{"title":"OpenTofu 1.12 lands","body":"# Heading\n\nBody.","author":"ada","section":"tech","topics":["infrastructure","iac"]}' \
       | censurado-publish
+
+Or read the JSON from a file instead of stdin:
+
+    censurado-publish --file article.json
 
 On success it prints `{"id":"...","slug":"..."}` and exits 0.
 

@@ -14,9 +14,10 @@ only writer; `admin` and `generate` are readers of the same file. Readers of the
 public site never touch the database: they are served pre-rendered static files
 from a CDN. `publish` and `admin` are private (bound to 127.0.0.1; reach them
 over an SSH tunnel, a private network, a VPN, or mTLS). The only public surface
-is the static output on the `site-data` volume, served by a CDN or web server
-that is not part of this compose. A `litestream` sidecar continuously backs up
-the database.
+is the static output on the `site-data` volume (and, when the image store is
+enabled, the `media-data` volume served at `/media/`), delivered by a CDN or web
+server that is not part of this compose. A `litestream` sidecar continuously backs
+up the database (not the media volume; see Backups).
 
 ## The daily cycle: publish, build, purge
 
@@ -52,9 +53,15 @@ on a schedule or after each publish batch.
 Agent publish keys live in `deploy/keys.json`, which carries only hashed secrets,
 never the secrets themselves.
 
-- **Mint a key** (prints the cleartext token once, plus the JSON entry to add):
+- **Mint an agent key** (prints the cleartext token once, plus the JSON entry to add):
   `docker compose run --rm publish -gen-key -author NAME -scope articles:write`.
   Hand the `TOKEN` to the agent; add the JSON entry to `deploy/keys.json`.
+- **Mint the operator key** (the agentic producer and the admin create form both need
+  it): the same command with BOTH scopes,
+  `docker compose run --rm publish -gen-key -author editor -scope articles:write -scope articles:publish-any`.
+  `articles:publish-any` lets it author as any persona; agent keys get `articles:write`
+  alone and stay locked to their own author. `articles:publish-any` without
+  `articles:write` is rejected.
 - **Rotate or revoke**: remove the author's entry from `deploy/keys.json` (and add
   a fresh one for a rotation), then restart the publish service. Revocation is
   immediate; the old token no longer authenticates.
@@ -129,6 +136,14 @@ go run ./cmd/censurado/replay -db restored.db -archive /path/to/archive -since 2
 Replay is exactly-once: writes that survived are no-ops, lost ones are recovered,
 and running it twice changes nothing (the Idempotency-Key and the content-hash
 UNIQUE guarantee it). It exits nonzero if any payload could not be replayed.
+
+### The media volume
+
+Litestream backs up only the sqlite database. If the self-hosted image store is
+enabled (`CENSURADO_MEDIA_DIR`, the `media-data` volume), back that volume up
+separately: it holds binary image files, not database rows. The files are
+content-addressed and immutable, so a periodic file sync (rsync or an object-store
+copy) is enough, and a missing image never corrupts the database.
 
 ## Monitoring
 

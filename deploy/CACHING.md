@@ -13,6 +13,10 @@ two policies:
   `stale-while-revalidate`, so a stale copy keeps serving while the edge refetches
   in the background. If a purge is ever missed, the short TTL self-heals it by the
   next batch instead of pinning stale content.
+- Media assets (`/media/<sha256>.<ext>`), when the self-hosted image store is enabled,
+  are content-addressed like article permalinks. The publish service already serves
+  them with a one-year immutable `Cache-Control`, so the edge can cache them forever,
+  and they are never in the purge manifest (it lists only changed HTML and JSON URLs).
 
 The generator emits `<out>/.generated/purge.json` after every batch: version, timestamp, and
 the exact root-relative paths that changed or were removed. This tool reads that
@@ -23,7 +27,7 @@ the edge consistent without dumping the whole cache.
 Suggested response headers at the origin or CDN:
 
 ```
-# article permalinks (content-hash URLs)
+# article permalinks (content-hash URLs) and /media/ image assets
 Cache-Control: public, max-age=31536000, immutable
 
 # listings and JSON shards

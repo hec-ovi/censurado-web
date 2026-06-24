@@ -143,7 +143,7 @@ func TestServerHandler_HealthzNeverLimited(t *testing.T) {
 	// probe would 429.
 	rl := NewRateLimiter(0.0001, 1, func() time.Time { return clock })
 	// healthz never touches the handler's dependencies, so nil deps are safe here.
-	srv := NewServerHandler(NewHandler(nil, nil, nil, nil), rl)
+	srv := NewServerHandler(NewHandler(nil, nil, nil, nil), rl, nil)
 
 	for i := 0; i < 5; i++ {
 		r := httptest.NewRequest(http.MethodGet, "/healthz", nil)

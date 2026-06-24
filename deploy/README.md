@@ -7,6 +7,10 @@ volume in WAL mode:
 - admin: a db reader. Private operator console (/admin/*); writes the site only on regenerate.
 - generate: a db reader. One-shot static site builder, run on demand.
 
+publish also runs a small self-hosted image store ("CDN"): it accepts authenticated
+image uploads (POST /media) and serves them (GET /media/{name}) from the media-data
+volume. The external web server serves /media/ from that same volume on the public origin.
+
 publish and admin are private: their host ports bind to 127.0.0.1 only (reach them
 over an SSH tunnel or private network). The only public surface is the generated
 static site on the site-data volume, served by an external CDN or web server that is
@@ -75,6 +79,25 @@ Run a static site build on demand (writes the site-data volume, then exits):
 ```
 docker compose run --rm generate
 ```
+
+## Media (self-hosted images)
+
+publish doubles as a small self-hosted image store. With `CENSURADO_MEDIA_DIR` set (it
+is, in the compose), it accepts an authenticated image upload at `POST /media` (an
+`articles:write` key, the same scope as publishing) and serves the stored file at
+`GET /media/{name}`. Files are content-addressed (`/media/<sha256>.<ext>`), so the same
+image always maps to one immutable, cacheable URL, and an upload is at most 10 MiB of
+JPEG, PNG, GIF, or WebP (the type is sniffed from the bytes, not the client's claim).
+
+The admin's New-article form uploads through this endpoint, so the admin stays a
+non-writer (it proxies the bytes to publish). An article references its image and a
+YouTube video through the open `metadata` object (`image`, `image_alt`, `youtube`),
+which the generator already renders, so attaching media needs no contract change.
+
+In production, point the external web server at the media-data volume so it serves
+`/media/` on the public origin (next to `/` from site-data). The publish service's own
+`GET /media/` is for development and as a fallback. Litestream backs up only the sqlite
+database, so back up the media-data volume separately (it holds binary files, not rows).
 
 ## Backups (litestream + restore drill)
 

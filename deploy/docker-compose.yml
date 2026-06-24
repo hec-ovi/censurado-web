@@ -22,10 +22,12 @@
 # 127.0.0.1 host mapping is what restricts real exposure. Reach them over an SSH
 # tunnel or a private network.
 #
-# The only public surface is the generated static site on the site-data volume.
-# It is served by an external CDN or web server (Nginx, Caddy, a CDN origin, ...)
-# that is NOT part of this compose: point that server at the site-data volume (or
-# sync it out), and keep this compose private.
+# The only public surface is the generated static site on the site-data volume, plus
+# the uploaded images on the media-data volume. Both are served by an external CDN or
+# web server (Nginx, Caddy, a CDN origin, ...) that is NOT part of this compose: point
+# that server at the site-data volume for / and the media-data volume for /media/ (or
+# sync them out), and keep this compose private. Article HTML references images as
+# root-relative /media/... URLs, so /media/ must be served from the same public origin.
 #
 # Secrets/config come from deploy/.env (see .env.example). Fixed internal paths are
 # set per-service below.
@@ -44,11 +46,16 @@ services:
       # Fixed internal paths (not secrets). The keys file is mounted read-only below.
       CENSURADO_DB: /data/censurado.db
       CENSURADO_PUBLISH_KEYS_FILE: /etc/censurado/keys.json
+      # The self-hosted image store / CDN. publish writes uploaded images here (POST
+      # /media) and serves them (GET /media/{name}); the public web server below also
+      # serves /media/ straight from this same volume. Leave unset to disable media.
+      CENSURADO_MEDIA_DIR: /srv/media
     ports:
       # Private: bound to localhost on the host. The container listens on 0.0.0.0:8080.
       - "127.0.0.1:8080:8080"
     volumes:
       - db-data:/data
+      - media-data:/srv/media
       # Seed this as an empty JSON array FIRST (`printf '[]\n' > keys.json`) before
       # any `compose run`: Docker creates an empty DIRECTORY here if the host file is
       # missing, which breaks the documented first-run. Then mint entries with
@@ -199,6 +206,10 @@ volumes:
   # The generated static site: written by generate (and admin regenerate), served
   # by an external CDN/web server outside this compose.
   site-data:
+  # The self-hosted image store: uploaded images written by publish, served at
+  # /media/ by publish AND by the external web server (which mounts it read-only).
+  # Litestream backs up only the sqlite db, so back this volume up separately.
+  media-data:
   # Local file-replica target for the litestream backup sidecar (snapshots + WAL).
   # In production this can be the staging replica alongside an off-site s3 replica.
   replica-data:

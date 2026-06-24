@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,8 +22,8 @@ import (
 func TestBuildPublish_Disabled(t *testing.T) {
 	cases := []map[string]string{
 		nil,
-		{"CENSURADO_ADMIN_PUBLISH_URL": "http://publish:8080"},          // no token
-		{"CENSURADO_ADMIN_PUBLISH_TOKEN": "ak_op.secret"},               // no url
+		{"CENSURADO_ADMIN_PUBLISH_URL": "http://publish:8080"},                       // no token
+		{"CENSURADO_ADMIN_PUBLISH_TOKEN": "ak_op.secret"},                            // no url
 		{"CENSURADO_ADMIN_PUBLISH_URL": "  ", "CENSURADO_ADMIN_PUBLISH_TOKEN": "  "}, // blank
 	}
 	for i, env := range cases {
@@ -242,4 +243,80 @@ func TestBuildPublish_MapsErrors(t *testing.T) {
 			t.Errorf("err = %v, want it to carry the 403 detail", err)
 		}
 	})
+}
+
+// TestBuildUploadMedia_Disabled proves the upload proxy is off (nil) unless BOTH the
+// publish URL and an operator token are set, mirroring buildPublish.
+func TestBuildUploadMedia_Disabled(t *testing.T) {
+	for i, env := range []map[string]string{
+		nil,
+		{"CENSURADO_ADMIN_PUBLISH_URL": "http://publish:8080"},
+		{"CENSURADO_ADMIN_PUBLISH_TOKEN": "ak_op.secret"},
+	} {
+		if buildUploadMedia(envFromMap(env)) != nil {
+			t.Errorf("case %d: buildUploadMedia = non-nil, want nil (disabled)", i)
+		}
+	}
+}
+
+// TestBuildUploadMedia_PostsRawBytesAndReturnsURL proves the closure POSTs the image
+// bytes raw to /media with the operator bearer token and returns the stored URL.
+func TestBuildUploadMedia_PostsRawBytesAndReturnsURL(t *testing.T) {
+	var gotMethod, gotPath, gotAuth, gotCType string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCType = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"name":"abc.png","url":"/media/abc.png","content_type":"image/png"}`))
+	}))
+	defer srv.Close()
+
+	up := buildUploadMedia(envFromMap(map[string]string{
+		"CENSURADO_ADMIN_PUBLISH_URL":   srv.URL + "/", // trailing slash trimmed
+		"CENSURADO_ADMIN_PUBLISH_TOKEN": "ak_op.secret",
+	}))
+	if up == nil {
+		t.Fatal("buildUploadMedia = nil with url+token set")
+	}
+	data := []byte("\x89PNG\r\n\x1a\nrest")
+	url, err := up(context.Background(), "shot.png", "image/png", data)
+	if err != nil {
+		t.Fatalf("upload closure: %v", err)
+	}
+	if url != "/media/abc.png" {
+		t.Errorf("url = %q, want /media/abc.png", url)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/media" {
+		t.Errorf("method/path = %s %s, want POST /media", gotMethod, gotPath)
+	}
+	if gotAuth != "Bearer ak_op.secret" {
+		t.Errorf("Authorization = %q, want the bearer token", gotAuth)
+	}
+	if gotCType != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", gotCType)
+	}
+	if !bytes.Equal(gotBody, data) {
+		t.Errorf("posted body differs from the image bytes")
+	}
+}
+
+// TestBuildUploadMedia_NonCreatedIsError proves a non-201 media response (e.g. an
+// unsupported type) surfaces as an error rather than a bogus URL.
+func TestBuildUploadMedia_NonCreatedIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		_, _ = w.Write([]byte(`{"status":415,"code":"unsupported_media_type"}`))
+	}))
+	defer srv.Close()
+	up := buildUploadMedia(envFromMap(map[string]string{
+		"CENSURADO_ADMIN_PUBLISH_URL":   srv.URL,
+		"CENSURADO_ADMIN_PUBLISH_TOKEN": "ak.sec",
+	}))
+	if _, err := up(context.Background(), "x.png", "image/png", []byte("x")); err == nil {
+		t.Errorf("a non-201 media response must be an error")
+	}
 }

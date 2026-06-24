@@ -94,7 +94,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, ok := h.authenticate(w, r)
+	id, ok := authenticateWrite(h.auth, w, r)
 	if !ok {
 		return
 	}
@@ -183,13 +183,16 @@ func (h *Handler) recordArchive(ctx context.Context, key, author string, now tim
 	}
 }
 
-func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (Identity, bool) {
+// authenticateWrite checks the bearer token and the write scope, writing the
+// appropriate problem response on failure. It is shared by the article handler and
+// the media handler so both gate on the same articles:write credential.
+func authenticateWrite(auth Authenticator, w http.ResponseWriter, r *http.Request) (Identity, bool) {
 	token := bearerToken(r.Header.Get("Authorization"))
 	if token == "" {
 		writeProblem(w, problem{Status: http.StatusUnauthorized, Code: "missing_token"})
 		return Identity{}, false
 	}
-	id, err := h.auth.Authenticate(token)
+	id, err := auth.Authenticate(token)
 	if err != nil {
 		writeProblem(w, problem{Status: http.StatusUnauthorized, Code: "invalid_token"})
 		return Identity{}, false

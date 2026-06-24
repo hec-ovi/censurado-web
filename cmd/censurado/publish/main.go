@@ -32,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hec-ovi/censurado-web/internal/media"
 	"github.com/hec-ovi/censurado-web/internal/publish"
 	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
 )
@@ -60,15 +61,16 @@ func (s *stringSlice) Set(v string) error {
 
 // cliFlags holds the parsed flag pointers so run and the tests share one wiring.
 type cliFlags struct {
-	addr    *string
-	db      *string
-	keys    *string
-	archive *string
-	rate    *float64
-	burst   *int
-	genKey  *bool
-	author  *string
-	scopes  *stringSlice
+	addr     *string
+	db       *string
+	keys     *string
+	archive  *string
+	mediaDir *string
+	rate     *float64
+	burst    *int
+	genKey   *bool
+	author   *string
+	scopes   *stringSlice
 }
 
 // newFlagSet builds the flag set with env-derived defaults. It is factored out so a
@@ -79,14 +81,15 @@ func newFlagSet(getenv func(string) string, stderr io.Writer) (*flag.FlagSet, *c
 
 	var scopes stringSlice
 	f := &cliFlags{
-		addr:    fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
-		db:      fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
-		keys:    fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
-		archive: fs.String("payload-archive", envOr(getenv, "CENSURADO_PUBLISH_ARCHIVE", ""), "directory to append accepted raw payloads to for replay recovery (or CENSURADO_PUBLISH_ARCHIVE); empty = no archiving"),
-		rate:    fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
-		burst:   fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
-		genKey:  fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
-		author:  fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
+		addr:     fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
+		db:       fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
+		keys:     fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
+		archive:  fs.String("payload-archive", envOr(getenv, "CENSURADO_PUBLISH_ARCHIVE", ""), "directory to append accepted raw payloads to for replay recovery (or CENSURADO_PUBLISH_ARCHIVE); empty = no archiving"),
+		mediaDir: fs.String("media-dir", envOr(getenv, "CENSURADO_MEDIA_DIR", ""), "directory for the self-hosted image store / CDN, enabling POST /media and GET /media/{name} (or CENSURADO_MEDIA_DIR); empty = media disabled"),
+		rate:     fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
+		burst:    fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
+		genKey:   fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
+		author:   fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
 	}
 	fs.Var(&scopes, "scope", "scope to grant the minted key; repeatable (default articles:write)")
 	f.scopes = &scopes
@@ -172,8 +175,22 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		h = h.WithArchive(arch)
 	}
 
+	// Optional self-hosted image store / CDN: when a media dir is configured, mount
+	// POST /media (authenticated upload, same articles:write scope) and
+	// GET /media/{name} (public, immutable read). Empty leaves media off.
+	var mediaH *publish.MediaHandler
+	mediaDir := strings.TrimSpace(*f.mediaDir)
+	if mediaDir != "" {
+		mstore, err := media.NewStore(mediaDir, media.DefaultMaxBytes)
+		if err != nil {
+			fmt.Fprintln(stderr, "config:", err)
+			return exitConfig
+		}
+		mediaH = publish.NewMediaHandler(mstore, auth)
+	}
+
 	limiter := publish.NewRateLimiter(*f.rate, *f.burst, time.Now)
-	handler := publish.NewServerHandler(h, limiter)
+	handler := publish.NewServerHandler(h, limiter, mediaH)
 
 	srv := newServer(*f.addr, handler)
 
@@ -187,7 +204,11 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		if archiveDir != "" {
 			archiveNote = archiveDir
 		}
-		fmt.Fprintf(stdout, "censurado-publish listening on %s (%d key(s) loaded, payload archive: %s)\n", *f.addr, len(entries), archiveNote)
+		mediaNote := "off"
+		if mediaDir != "" {
+			mediaNote = mediaDir
+		}
+		fmt.Fprintf(stdout, "censurado-publish listening on %s (%d key(s) loaded, payload archive: %s, media store: %s)\n", *f.addr, len(entries), archiveNote, mediaNote)
 		return srv.ListenAndServe()
 	}
 	return serve(ctx, stop, srv, listen, shutdownGrace, stderr)

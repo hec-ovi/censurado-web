@@ -200,6 +200,9 @@ type createForm struct {
 	Topics      string
 	PublishedAt string
 	Metadata    string
+	ImageURL    string
+	ImageAlt    string
+	YouTube     string
 }
 
 // createResultView is the success summary for one published article. Created is
@@ -217,15 +220,16 @@ type createResultView struct {
 // Sections/Authors/Topics seed datalist typeahead from existing facet values.
 type createView struct {
 	layoutData
-	Configured bool
-	Sections   []string
-	Authors    []string
-	Topics     []string
-	Form       createForm
-	Ran        bool
-	Error      string
-	Fields     map[string]string
-	Result     *createResultView
+	Configured    bool
+	UploadEnabled bool // whether the image-upload control is shown (UploadMedia wired)
+	Sections      []string
+	Authors       []string
+	Topics        []string
+	Form          createForm
+	Ran           bool
+	Error         string
+	Fields        map[string]string
+	Result        *createResultView
 }
 
 // renderTemplate executes name from t into a buffer first, so a template error

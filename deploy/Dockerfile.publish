@@ -25,10 +25,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/censurado-publish ./cmd/censurado/publish
 
-# Seed a /data directory owned by the distroless nonroot uid (65532). When the
-# db-data named volume is first mounted here, Docker initializes it with this
-# ownership, so the nonroot process can create and write the sqlite file.
-RUN mkdir -p /prep/data
+# Seed /data and /srv/media directories owned by the distroless nonroot uid (65532).
+# When the db-data and media-data named volumes are first mounted at these paths,
+# Docker initializes them with this ownership, so the nonroot process can create and
+# write the sqlite file and store uploaded images.
+RUN mkdir -p /prep/data /prep/media
 
 # ---- final ------------------------------------------------------------------
 # distroless static: no shell, no package manager, ca-certificates + tzdata bundled,
@@ -38,6 +39,7 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db0
 
 COPY --from=builder /out/censurado-publish /censurado-publish
 COPY --from=builder --chown=65532:65532 /prep/data /data
+COPY --from=builder --chown=65532:65532 /prep/media /srv/media
 
 USER nonroot:nonroot
 EXPOSE 8080

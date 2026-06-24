@@ -95,6 +95,10 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	// non-writer of the db. It is enabled only when the publish URL and an operator
 	// token are both set; otherwise nil leaves the route in its disabled state.
 	cfg.Publish = buildPublish(getenv)
+	// The image-upload control proxies bytes to the same publish service (its media
+	// endpoint), so the admin stays a non-writer. It reuses the publish URL + operator
+	// token; nil when those are unset, which hides the upload control.
+	cfg.UploadMedia = buildUploadMedia(getenv)
 
 	handler, err := adminweb.New(cfg)
 	if err != nil {
@@ -253,6 +257,50 @@ func buildPublish(getenv func(string) string) func(context.Context, adminweb.Cre
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return mapPublishResponse(resp.StatusCode, body)
+	}
+}
+
+// buildUploadMedia returns the closure the admin uses to store an uploaded image via
+// the publish service's media endpoint, or nil when publishing is not configured. It
+// keeps the admin a NON-WRITER: the bytes are POSTed to the writer service (which
+// owns the media store) and only the returned URL comes back. It reuses the same
+// publish URL and operator token as buildPublish; the image bytes are the raw request
+// body and the publish service sniffs the real type, so the filename is advisory.
+func buildUploadMedia(getenv func(string) string) func(context.Context, string, string, []byte) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_URL")), "/")
+	token := strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_TOKEN"))
+	if base == "" || token == "" {
+		return nil
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	return func(ctx context.Context, filename, contentType string, data []byte) (string, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/media", bytes.NewReader(data))
+		if err != nil {
+			return "", fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("contact media API: %w", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if resp.StatusCode != http.StatusCreated {
+			return "", fmt.Errorf("media API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		var out struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			return "", fmt.Errorf("decode media response: %w", err)
+		}
+		if out.URL == "" {
+			return "", errors.New("media API returned no url")
+		}
+		return out.URL, nil
 	}
 }
 

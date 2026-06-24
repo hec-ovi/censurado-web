@@ -1,8 +1,10 @@
 package adminweb_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,6 +40,13 @@ func (p *publishStub) fn(_ context.Context, in adminweb.CreateArticleInput) (adm
 // and the create flow can be exercised end to end. Passing nil for pub leaves the
 // route in its disabled state.
 func newCreateHandler(t *testing.T, pub func(context.Context, adminweb.CreateArticleInput) (adminweb.CreateArticleResult, error)) *adminweb.Handler {
+	return newCreateHandlerCfg(t, pub, nil)
+}
+
+// newCreateHandlerCfg is newCreateHandler with a configurable UploadMedia closure
+// (nil hides the upload control), so the media tests can drive the upload path while
+// every existing test keeps its single-arg constructor.
+func newCreateHandlerCfg(t *testing.T, pub func(context.Context, adminweb.CreateArticleInput) (adminweb.CreateArticleResult, error), upload func(context.Context, string, string, []byte) (string, error)) *adminweb.Handler {
 	t.Helper()
 	repo, err := sqlite.Open(filepath.Join(t.TempDir(), "create.db"))
 	if err != nil {
@@ -72,6 +81,7 @@ func newCreateHandler(t *testing.T, pub func(context.Context, adminweb.CreateArt
 		SecureCookies: false,
 		PageSize:      pageSize,
 		Publish:       pub,
+		UploadMedia:   upload,
 	})
 	if err != nil {
 		t.Fatalf("adminweb.New: %v", err)
@@ -412,5 +422,191 @@ func TestCreateCSRFAndSession(t *testing.T) {
 	})
 	if stub.calls != 0 {
 		t.Errorf("Publish was reached despite csrf/session rejection (calls=%d)", stub.calls)
+	}
+}
+
+// pngBytes is a minimal PNG header for an uploaded file part; the upload closure is
+// a stub here, so the bytes only need to thread through unchanged.
+var pngBytes = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+
+// uploadStub records the bytes handed to the injected UploadMedia closure and
+// returns a programmed URL (or error), so a test can assert the upload was proxied
+// and the resulting URL reached the article metadata.
+type uploadStub struct {
+	calls    int
+	lastName string
+	lastType string
+	lastData []byte
+	url      string
+	err      error
+}
+
+func (u *uploadStub) fn(_ context.Context, filename, contentType string, data []byte) (string, error) {
+	u.calls++
+	u.lastName = filename
+	u.lastType = contentType
+	u.lastData = append([]byte(nil), data...)
+	if u.err != nil {
+		return "", u.err
+	}
+	return u.url, nil
+}
+
+// postCreateMultipart submits the create form as multipart/form-data, optionally
+// attaching one file part. csrf is sent unless it is the sentinel "<omit>".
+func postCreateMultipart(h http.Handler, c *http.Cookie, csrf string, fields url.Values, fileField, filename string, fileData []byte) *httptest.ResponseRecorder {
+	if fields == nil {
+		fields = url.Values{}
+	}
+	if csrf != "<omit>" {
+		fields.Set("csrf_token", csrf)
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, vs := range fields {
+		for _, v := range vs {
+			_ = mw.WriteField(k, v)
+		}
+	}
+	if fileField != "" {
+		fw, _ := mw.CreateFormFile(fileField, filename)
+		_, _ = fw.Write(fileData)
+	}
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/admin/create", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if c != nil {
+		req.AddCookie(c)
+	}
+	return do(h, req)
+}
+
+func TestCreateUploadControlGatedOnConfig(t *testing.T) {
+	// The file-upload control appears only when UploadMedia is wired; the image URL
+	// and YouTube fields are always available (an operator can reference media by URL).
+	withUpload := newCreateHandlerCfg(t, (&publishStub{}).fn, (&uploadStub{}).fn)
+	body, _ := getCreate(t, withUpload, loginCookie(t, withUpload))
+	if !strings.Contains(body, `name="image"`) || !strings.Contains(body, `type="file"`) {
+		t.Errorf("upload control missing when UploadMedia is configured")
+	}
+	if !strings.Contains(body, `name="youtube"`) || !strings.Contains(body, `name="image_url"`) {
+		t.Errorf("media URL/youtube fields missing")
+	}
+
+	noUpload := newCreateHandler(t, (&publishStub{}).fn) // UploadMedia nil
+	body2, _ := getCreate(t, noUpload, loginCookie(t, noUpload))
+	if strings.Contains(body2, `type="file"`) {
+		t.Errorf("upload control rendered while UploadMedia is disabled")
+	}
+}
+
+func TestCreateUploadsImageAndAttachesToArticle(t *testing.T) {
+	pub := &publishStub{result: adminweb.CreateArticleResult{ID: "a1", Slug: "operator-desk-note", Created: true}}
+	up := &uploadStub{url: "/media/abc123.png"}
+	h := newCreateHandlerCfg(t, pub.fn, up.fn)
+	c := loginCookie(t, h)
+	_, csrf := getCreate(t, h, c)
+
+	f := validCreateForm()
+	f.Del("metadata") // the dedicated media fields carry the media here
+	f.Set("image_alt", "a chart")
+	f.Set("youtube", "https://youtu.be/dQw4w9WgXcQ")
+	rec := postCreateMultipart(h, c, csrf, f, "image", "shot.png", pngBytes)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	if up.calls != 1 {
+		t.Fatalf("UploadMedia called %d times, want 1", up.calls)
+	}
+	if !bytes.Equal(up.lastData, pngBytes) {
+		t.Errorf("uploaded bytes differ from the submitted file")
+	}
+	if up.lastName != "shot.png" {
+		t.Errorf("UploadMedia filename = %q, want the multipart part filename shot.png", up.lastName)
+	}
+	if up.lastType != "application/octet-stream" {
+		t.Errorf("UploadMedia content type = %q, want the multipart default application/octet-stream", up.lastType)
+	}
+	if pub.calls != 1 {
+		t.Fatalf("Publish called %d times, want 1", pub.calls)
+	}
+	meta := pub.lastIn.Metadata
+	if meta["image"] != "/media/abc123.png" {
+		t.Errorf("metadata image = %v, want the uploaded URL", meta["image"])
+	}
+	if meta["image_alt"] != "a chart" {
+		t.Errorf("metadata image_alt = %v, want %q", meta["image_alt"], "a chart")
+	}
+	if meta["youtube"] != "https://youtu.be/dQw4w9WgXcQ" {
+		t.Errorf("metadata youtube = %v, want the submitted URL", meta["youtube"])
+	}
+}
+
+func TestCreateInvalidYouTubeRejected(t *testing.T) {
+	pub := &publishStub{}
+	h := newCreateHandlerCfg(t, pub.fn, (&uploadStub{}).fn)
+	c := loginCookie(t, h)
+	_, csrf := getCreate(t, h, c)
+
+	f := validCreateForm()
+	f.Set("youtube", "https://vimeo.com/12345") // not YouTube
+	rec := postCreateMultipart(h, c, csrf, f, "", "", nil)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	if pub.calls != 0 {
+		t.Errorf("Publish was called despite an invalid YouTube reference")
+	}
+	if !strings.Contains(rec.Body.String(), "YouTube") {
+		t.Errorf("invalid youtube did not produce a clear field error")
+	}
+}
+
+func TestCreateMultipartStillEnforcesCSRF(t *testing.T) {
+	// The CSRF guard must work for a multipart submission too: the upload path parses
+	// the body as multipart, not urlencoded, so csrf_token must still be found.
+	pub := &publishStub{result: adminweb.CreateArticleResult{Slug: "x"}}
+	up := &uploadStub{url: "/media/x.png"}
+	h := newCreateHandlerCfg(t, pub.fn, up.fn)
+	c := loginCookie(t, h)
+	_, csrf := getCreate(t, h, c)
+
+	// Missing csrf -> 403, no upload, no publish.
+	if rec := postCreateMultipart(h, c, "<omit>", validCreateForm(), "image", "x.png", pngBytes); rec.Code != http.StatusForbidden {
+		t.Errorf("multipart without csrf: status = %d, want 403", rec.Code)
+	}
+	// Valid csrf -> accepted (a real csrf_token is found in the multipart form).
+	rec := postCreateMultipart(h, c, csrf, validCreateForm(), "", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("multipart with csrf: status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	if pub.calls != 1 {
+		t.Errorf("Publish calls = %d, want 1", pub.calls)
+	}
+}
+
+func TestCreateRejectsOversizeImage(t *testing.T) {
+	// An image part over the 10 MiB cap (but under the 12 MiB multipart cap, so it
+	// parses and reaches uploadFormImage) is rejected inline with a field error, and
+	// neither the upload proxy nor Publish runs.
+	pub := &publishStub{}
+	up := &uploadStub{url: "/media/x.png"}
+	h := newCreateHandlerCfg(t, pub.fn, up.fn)
+	c := loginCookie(t, h)
+	_, csrf := getCreate(t, h, c)
+
+	oversize := bytes.Repeat([]byte("x"), (10<<20)+16) // > maxImageBytes, < maxCreateUpload
+	rec := postCreateMultipart(h, c, csrf, validCreateForm(), "image", "big.png", oversize)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "too large") {
+		t.Errorf("oversize image did not produce a clear field error")
+	}
+	if up.calls != 0 || pub.calls != 0 {
+		t.Errorf("upload/publish ran for an oversize image (up=%d pub=%d)", up.calls, pub.calls)
 	}
 }

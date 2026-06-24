@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"html"
 	"html/template"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web/internal/media"
 )
 
 //go:embed templates/*.tmpl templates/components/*.tmpl
@@ -203,10 +203,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 
 	media := mediaForArticle(env.siteBase, a)
 	ogImage := media.ogImage
-	ogVideo := ""
-	if media.ogVideo != "" {
-		ogVideo = media.ogVideo
-	}
+	ogVideo := media.ogVideo
 	twitterCard := "summary"
 	if ogImage != "" {
 		twitterCard = "summary_large_image"
@@ -425,7 +422,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	}
 
 	if yt, ok := metadataString(a.Metadata, "youtube"); ok {
-		if embed := youtubeEmbedURL(yt); embed != "" {
+		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
 				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
 				ogImage: imgAbs,
@@ -434,7 +431,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 		}
 	}
 	if yt, ok := metadataString(a.Metadata, "youtube_id"); ok {
-		if embed := youtubeEmbedURL(yt); embed != "" {
+		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
 				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
 				ogImage: imgAbs,
@@ -473,7 +470,7 @@ func metadataMediaURL(base string, m map[string]any, key string) (src, absoluteU
 	if !ok {
 		return "", ""
 	}
-	return safeMediaURL(base, raw)
+	return media.SafeMediaURL(base, raw)
 }
 
 func firstMetadataString(m map[string]any, keys ...string) string {
@@ -483,60 +480,6 @@ func firstMetadataString(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func safeMediaURL(base, raw string) (src, absoluteURL string) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", ""
-	}
-	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
-		if strings.TrimSpace(base) == "" {
-			return raw, raw
-		}
-		return raw, strings.TrimRight(base, "/") + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil || !u.IsAbs() {
-		return "", ""
-	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return "", ""
-	}
-	return raw, raw
-}
-
-var youtubeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{6,32}$`)
-
-func youtubeEmbedURL(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if youtubeIDRe.MatchString(raw) {
-		return "https://www.youtube-nocookie.com/embed/" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
-	var id string
-	switch host {
-	case "youtu.be":
-		id = strings.Trim(strings.Split(strings.Trim(u.Path, "/"), "/")[0], " ")
-	case "youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com":
-		switch {
-		case u.Query().Get("v") != "":
-			id = u.Query().Get("v")
-		case strings.HasPrefix(u.Path, "/embed/"):
-			id = strings.TrimPrefix(u.Path, "/embed/")
-		case strings.HasPrefix(u.Path, "/shorts/"):
-			id = strings.TrimPrefix(u.Path, "/shorts/")
-		}
-	}
-	id = strings.Split(strings.Trim(id, "/"), "/")[0]
-	if !youtubeIDRe.MatchString(id) {
-		return ""
-	}
-	return "https://www.youtube-nocookie.com/embed/" + id
 }
 
 func authorInitial(name string) string {

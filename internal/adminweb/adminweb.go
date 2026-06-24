@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/hec-ovi/censurado-web/internal/content"
 	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web/internal/media"
 	"github.com/hec-ovi/censurado-web/internal/store"
 )
 
@@ -54,6 +56,13 @@ type Config struct {
 	// operator publish key. When nil, the create route shows a disabled state and
 	// the POST returns a friendly "not configured" response (never a 500/panic).
 	Publish func(ctx context.Context, in CreateArticleInput) (CreateArticleResult, error)
+
+	// UploadMedia stores one uploaded image via the publish service's media endpoint
+	// and returns its site-relative URL (e.g. /media/<hash>.jpg). Injected so the
+	// admin stays a NON-WRITER: it proxies the bytes to the writer service rather than
+	// touching disk. When nil, the create form hides the file-upload control; an
+	// operator can still reference an image by URL.
+	UploadMedia func(ctx context.Context, filename, contentType string, data []byte) (string, error)
 }
 
 // CreateArticleInput is one operator-entered article handed to the Publish
@@ -122,6 +131,7 @@ type Handler struct {
 	log           store.SubmissionLog
 	regenerate    func(ctx context.Context) (RegenResult, error)
 	publish       func(ctx context.Context, in CreateArticleInput) (CreateArticleResult, error)
+	uploadMedia   func(ctx context.Context, filename, contentType string, data []byte) (string, error)
 	mux           *http.ServeMux
 }
 
@@ -162,9 +172,10 @@ func New(cfg Config) (*Handler, error) {
 		sessionTTL:    ttl,
 		secureCookies: cfg.SecureCookies,
 		pageSize:      pageSize,
-		log:           cfg.Log,        // optional; nil disables the audit view
-		regenerate:    cfg.Regenerate, // optional; nil disables the regenerate action
-		publish:       cfg.Publish,    // optional; nil disables the create action
+		log:           cfg.Log,         // optional; nil disables the audit view
+		regenerate:    cfg.Regenerate,  // optional; nil disables the regenerate action
+		publish:       cfg.Publish,     // optional; nil disables the create action
+		uploadMedia:   cfg.UploadMedia, // optional; nil hides the upload control
 	}
 	h.routes()
 	return h, nil
@@ -236,7 +247,18 @@ func (h *Handler) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if err := r.ParseForm(); err != nil {
+		// A multipart POST (the create form's image upload) must be parsed as
+		// multipart, not urlencoded: r.ParseForm does not read a multipart body, so the
+		// csrf_token field would be missing and every upload would 403. Cap the body
+		// first so an oversize upload is rejected before it is buffered, and the file
+		// part is then available to the handler via r.FormFile.
+		if isMultipartForm(r) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxCreateUpload)
+			if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+		} else if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
@@ -247,6 +269,20 @@ func (h *Handler) requireCSRF(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+
+// isMultipartForm reports whether the request carries a multipart/form-data body.
+func isMultipartForm(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data")
+}
+
+const (
+	// maxCreateUpload bounds the whole multipart create POST (image plus form fields).
+	// It sits above the publish media endpoint's own per-image limit.
+	maxCreateUpload = 12 << 20 // 12 MiB
+	// maxMultipartMemory is how much of a multipart form is buffered in memory before
+	// parts spill to temp files (the container's tmpfs /tmp).
+	maxMultipartMemory = 1 << 20 // 1 MiB
+)
 
 func (h *Handler) handleRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/articles", http.StatusSeeOther)
@@ -488,10 +524,31 @@ func (h *Handler) handleCreateSubmit(w http.ResponseWriter, r *http.Request) {
 		Topics:      r.PostFormValue("topics"),
 		PublishedAt: r.PostFormValue("published_at"),
 		Metadata:    r.PostFormValue("metadata"),
+		ImageURL:    r.PostFormValue("image_url"),
+		ImageAlt:    r.PostFormValue("image_alt"),
+		YouTube:     r.PostFormValue("youtube"),
 	}
 	view.Form = form
 
-	in, fields := buildCreateInput(form)
+	// An optional uploaded image is proxied to the publish service's media endpoint,
+	// which stores the bytes and returns a /media/... URL; the admin never writes disk
+	// itself. An upload problem is shown inline like any other field error.
+	uploadedImageURL, uploadErr := h.uploadFormImage(r)
+	if uploadErr != "" {
+		view.Fields = map[string]string{"image": uploadErr}
+		h.renderTemplate(w, http.StatusUnprocessableEntity, createTmpl, "layout", view)
+		return
+	}
+	// Preserve a successful upload across a field-error re-render: echo the stored URL
+	// into the form's image field so a validation failure on an unrelated field does
+	// not discard it (a file input cannot be repopulated by the browser, so without
+	// this the operator would have to re-select and re-upload the image).
+	if uploadedImageURL != "" {
+		form.ImageURL = uploadedImageURL
+		view.Form = form
+	}
+
+	in, fields := buildCreateInput(form, uploadedImageURL)
 	if len(fields) > 0 {
 		view.Fields = fields
 		h.renderTemplate(w, http.StatusUnprocessableEntity, createTmpl, "layout", view)
@@ -533,8 +590,9 @@ func (h *Handler) handleCreateSubmit(w http.ResponseWriter, r *http.Request) {
 // than failing the form.
 func (h *Handler) newCreateView(ctx context.Context, r *http.Request) createView {
 	view := createView{
-		layoutData: h.layoutFor(r, "New article"),
-		Configured: h.publish != nil,
+		layoutData:    h.layoutFor(r, "New article"),
+		Configured:    h.publish != nil,
+		UploadEnabled: h.uploadMedia != nil,
 	}
 	if facets, err := h.repo.Facets(ctx); err == nil {
 		view.Sections = facetValues(facets.Sections)
@@ -542,6 +600,43 @@ func (h *Handler) newCreateView(ctx context.Context, r *http.Request) createView
 		view.Topics = facetValues(facets.Topics)
 	}
 	return view
+}
+
+// maxImageBytes is the per-image cap the admin enforces before proxying an upload.
+// It matches the publish media store's default limit, so a too-large image is caught
+// here with a friendly field error rather than a generic gateway failure.
+const maxImageBytes = 10 << 20 // 10 MiB
+
+// uploadFormImage reads an optional uploaded image from the create form and stores it
+// via the injected UploadMedia closure (which POSTs to the publish service). It
+// returns the stored /media/... URL, or a field-error message for an
+// oversize/unreadable/failed upload. When no file was submitted, or uploads are not
+// configured, it returns empty/empty (no image, no error), so the form still works
+// without an upload.
+func (h *Handler) uploadFormImage(r *http.Request) (url string, fieldErr string) {
+	if h.uploadMedia == nil || r.MultipartForm == nil {
+		return "", ""
+	}
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		return "", "" // no file part submitted: not an error
+	}
+	defer file.Close()
+	if header.Size > maxImageBytes {
+		return "", "image is too large (max 10 MiB)"
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxImageBytes+1))
+	if err != nil {
+		return "", "could not read the uploaded image"
+	}
+	if int64(len(data)) > maxImageBytes {
+		return "", "image is too large (max 10 MiB)"
+	}
+	stored, err := h.uploadMedia(r.Context(), header.Filename, header.Header.Get("Content-Type"), data)
+	if err != nil {
+		return "", "upload failed: " + err.Error()
+	}
+	return stored, ""
 }
 
 func facetValues(fs []store.Facet) []string {
@@ -557,7 +652,7 @@ func facetValues(fs []store.Facet) []string {
 // the four required fields, the optional published_at timestamp, and the optional
 // metadata JSON. The write API re-validates everything (it is the contract), but
 // catching these here gives one-pass feedback without a round trip.
-func buildCreateInput(f createForm) (CreateArticleInput, map[string]string) {
+func buildCreateInput(f createForm, uploadedImageURL string) (CreateArticleInput, map[string]string) {
 	fields := map[string]string{}
 	title := strings.TrimSpace(f.Title)
 	body := strings.TrimSpace(f.Body)
@@ -597,6 +692,43 @@ func buildCreateInput(f createForm) (CreateArticleInput, map[string]string) {
 			in.Metadata = m
 		}
 	}
+
+	// Media: the dedicated fields and the metadata JSON converge on the same keys the
+	// public renderer reads (image, image_alt, youtube), so media support needs no
+	// contract change. An uploaded image wins over a typed URL; both are optional. A
+	// dedicated field overrides the same key in the metadata JSON. YouTube takes
+	// precedence over the image at render time.
+	image := strings.TrimSpace(f.ImageURL)
+	if uploadedImageURL != "" {
+		image = uploadedImageURL
+	}
+	alt := strings.TrimSpace(f.ImageAlt)
+	youtube := strings.TrimSpace(f.YouTube)
+	if image != "" {
+		if src, _ := media.SafeMediaURL("", image); src == "" {
+			fields["image_url"] = "must be a https URL or a /media path"
+		}
+	}
+	if youtube != "" && media.YouTubeEmbedURL(youtube) == "" {
+		fields["youtube"] = "not a recognized YouTube URL or video id"
+	}
+	if image != "" || alt != "" || youtube != "" {
+		meta := in.Metadata
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		if image != "" {
+			meta["image"] = image
+		}
+		if alt != "" {
+			meta["image_alt"] = alt
+		}
+		if youtube != "" {
+			meta["youtube"] = youtube
+		}
+		in.Metadata = meta
+	}
+
 	if len(fields) == 0 {
 		return in, nil
 	}

@@ -193,3 +193,48 @@ func TestSEO_MetaDescriptionExcerpt(t *testing.T) {
 		t.Errorf("short description = %q, want untruncated", short)
 	}
 }
+
+// D5b: metadata.youtube renders the nocookie embed iframe + og:video and wins over a
+// co-present image; metadata.video renders the native <video> with the image as the
+// poster. This locks the mediaForArticle precedence and og:video emission after
+// SafeMediaURL/YouTubeEmbedURL moved into internal/media.
+func TestSEO_MediaYouTubeAndVideo(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	const embed = "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"
+	const img = "https://cdn.example/poster.jpg"
+	const vid = "https://cdn.example/clip.mp4"
+
+	yt := seed(t, repo, seedSpec{
+		Title: "Has YouTube", Author: "ada", Section: "tech", Published: date(2026, 6, 10),
+		Metadata: map[string]any{"youtube": "https://youtu.be/dQw4w9WgXcQ", "image": img},
+	})
+	vidArt := seed(t, repo, seedSpec{
+		Title: "Has Video", Author: "ada", Section: "tech", Published: date(2026, 6, 11),
+		Metadata: map[string]any{"video": vid, "image": img},
+	})
+	genInto(t, repo, out, nil)
+
+	ytPage := string(readArtifact(t, out, articlePath(yt)))
+	if !strings.Contains(ytPage, `class="hero-embed"`) || !strings.Contains(ytPage, `src="`+embed+`"`) {
+		t.Errorf("youtube article missing the nocookie embed iframe (src %q)", embed)
+	}
+	if got := metaContent(t, ytPage, "property", "og:video"); got != embed {
+		t.Errorf("og:video = %q, want %q", got, embed)
+	}
+	// The youtube branch wins precedence over the co-present image: no <img> hero.
+	if strings.Contains(ytPage, `class="hero-img"`) {
+		t.Errorf("youtube article rendered an <img> hero; the youtube branch must win precedence")
+	}
+
+	vidPage := string(readArtifact(t, out, articlePath(vidArt)))
+	if !strings.Contains(vidPage, `class="hero-video"`) || !strings.Contains(vidPage, `src="`+vid+`"`) {
+		t.Errorf("video article missing the native <video> hero (src %q)", vid)
+	}
+	if !strings.Contains(vidPage, `poster="`+img+`"`) {
+		t.Errorf("video article missing the image poster %q", img)
+	}
+	if got := metaContent(t, vidPage, "property", "og:video"); got != vid {
+		t.Errorf("og:video = %q, want %q", got, vid)
+	}
+}

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { within, waitFor } from "@testing-library/dom";
 import userEvent from "@testing-library/user-event";
 
-import { initLiveRefresh, initRefine } from "../internal/generate/templates/assets/app.js";
+import { initLiveRefresh, initMasthead, initRefine } from "../internal/generate/templates/assets/app.js";
 import {
   E,
   LATEST_STREAM,
@@ -368,5 +368,49 @@ describe("Censurado refiner", () => {
 
     expect(itemURLs()[0]).toBe(breaking.url);
     expect(container.querySelector("[data-live-refresh-banner]").hasAttribute("hidden")).toBe(true);
+  });
+
+  test("masthead cycles videos with a crossfade and alternating top/bottom alignment", () => {
+    vi.useFakeTimers();
+    try {
+      container = document.createElement("div");
+      container.innerHTML = `
+        <div class="masthead-media" data-masthead data-masthead-videos="/a.mp4 /b.mp4 /c.mp4">
+          <video class="masthead-video is-active"></video>
+          <video class="masthead-video"></video>
+        </div>`;
+      document.body.appendChild(container);
+      const videos = container.querySelectorAll(".masthead-video");
+      // jsdom does not implement media playback; stub it so init/crossfade run.
+      videos.forEach((v) => {
+        v.play = () => Promise.resolve();
+        v.pause = () => {};
+      });
+
+      const ctrl = initMasthead(container);
+      expect(ctrl).toBeTruthy();
+
+      // First clip: active and top-aligned.
+      expect(videos[0].classList.contains("is-active")).toBe(true);
+      expect(videos[0].style.objectPosition).toBe("50% 0%");
+
+      // Advance: the second element takes the next playlist item, becomes active, and
+      // is bottom-aligned (alternating).
+      ctrl.advance();
+      expect(videos[1].getAttribute("src")).toBe("/b.mp4");
+      expect(videos[1].classList.contains("is-active")).toBe(true);
+      expect(videos[0].classList.contains("is-active")).toBe(false);
+      expect(videos[1].style.objectPosition).toBe("50% 100%");
+
+      // Let the post-crossfade settle timer fire, then advance again: back to the
+      // first element with the third clip, top-aligned.
+      vi.advanceTimersByTime(1200);
+      ctrl.advance();
+      expect(videos[0].getAttribute("src")).toBe("/c.mp4");
+      expect(videos[0].classList.contains("is-active")).toBe(true);
+      expect(videos[0].style.objectPosition).toBe("50% 0%");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

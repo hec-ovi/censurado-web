@@ -21,7 +21,7 @@ type Options struct {
 	ShardMaxEntries   int       // entries cap per shard part; default 500, >=1
 	ShardMaxGzipBytes int       // gzipped-bytes cap per shard part; default 200*1024, >=1
 	Now               time.Time // build clock; default time.Now().UTC(); never used for content identity
-	SiteName          string    // feed/site title; default "Censurado"
+	SiteName          string    // feed/site title; default "El Censurado Web"
 }
 
 // Validate fills defaults in place, trims the BaseURL trailing slash, and
@@ -60,7 +60,7 @@ func (o *Options) Validate() error {
 		o.Now = time.Now().UTC()
 	}
 	if o.SiteName == "" {
-		o.SiteName = "Censurado"
+		o.SiteName = "El Censurado Web"
 	}
 	return nil
 }

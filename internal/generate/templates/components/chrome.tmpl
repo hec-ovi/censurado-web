@@ -1,5 +1,13 @@
 {{define "site_header"}}
 <header class="site-header" data-site-header>
+<div class="masthead">
+<div class="masthead-media" data-masthead data-masthead-videos="/assets/video1.mp4 /assets/video3.mp4 /assets/video2.mp4 /assets/video4.mp4" aria-hidden="true">
+<video class="masthead-video is-active" muted loop autoplay playsinline preload="auto">
+<source src="/assets/video1.mp4" type="video/mp4">
+</video>
+<video class="masthead-video" muted playsinline preload="auto"></video>
+<div class="masthead-scanlines"></div>
+</div>
 <div class="header-topline">
 <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">Menu</button>
 <div class="theme-switcher" role="group" aria-label="Theme">
@@ -8,10 +16,6 @@
 <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
 </div>
 </div>
-<div class="masthead">
-<video class="masthead-video" aria-hidden="true" autoplay muted loop playsinline preload="metadata">
-<source src="/assets/masthead-bg.mp4" type="video/mp4">
-</video>
 <div class="site-name brand-wordmark" aria-label="El Censurado Web">
 <span class="brand-word brand-word-el"><span class="brand-el-e">E</span><span class="brand-el-l">L</span></span>
 <span class="brand-word brand-word-censurado">censurado</span>

@@ -150,15 +150,19 @@ shared Markdown gate.
 
 The presentation half of the generator: Go html/templates plus one stylesheet and one ES
 module, embedded and emitted at stable `/assets/` URLs. The identity is a square,
-image-led editorial layout with light/dark theming through CSS custom properties. `app.js`
-is a progressive-enhancement facet refiner: discrete chip toggles (there is no reader
-search box), which read the page's manifest and month shards and filter the list in place,
-falling back to the pre-built static scope links when JavaScript is off. The only inline
-script is a small theme bootstrap in the head; there is no CSP header today.
+image-led editorial layout with light/dark theming through CSS custom properties, and the
+"El Censurado Web" brand. The masthead is a cycling set of muted background video clips
+(crossfaded, with a CRT-monitor scanline overlay and a blackout), with the controls floated
+over it on desktop. `app.js` is one progressive-enhancement module: the facet refiner
+(discrete chip toggles, no reader search box, reading the page's manifest and month shards
+to filter in place and falling back to pre-built static scope links when JavaScript is off),
+plus the theme toggle, the mobile dropdown menu, the live-refresh sentinel poll, and the
+masthead video cycle. The only inline script is a small theme bootstrap in the head; there
+is no CSP header today.
 
 - `internal/generate/templates/base.tmpl` :: the document shell (head meta, theme bootstrap, asset links, JSON-LD).
 - `internal/generate/templates/{listing.tmpl,article.tmpl}` + `components/{chrome,article_card,media}.tmpl` :: listing and article pages and the shared chrome, card, and lead-media component.
-- `internal/generate/templates/assets/{style.css,app.js,favicon.svg}` :: the single stylesheet, the facet refiner, the favicon.
+- `internal/generate/templates/assets/{style.css,app.js,favicon.svg,video1..4.mp4}` :: the single stylesheet; `app.js` (`initRefine`/`initTheme`/`initMenu`/`initLiveRefresh`/`initMasthead`); the favicon; and the four muted masthead background clips.
 - `internal/generate/templates/README.md` :: the frontend contract: the required DOM hooks, the accepted `metadata` media keys, the theming and static constraints.
 
 ### 7. Admin console

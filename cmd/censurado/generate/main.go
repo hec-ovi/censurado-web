@@ -27,7 +27,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	out := fs.String("out", "./public", "output artifact root")
 	baseURL := fs.String("base-url", os.Getenv("CENSURADO_BASE_URL"), "absolute site origin (or CENSURADO_BASE_URL)")
 	pageSize := fs.Int("page-size", 20, "articles per full page (P); locked before first publish")
-	siteName := fs.String("site-name", "Censurado", "site/feed title")
+	siteName := fs.String("site-name", "El Censurado Web", "site/feed title")
 	quiet := fs.Bool("quiet", false, "suppress the per-run summary on stdout")
 	if err := fs.Parse(args); err != nil {
 		return 2

@@ -108,7 +108,7 @@ A pure reader of the store (`Find`/`Count` only, never writes) that turns the ar
 
 ### 5. Public site (`internal/generate/templates`)
 
-The reader-facing layer the generator emits, served as static files. Clean URLs per facet, a global "latest" feed, and a square, image-led editorial identity: bold display headlines, uppercase weighted-sans metadata, high contrast with automatic light and dark theming, and facet chips instead of checkboxes. Monospace is reserved for code inside article bodies. The styling is one framework-free stylesheet with system fonts only (no external font fetch), responsive and accessible (WCAG AA in both schemes, visible focus, a skip link, reduced-motion support).
+The reader-facing layer the generator emits, served as static files. Clean URLs per facet, a global "latest" feed, and a square, image-led editorial identity under the "El Censurado Web" brand: bold display headlines, uppercase weighted-sans metadata, high contrast with automatic light and dark theming, and facet chips instead of checkboxes. The masthead is a cycling set of muted background video clips (crossfaded, with a CRT-monitor scanline overlay and a blackout, paused for reduced-motion readers), with the header controls floated over it on desktop. Monospace is reserved for code inside article bodies. The styling is one framework-free stylesheet with system fonts only (no external font fetch), responsive and accessible (WCAG AA in both schemes, visible focus, a skip link, reduced-motion support).
 
 The client refiner (`/assets/app.js`, an ES module) is pure progressive enhancement over the rendered pages. With JavaScript off, every facet is a real pre-built link to a static scope page, so navigation and crawling work without it. With JavaScript on, it reads the manifest and shards, filters the list in place, and updates the URL to that same pre-built page, so reload and back or forward always land on real HTML. There is no free-text search box; refine membership and order match the server pages exactly, including back-dated inserts across capped shard parts.
 
@@ -295,7 +295,7 @@ internal/
   publish/           the write API (POST /articles, POST /articles:batch), rate limiter, payload archive, apply core, the debounced regenerate worker, and POST/GET /media
   media/             the self-hosted content-addressed image store (validate, hash, serve)
   generate/          the incremental static generator (incl. the /latest/version.json sentinel)
-    templates/       html/template files and static assets (style.css, app.js); LIVE-REFRESH.md is the client contract
+    templates/       html/template files and static assets (style.css, app.js, cycling masthead videos); LIVE-REFRESH.md is the client contract
   adminweb/          the private admin: session auth, htmx browse/filter/audit/regenerate, image upload
   cachepolicy/       the split CDN cache policy as one source of truth (CacheControl by URL pattern)
   purge/             reads the generator's purge.json, invalidates exactly those CDN URLs

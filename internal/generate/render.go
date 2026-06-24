@@ -20,9 +20,10 @@ import (
 var templateFS embed.FS
 
 // assetFS holds the public frontend assets emitted at stable /assets/ URLs:
-// stylesheet, client-side Tier-B facet/menu/theme script, favicon, and masthead media.
+// stylesheet, client-side Tier-B facet/menu/theme script, favicon, and the cycling
+// masthead background videos.
 //
-//go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg templates/assets/masthead-bg.mp4
+//go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg templates/assets/video1.mp4 templates/assets/video2.mp4 templates/assets/video3.mp4 templates/assets/video4.mp4
 var assetFS embed.FS
 
 var templateFuncs = template.FuncMap{

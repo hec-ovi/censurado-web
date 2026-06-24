@@ -919,10 +919,110 @@ export async function initLiveRefresh(root = document, options = {}) {
   return live.init();
 }
 
+// initMasthead cycles the background videos behind the wordmark with a crossfade,
+// for a "monitor switching feeds" feel. Two stacked <video> elements ping-pong
+// through the playlist (any length), so only two ever decode at once. It bails on
+// reduced motion (the CSS hides the video there too) and pauses when the tab is
+// hidden. With no JavaScript the first <video> simply autoplays and loops.
+export function initMasthead(root = document) {
+  const scope = root || document;
+  const stage = scope.querySelector("[data-masthead]");
+  if (!stage) return null;
+  const els = Array.from(stage.querySelectorAll(".masthead-video"));
+  const playlist = (stage.getAttribute("data-masthead-videos") || "").split(/\s+/).filter(Boolean);
+  if (els.length < 2 || playlist.length < 2) return null;
+
+  const win = scope.defaultView || (scope.ownerDocument && scope.ownerDocument.defaultView) || window;
+  const reduce =
+    win && typeof win.matchMedia === "function" && win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce) {
+    els.forEach((v) => {
+      try {
+        v.pause();
+      } catch {}
+    });
+    return null;
+  }
+
+  const doc = scope.ownerDocument || (scope.nodeType === 9 ? scope : document);
+  const CROSSFADE = 0.7; // seconds before a clip ends to begin the fade
+  let activeEl = 0; // which <video> element is showing
+  let playIdx = 0; // playlist index on the active element
+  let switching = false;
+
+  els.forEach((v) => {
+    v.loop = false;
+    v.muted = true;
+    v.playsInline = true;
+  });
+  const play = (v) => {
+    const p = v.play && v.play();
+    if (p && p.catch) p.catch(() => {});
+  };
+  // No panning (it read as too busy). Each clip is shown statically, either top- or
+  // bottom-aligned, alternating per clip; and each full pass through the playlist
+  // inverts, so a clip that was top-aligned last cycle is bottom-aligned the next.
+  // With object-fit cover this shows a different slice of each clip, with no motion.
+  let cycle = 0;
+  const setAlign = (v, idx) => {
+    v.style.objectPosition = (idx + cycle) % 2 === 0 ? "50% 0%" : "50% 100%";
+  };
+
+  play(els[0]); // the first element already holds playlist[0] via its <source>
+  setAlign(els[0], 0);
+
+  function crossfade() {
+    if (switching) return;
+    switching = true;
+    const cur = els[activeEl];
+    const nxt = els[1 - activeEl];
+    playIdx = (playIdx + 1) % playlist.length;
+    if (playIdx === 0) cycle = (cycle + 1) % 2; // invert top/bottom each full pass
+    nxt.src = playlist[playIdx];
+    try {
+      nxt.currentTime = 0;
+    } catch {}
+    play(nxt);
+    setAlign(nxt, playIdx);
+    nxt.classList.add("is-active");
+    cur.classList.remove("is-active");
+    activeEl = 1 - activeEl;
+    win.setTimeout(() => {
+      try {
+        cur.pause();
+      } catch {}
+      switching = false;
+    }, 1100);
+  }
+
+  function tick(e) {
+    const v = e.target;
+    if (!v.classList.contains("is-active") || switching) return;
+    if (v.duration && v.currentTime >= v.duration - CROSSFADE) crossfade();
+  }
+  els.forEach((v) => v.addEventListener("timeupdate", tick));
+
+  doc.addEventListener("visibilitychange", () => {
+    const hidden = doc.visibilityState === "hidden";
+    els.forEach((v) => {
+      if (hidden) {
+        try {
+          v.pause();
+        } catch {}
+      } else if (v.classList.contains("is-active")) {
+        play(v);
+      }
+    });
+  });
+
+  return { stage, advance: crossfade };
+}
+
 // Auto-initialize on the real page. Module scripts are deferred, so the DOM is
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
+    initMasthead(document);
     initMenu(document);
     initTheme(document);
     initRefine(document).finally(() => {

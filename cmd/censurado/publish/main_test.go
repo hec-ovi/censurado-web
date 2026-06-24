@@ -2,13 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/hec-ovi/censurado-web/internal/domain"
 	"github.com/hec-ovi/censurado-web/internal/publish"
+	"github.com/hec-ovi/censurado-web/internal/purge"
+	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
 )
 
 func envFromMap(m map[string]string) func(string) string {
@@ -209,6 +214,54 @@ func TestLoadKeys(t *testing.T) {
 			t.Fatal("want error for duplicate prefix")
 		}
 	})
+}
+
+// TestBuildRegenRun_RegeneratesAndPurges proves the worker's run closure does the
+// real work: it regenerates the static site from the store (including the version
+// sentinel) and purges exactly the changed URLs, and a second pass over the
+// unchanged store is a clean no-op. The purge is a dry run so the test makes no
+// network calls.
+func TestBuildRegenRun_RegeneratesAndPurges(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := sqlite.Open(filepath.Join(dir, "regen.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	art, err := domain.NewArticle(domain.PublishInput{Title: "Regen me", Body: "body text", Author: "ada", Section: "tech"},
+		time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("NewArticle: %v", err)
+	}
+	if _, err := repo.Upsert(context.Background(), art); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	outDir := filepath.Join(dir, "site")
+	var out bytes.Buffer
+	run := buildRegenRun(repo, outDir, "https://news.example", purge.DryRunPurger{}, &out)
+
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "latest", "version.json")); err != nil {
+		t.Errorf("version.json not regenerated: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, ".generated", "purge.json")); err != nil {
+		t.Errorf("purge.json not written: %v", err)
+	}
+	if !strings.Contains(out.String(), "regenerated:") {
+		t.Errorf("missing regenerate summary: %q", out.String())
+	}
+
+	out.Reset()
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if !strings.Contains(out.String(), "nothing to purge") {
+		t.Errorf("second run over an unchanged store should purge nothing: %q", out.String())
+	}
 }
 
 func TestFlagEnvPrecedence(t *testing.T) {

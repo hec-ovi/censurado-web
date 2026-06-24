@@ -27,13 +27,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/hec-ovi/censurado-web/internal/generate"
 	"github.com/hec-ovi/censurado-web/internal/media"
 	"github.com/hec-ovi/censurado-web/internal/publish"
+	"github.com/hec-ovi/censurado-web/internal/purge"
+	"github.com/hec-ovi/censurado-web/internal/store"
 	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
 )
 
@@ -61,18 +65,23 @@ func (s *stringSlice) Set(v string) error {
 
 // cliFlags holds the parsed flag pointers so run and the tests share one wiring.
 type cliFlags struct {
-	addr     *string
-	db       *string
-	keys     *string
-	archive  *string
-	mediaDir *string
-	rate     *float64
-	burst    *int
-	maxBody  *int
-	maxItems *int
-	genKey   *bool
-	author   *string
-	scopes   *stringSlice
+	addr            *string
+	db              *string
+	keys            *string
+	archive         *string
+	mediaDir        *string
+	rate            *float64
+	burst           *int
+	maxBody         *int
+	maxItems        *int
+	out             *string
+	baseURL         *string
+	regenDebounce   *time.Duration
+	purgeEndpoint   *string
+	purgeAuthHeader *string
+	genKey          *bool
+	author          *string
+	scopes          *stringSlice
 }
 
 // newFlagSet builds the flag set with env-derived defaults. It is factored out so a
@@ -83,17 +92,22 @@ func newFlagSet(getenv func(string) string, stderr io.Writer) (*flag.FlagSet, *c
 
 	var scopes stringSlice
 	f := &cliFlags{
-		addr:     fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
-		db:       fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
-		keys:     fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
-		archive:  fs.String("payload-archive", envOr(getenv, "CENSURADO_PUBLISH_ARCHIVE", ""), "directory to append accepted raw payloads to for replay recovery (or CENSURADO_PUBLISH_ARCHIVE); empty = no archiving"),
-		mediaDir: fs.String("media-dir", envOr(getenv, "CENSURADO_MEDIA_DIR", ""), "directory for the self-hosted image store / CDN, enabling POST /media and GET /media/{name} (or CENSURADO_MEDIA_DIR); empty = media disabled"),
-		rate:     fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
-		burst:    fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
-		maxBody:  fs.Int("max-body", envInt(getenv, "CENSURADO_PUBLISH_MAX_BODY", 8<<20), "request body byte cap, a transport safeguard not a content limit (or CENSURADO_PUBLISH_MAX_BODY)"),
-		maxItems: fs.Int("max-batch-items", envInt(getenv, "CENSURADO_PUBLISH_BATCH_MAX_ITEMS", 500), "max articles per POST /articles:batch (or CENSURADO_PUBLISH_BATCH_MAX_ITEMS)"),
-		genKey:   fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
-		author:   fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
+		addr:            fs.String("addr", envOr(getenv, "CENSURADO_PUBLISH_ADDR", "127.0.0.1:8080"), "listen address (or CENSURADO_PUBLISH_ADDR); localhost by default"),
+		db:              fs.String("db", envOr(getenv, "CENSURADO_DB", "./censurado.db"), "sqlite database path (or CENSURADO_DB)"),
+		keys:            fs.String("keys", envOr(getenv, "CENSURADO_PUBLISH_KEYS_FILE", ""), "path to the JSON keys file (or CENSURADO_PUBLISH_KEYS_FILE); required to serve"),
+		archive:         fs.String("payload-archive", envOr(getenv, "CENSURADO_PUBLISH_ARCHIVE", ""), "directory to append accepted raw payloads to for replay recovery (or CENSURADO_PUBLISH_ARCHIVE); empty = no archiving"),
+		mediaDir:        fs.String("media-dir", envOr(getenv, "CENSURADO_MEDIA_DIR", ""), "directory for the self-hosted image store / CDN, enabling POST /media and GET /media/{name} (or CENSURADO_MEDIA_DIR); empty = media disabled"),
+		rate:            fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
+		burst:           fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
+		maxBody:         fs.Int("max-body", envInt(getenv, "CENSURADO_PUBLISH_MAX_BODY", 8<<20), "request body byte cap, a transport safeguard not a content limit (or CENSURADO_PUBLISH_MAX_BODY)"),
+		maxItems:        fs.Int("max-batch-items", envInt(getenv, "CENSURADO_PUBLISH_BATCH_MAX_ITEMS", 500), "max articles per POST /articles:batch (or CENSURADO_PUBLISH_BATCH_MAX_ITEMS)"),
+		out:             fs.String("out", envOr(getenv, "CENSURADO_PUBLISH_OUT", ""), "site output dir; setting it (with -base-url) enables a debounced in-process regenerate + purge after each publish (or CENSURADO_PUBLISH_OUT); empty = off"),
+		baseURL:         fs.String("base-url", envOr(getenv, "CENSURADO_BASE_URL", ""), "site origin for the regenerate + purge (or CENSURADO_BASE_URL); required with -out"),
+		regenDebounce:   fs.Duration("regen-debounce", envDuration(getenv, "CENSURADO_PUBLISH_REGEN_DEBOUNCE", 2*time.Second), "debounce window collapsing a burst of publishes into one regenerate (or CENSURADO_PUBLISH_REGEN_DEBOUNCE)"),
+		purgeEndpoint:   fs.String("purge-endpoint", envOr(getenv, "CENSURADO_PURGE_ENDPOINT", ""), "CDN purge endpoint for the auto-purge step (or CENSURADO_PURGE_ENDPOINT); empty = dry-run purge, no network"),
+		purgeAuthHeader: fs.String("purge-auth-header", envOr(getenv, "CENSURADO_PURGE_AUTH_HEADER", "Authorization"), "auth header name for the auto-purge; its value is read only from CENSURADO_PURGE_TOKEN"),
+		genKey:          fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
+		author:          fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
 	}
 	fs.Var(&scopes, "scope", "scope to grant the minted key; repeatable (default articles:write)")
 	f.scopes = &scopes
@@ -195,6 +209,27 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		mediaH = publish.NewMediaHandler(mstore, auth)
 	}
 
+	// Optional auto-regenerate: when an output dir and base URL are configured, a
+	// publish that creates new content triggers a debounced in-process regenerate
+	// and purge off the request path, so readers (and clients polling the version
+	// sentinel) see new articles within a poll interval without an external
+	// scheduler. The purge is a dry run unless a purge endpoint is configured.
+	var regen *publish.Regenerator
+	outDir := strings.TrimSpace(*f.out)
+	baseURL := strings.TrimSpace(*f.baseURL)
+	if outDir != "" && baseURL != "" {
+		purger, perr := buildPurger(getenv, strings.TrimSpace(*f.purgeEndpoint), *f.purgeAuthHeader, baseURL)
+		if perr != nil {
+			fmt.Fprintln(stderr, "config:", perr)
+			return exitConfig
+		}
+		regen = publish.NewRegenerator(buildRegenRun(repo, outDir, baseURL, purger, stdout), *f.regenDebounce)
+		h = h.WithRegenerator(regen)
+	} else if outDir != "" || baseURL != "" {
+		fmt.Fprintln(stderr, "config: -out and -base-url must be set together to enable auto-regenerate")
+		return exitConfig
+	}
+
 	limiter := publish.NewRateLimiter(*f.rate, *f.burst, time.Now)
 	handler := publish.NewServerHandler(h, limiter, mediaH)
 
@@ -202,6 +237,11 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if regen != nil {
+		regen.Start(ctx)
+		fmt.Fprintf(stdout, "auto-regenerate enabled: out=%s base-url=%s debounce=%s\n", outDir, baseURL, *f.regenDebounce)
+	}
 
 	// Log the bind address and key count only, never tokens or hashes, then serve
 	// until a signal or a listener failure.
@@ -392,4 +432,65 @@ func envInt(getenv func(string) string, key string, def int) int {
 		}
 	}
 	return def
+}
+
+func envDuration(getenv func(string) string, key string, def time.Duration) time.Duration {
+	if v := strings.TrimSpace(getenv(key)); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
+// buildPurger returns the CDN purge adapter for the in-process regenerate worker.
+// With no endpoint it is a dry run (no network calls), the safe default for
+// self-hosting; with an endpoint it is the vendor-neutral HTTP adapter, its secret
+// read only from CENSURADO_PURGE_TOKEN, never a flag.
+func buildPurger(getenv func(string) string, endpoint, authHeader, baseURL string) (purge.Purger, error) {
+	if endpoint == "" {
+		return purge.DryRunPurger{}, nil
+	}
+	return purge.NewHTTPPurger(purge.HTTPConfig{
+		Endpoint:   endpoint,
+		BaseURL:    baseURL,
+		AuthHeader: authHeader,
+		AuthValue:  getenv("CENSURADO_PURGE_TOKEN"),
+	})
+}
+
+// buildRegenRun composes one regenerate-plus-purge pass for the worker: regenerate
+// the static site incrementally on the read side of the same store, then invalidate
+// exactly the URLs the generator changed (its purge.json). It runs strictly after a
+// publish commits, off the request path, so the publish response is never delayed.
+func buildRegenRun(repo store.Repository, outDir, baseURL string, purger purge.Purger, stdout io.Writer) func(context.Context) error {
+	return func(ctx context.Context) error {
+		res, err := generate.Generate(ctx, repo, generate.Options{OutDir: outDir, BaseURL: baseURL})
+		if err != nil {
+			return fmt.Errorf("generate: %w", err)
+		}
+		manifest := filepath.Join(outDir, ".generated", "purge.json")
+		f, err := os.Open(manifest)
+		if err != nil {
+			return fmt.Errorf("open purge manifest: %w", err)
+		}
+		defer f.Close()
+		m, err := purge.ParseManifest(f)
+		if err != nil {
+			return fmt.Errorf("parse purge manifest: %w", err)
+		}
+		if len(m.URLs) == 0 {
+			fmt.Fprintf(stdout, "regenerated: %d written, nothing to purge\n", res.Written)
+			return nil
+		}
+		pr, err := purger.Purge(ctx, m.URLs)
+		if err != nil {
+			return fmt.Errorf("purge: %w", err)
+		}
+		if pr.Failed() > 0 {
+			return fmt.Errorf("purge: %d of %d urls failed", pr.Failed(), pr.Requested)
+		}
+		fmt.Fprintf(stdout, "regenerated: %d written, %d purged\n", res.Written, pr.Succeeded)
+		return nil
+	}
 }

@@ -685,27 +685,28 @@
   }
 
   /* Mobile: keep the facets on one horizontally scrollable line (swipe / two-finger)
-     instead of wrapping to several rows. */
+     instead of wrapping to several rows. Scoped under .portal-front so these win over
+     the base .facet-chips wrap rule regardless of source order. */
   @media (max-width: 42rem) {
-    .facet-panel {
+    .portal-front .facet-panel {
       flex-wrap: nowrap;
       overflow-x: auto;
       scrollbar-width: none;
       -webkit-overflow-scrolling: touch;
     }
 
-    .facet-panel::-webkit-scrollbar {
+    .portal-front .facet-panel::-webkit-scrollbar {
       display: none;
     }
 
-    .facet-group,
-    .facet-chips {
+    .portal-front .facet-group,
+    .portal-front .facet-chips {
       flex-wrap: nowrap;
     }
 
-    .facet-chip,
-    .facet-clear,
-    .facet-group-label {
+    .portal-front .facet-chip,
+    .portal-front .facet-clear,
+    .portal-front .facet-group-label {
       white-space: nowrap;
     }
   }

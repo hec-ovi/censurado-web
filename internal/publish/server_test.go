@@ -76,6 +76,43 @@ func TestServer_HealthzAndArticles(t *testing.T) {
 	})
 }
 
+// TestServer_BatchRouting pins that POST /articles:batch and POST /articles are
+// distinct routes on the same mux (the ':' is a literal path byte, so the two
+// never collide) and each reaches its own handler. It guards against a future
+// routing change silently sending batch traffic to the single handler.
+func TestServer_BatchRouting(t *testing.T) {
+	srv := frozenServer(t, 100, 100)
+	adaToken := "ak_ada." + adaSecret
+
+	t.Run("POST /articles:batch reaches the batch handler", func(t *testing.T) {
+		body := batchBody(t, []bItem{{Title: "Routed to batch", Body: "b", Author: "ada", Section: "tech", Key: "rt-1"}})
+		rec := postBatch(t, srv, adaToken, body)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want 201 (%s)", rec.Code, truncate(rec.Body.String()))
+		}
+		// The batch handler returns {"results":[...]}, which the single handler never does.
+		if !strings.Contains(rec.Body.String(), `"results"`) {
+			t.Errorf("batch response shape missing: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("POST /articles still reaches the single handler", func(t *testing.T) {
+		rec := post(t, srv, adaToken, "single-route-1", validBody)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want 201 (%s)", rec.Code, truncate(rec.Body.String()))
+		}
+		if strings.Contains(rec.Body.String(), `"results"`) {
+			t.Errorf("single response should not be a batch envelope: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("GET /articles:batch -> 405", func(t *testing.T) {
+		if rec := get(t, srv, "/articles:batch"); rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("status = %d, want 405", rec.Code)
+		}
+	})
+}
+
 func TestServer_RateLimit(t *testing.T) {
 	srv := frozenServer(t, 1, 2) // burst 2 per key
 	adaToken := "ak_ada." + adaSecret

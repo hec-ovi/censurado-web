@@ -68,6 +68,8 @@ type cliFlags struct {
 	mediaDir *string
 	rate     *float64
 	burst    *int
+	maxBody  *int
+	maxItems *int
 	genKey   *bool
 	author   *string
 	scopes   *stringSlice
@@ -88,6 +90,8 @@ func newFlagSet(getenv func(string) string, stderr io.Writer) (*flag.FlagSet, *c
 		mediaDir: fs.String("media-dir", envOr(getenv, "CENSURADO_MEDIA_DIR", ""), "directory for the self-hosted image store / CDN, enabling POST /media and GET /media/{name} (or CENSURADO_MEDIA_DIR); empty = media disabled"),
 		rate:     fs.Float64("rate", envFloat(getenv, "CENSURADO_PUBLISH_RATE", 5), "per-key request rate, tokens/sec (or CENSURADO_PUBLISH_RATE)"),
 		burst:    fs.Int("burst", envInt(getenv, "CENSURADO_PUBLISH_BURST", 10), "per-key burst size (or CENSURADO_PUBLISH_BURST)"),
+		maxBody:  fs.Int("max-body", envInt(getenv, "CENSURADO_PUBLISH_MAX_BODY", 8<<20), "request body byte cap, a transport safeguard not a content limit (or CENSURADO_PUBLISH_MAX_BODY)"),
+		maxItems: fs.Int("max-batch-items", envInt(getenv, "CENSURADO_PUBLISH_BATCH_MAX_ITEMS", 500), "max articles per POST /articles:batch (or CENSURADO_PUBLISH_BATCH_MAX_ITEMS)"),
 		genKey:   fs.Bool("gen-key", false, "mint a fresh key, print the token + keys-file entry, and exit without serving"),
 		author:   fs.String("author", "", "author the minted key publishes as (required with -gen-key)"),
 	}
@@ -160,7 +164,9 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	defer repo.Close()
 
 	// The same *sqlite.Store is both the article Repository and the SubmissionLog.
-	h := publish.NewHandler(repo, repo, auth, time.Now)
+	// WithLimits applies the configurable transport safeguards (body byte cap and
+	// per-batch item cap); neither is a content-length cap on an article body.
+	h := publish.NewHandler(repo, repo, auth, time.Now).WithLimits(*f.maxBody, *f.maxItems)
 
 	// Optional payload archive: when configured, every newly created publish is
 	// appended to this directory so an operator can replay payloads received after a

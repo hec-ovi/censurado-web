@@ -28,27 +28,53 @@ const ScopeWrite = "articles:write"
 // leaked agent key can never impersonate another author.
 const ScopePublishAny = "articles:publish-any"
 
-// maxBody caps the request entity as a transport safeguard against abuse. It is
-// generous and is not a content limit on the article body.
-const maxBody = 8 << 20 // 8 MiB
+// defaultMaxBody caps the request entity as a transport safeguard against abuse.
+// It is generous and is not a content limit on the article body. It is the default
+// for both POST /articles and POST /articles:batch; raise it with WithLimits (env
+// CENSURADO_PUBLISH_MAX_BODY) when a batch of long articles needs more headroom.
+const defaultMaxBody = 8 << 20 // 8 MiB
 
-// Handler serves POST /articles.
+// defaultMaxBatchItems caps how many articles one POST /articles:batch may carry.
+// It bounds the batch transaction and the validated working set; it is not a limit
+// on any single article's length. Raise it with WithLimits (env
+// CENSURADO_PUBLISH_BATCH_MAX_ITEMS).
+const defaultMaxBatchItems = 500
+
+// Handler serves POST /articles and POST /articles:batch.
 type Handler struct {
-	repo    store.Repository
-	log     store.SubmissionLog
-	auth    Authenticator
-	now     func() time.Time
-	archive PayloadArchive                   // optional; nil = no payload archiving
-	logf    func(format string, args ...any) // optional; nil = log.Printf
+	repo          store.Repository
+	log           store.SubmissionLog
+	auth          Authenticator
+	now           func() time.Time
+	archive       PayloadArchive                   // optional; nil = no payload archiving
+	logf          func(format string, args ...any) // optional; nil = log.Printf
+	maxBody       int                              // request entity cap (bytes); defaultMaxBody if zero
+	maxBatchItems int                              // max items per batch; defaultMaxBatchItems if zero
 }
 
 // NewHandler wires the publish handler. now may be nil (defaults to time.Now).
-// Payload archiving is off by default; attach it with WithArchive.
+// Payload archiving is off by default; attach it with WithArchive. The body and
+// batch-size limits default to the generous safeguards above; override with
+// WithLimits.
 func NewHandler(repo store.Repository, log store.SubmissionLog, auth Authenticator, now func() time.Time) *Handler {
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{repo: repo, log: log, auth: auth, now: now}
+	return &Handler{repo: repo, log: log, auth: auth, now: now, maxBody: defaultMaxBody, maxBatchItems: defaultMaxBatchItems}
+}
+
+// WithLimits overrides the request body cap and the per-batch item cap, returning
+// the handler for chaining. A non-positive value leaves that limit at its default.
+// These are transport safeguards, never content-length caps: a single article body
+// has no maximum, and raising maxBody is how a batch of long articles is admitted.
+func (h *Handler) WithLimits(maxBody, maxBatchItems int) *Handler {
+	if maxBody > 0 {
+		h.maxBody = maxBody
+	}
+	if maxBatchItems > 0 {
+		h.maxBatchItems = maxBatchItems
+	}
+	return h
 }
 
 // WithArchive attaches an append-only payload archive and returns the handler for
@@ -107,7 +133,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Read the raw body first so the exact bytes can be archived, then decode from
 	// them with the same strict (additionalProperties:false) contract as before.
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(h.maxBody)))
 	if err != nil {
 		writeProblem(w, problem{Status: http.StatusBadRequest, Code: "invalid_json", Detail: err.Error()})
 		return

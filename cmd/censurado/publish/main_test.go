@@ -213,11 +213,13 @@ func TestLoadKeys(t *testing.T) {
 
 func TestFlagEnvPrecedence(t *testing.T) {
 	env := envFromMap(map[string]string{
-		"CENSURADO_PUBLISH_ADDR":      "0.0.0.0:9000",
-		"CENSURADO_DB":                "/data/env.db",
-		"CENSURADO_PUBLISH_KEYS_FILE": "/etc/env-keys.json",
-		"CENSURADO_PUBLISH_RATE":      "12",
-		"CENSURADO_PUBLISH_BURST":     "30",
+		"CENSURADO_PUBLISH_ADDR":            "0.0.0.0:9000",
+		"CENSURADO_DB":                      "/data/env.db",
+		"CENSURADO_PUBLISH_KEYS_FILE":       "/etc/env-keys.json",
+		"CENSURADO_PUBLISH_RATE":            "12",
+		"CENSURADO_PUBLISH_BURST":           "30",
+		"CENSURADO_PUBLISH_MAX_BODY":        "33554432",
+		"CENSURADO_PUBLISH_BATCH_MAX_ITEMS": "250",
 	})
 
 	t.Run("env supplies defaults", func(t *testing.T) {
@@ -239,6 +241,12 @@ func TestFlagEnvPrecedence(t *testing.T) {
 		}
 		if *f.burst != 30 {
 			t.Errorf("burst = %v, want 30 from env", *f.burst)
+		}
+		if *f.maxBody != 33554432 {
+			t.Errorf("maxBody = %v, want 33554432 from env", *f.maxBody)
+		}
+		if *f.maxItems != 250 {
+			t.Errorf("maxItems = %v, want 250 from env", *f.maxItems)
 		}
 	})
 
@@ -276,6 +284,12 @@ func TestFlagEnvPrecedence(t *testing.T) {
 		}
 		if *f.rate != 5 || *f.burst != 10 {
 			t.Errorf("limiter defaults = %v/%v, want 5/10", *f.rate, *f.burst)
+		}
+		if *f.maxBody != 8<<20 {
+			t.Errorf("maxBody default = %v, want %v (8 MiB)", *f.maxBody, 8<<20)
+		}
+		if *f.maxItems != 500 {
+			t.Errorf("maxItems default = %v, want 500", *f.maxItems)
 		}
 	})
 }

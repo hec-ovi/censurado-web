@@ -3,12 +3,17 @@ package publish
 import "net/http"
 
 // NewServerHandler assembles the publish HTTP surface: an unauthenticated liveness
-// probe and the authenticated POST /articles route behind the rate limiter.
+// probe, the authenticated POST /articles route, and POST /articles:batch, all
+// behind the rate limiter.
 //
 // Routing uses the Go 1.22 ServeMux. GET /healthz is matched by method so it never
 // touches auth or the limiter. /articles is registered for ALL methods (no method
 // in the pattern) so the Handler keeps doing its own dispatch: it answers 405 for
-// non-POST, 401/403 for auth failures, and so on. A nil limiter disables limiting.
+// non-POST, 401/403 for auth failures, and so on. POST /articles:batch is a
+// distinct static route (the ':' is a literal path byte to ServeMux, so it never
+// collides with /articles), bound to the batch handler. Both run through one
+// limiter.Wrap, so a batch is charged exactly one token no matter how many articles
+// it carries. A nil limiter disables limiting.
 //
 // When mediaH is non-nil, the self-hosted image CDN is mounted too: POST /media
 // (authenticated upload, rate-limited like a write) and GET /media/{name} (public,
@@ -24,6 +29,7 @@ func NewServerHandler(h *Handler, limiter *RateLimiter, mediaH *MediaHandler) ht
 	})
 
 	mux.Handle("/articles", limiter.Wrap(h))
+	mux.Handle("POST /articles:batch", limiter.Wrap(http.HandlerFunc(h.ServeBatch)))
 
 	if mediaH != nil {
 		mux.Handle("POST /media", limiter.Wrap(http.HandlerFunc(mediaH.ServeUpload)))

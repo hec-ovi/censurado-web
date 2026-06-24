@@ -16,8 +16,9 @@
 //   the same .article-item/.card markup  ->  pushState to the facet's pre-built
 //   URL (read from the matching server-rendered link, never synthesized).
 //
-// The module exports initRefine(root) so the exact shipped bytes are unit
-// tested against a DOM fragment, and also auto-initializes on the real page.
+// The module exports initRefine(root) and initLiveRefresh(root) so the exact
+// shipped bytes are unit tested against DOM fragments, and also
+// auto-initializes on the real page.
 
 const FACET_TYPES = ["author", "section", "topic", "month"];
 const FACET_LABEL = { author: "Author", section: "Section", topic: "Topic", month: "Month" };
@@ -36,6 +37,14 @@ function absURL(u) {
 // monthOf derives a "YYYY-MM" bucket from a shard entry's published_at.
 function monthOf(entry) {
   return (entry.published_at || "").slice(0, 7);
+}
+
+function normalizedPath(u) {
+  try {
+    return new URL(u, document.baseURI).pathname;
+  } catch {
+    return u || "";
+  }
 }
 
 // entryMatches mirrors the server membership test exactly: slug equality on the
@@ -115,6 +124,88 @@ function el(tag, attrs) {
     }
   }
   return node;
+}
+
+function fallbackFacetURL(type, slug) {
+  if (type === "author") return "/author/" + slug + "/";
+  if (type === "section") return "/section/" + slug + "/";
+  if (type === "topic") return "/topic/" + slug + "/";
+  return null;
+}
+
+function articleItemFromEntry(e, helpers) {
+  const labelFor = helpers.labelFor;
+  const facetURL = helpers.facetURL;
+  const avatarFor = helpers.avatarFor;
+
+  const li = el("li", { class: "article-item" });
+  li.dataset.author = e.author;
+  li.dataset.authorAvatar = avatarFor(e.author);
+  li.dataset.section = e.section;
+  li.dataset.topics = (e.topics || []).join(" ");
+  li.dataset.month = monthOf(e);
+
+  const card = el("article", { class: "card" });
+  const media = el("div", { class: "card-media card-media-fallback", "aria-hidden": "true" });
+  const mediaLabel = el("span");
+  mediaLabel.textContent = labelFor("section", e.section, e.section);
+  media.appendChild(mediaLabel);
+
+  const kicker = el("div", { class: "card-kicker" });
+  const sectionLink = el("a", {
+    class: "section-link",
+    href: facetURL("section", e.section),
+    "data-section": "",
+  });
+  sectionLink.textContent = labelFor("section", e.section, e.section);
+  const time = el("time", { class: "published", datetime: e.published_at });
+  time.textContent = (e.published_at || "").slice(0, 10);
+  kicker.append(sectionLink, time);
+
+  const h2 = el("h2", { class: "card-title" });
+  const cardLink = el("a", { class: "card-link", href: e.url });
+  cardLink.textContent = e.title;
+  h2.appendChild(cardLink);
+
+  const meta = el("div", { class: "card-meta" });
+  const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
+  const avatarSrc = avatarFor(e.author);
+  if (avatarSrc) {
+    const img = el("img", { src: avatarSrc, alt: "", loading: "lazy", decoding: "async" });
+    avatar.appendChild(img);
+  } else {
+    const fallback = el("span");
+    fallback.textContent = initialFor(labelFor("author", e.author, e.author_label));
+    avatar.appendChild(fallback);
+  }
+
+  const byline = el("p", { class: "byline" });
+  byline.append("By ");
+  const authorLink = el("a", {
+    class: "author-link",
+    href: facetURL("author", e.author),
+    "data-author": "",
+  });
+  authorLink.textContent = labelFor("author", e.author, e.author_label);
+  byline.appendChild(authorLink);
+  meta.append(avatar, byline);
+
+  card.append(media, kicker, h2, meta);
+
+  if (e.topics && e.topics.length) {
+    const ul = el("ul", { class: "topics", "data-topics": "" });
+    for (const t of e.topics) {
+      const liT = el("li");
+      const tl = el("a", { class: "topic-link", href: facetURL("topic", t) });
+      tl.textContent = labelFor("topic", t, t);
+      liT.appendChild(tl);
+      ul.appendChild(liT);
+    }
+    card.appendChild(ul);
+  }
+
+  li.appendChild(card);
+  return li;
 }
 
 class Refiner {
@@ -402,74 +493,11 @@ class Refiner {
   // entryToItem rebuilds the frozen .article-item/.card structure (so the CSS
   // applies) with the same slug-form data-* hooks the server emits.
   entryToItem(e) {
-    const li = el("li", { class: "article-item" });
-    li.dataset.author = e.author;
-    li.dataset.authorAvatar = this.avatarFor(e.author);
-    li.dataset.section = e.section;
-    li.dataset.topics = (e.topics || []).join(" ");
-    li.dataset.month = monthOf(e);
-
-    const card = el("article", { class: "card" });
-    const media = el("div", { class: "card-media card-media-fallback", "aria-hidden": "true" });
-    const mediaLabel = el("span");
-    mediaLabel.textContent = this.labelFor("section", e.section, e.section);
-    media.appendChild(mediaLabel);
-
-    const kicker = el("div", { class: "card-kicker" });
-    const sectionLink = el("a", {
-      class: "section-link",
-      href: this.facetURL("section", e.section),
-      "data-section": "",
+    return articleItemFromEntry(e, {
+      labelFor: (type, slug, fallback) => this.labelFor(type, slug, fallback),
+      facetURL: (type, slug) => this.facetURL(type, slug),
+      avatarFor: (slug) => this.avatarFor(slug),
     });
-    sectionLink.textContent = this.labelFor("section", e.section, e.section);
-    const time = el("time", { class: "published", datetime: e.published_at });
-    time.textContent = (e.published_at || "").slice(0, 10);
-    kicker.append(sectionLink, time);
-
-    const h2 = el("h2", { class: "card-title" });
-    const cardLink = el("a", { class: "card-link", href: e.url });
-    cardLink.textContent = e.title;
-    h2.appendChild(cardLink);
-
-    const meta = el("div", { class: "card-meta" });
-    const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
-    const avatarSrc = this.avatarFor(e.author);
-    if (avatarSrc) {
-      const img = el("img", { src: avatarSrc, alt: "", loading: "lazy", decoding: "async" });
-      avatar.appendChild(img);
-    } else {
-      const fallback = el("span");
-      fallback.textContent = initialFor(this.labelFor("author", e.author, e.author_label));
-      avatar.appendChild(fallback);
-    }
-
-    const byline = el("p", { class: "byline" });
-    byline.append("By ");
-    const authorLink = el("a", {
-      class: "author-link",
-      href: this.facetURL("author", e.author),
-      "data-author": "",
-    });
-    authorLink.textContent = this.labelFor("author", e.author, e.author_label);
-    byline.appendChild(authorLink);
-    meta.append(avatar, byline);
-
-    card.append(media, kicker, h2, meta);
-
-    if (e.topics && e.topics.length) {
-      const ul = el("ul", { class: "topics", "data-topics": "" });
-      for (const t of e.topics) {
-        const liT = el("li");
-        const tl = el("a", { class: "topic-link", href: this.facetURL("topic", t) });
-        tl.textContent = this.labelFor("topic", t, t);
-        liT.appendChild(tl);
-        ul.appendChild(liT);
-      }
-      card.appendChild(ul);
-    }
-
-    li.appendChild(card);
-    return li;
   }
 
   renderEmpty(type, value) {
@@ -550,6 +578,244 @@ function initialFor(label) {
   return s ? Array.from(s)[0].toUpperCase() : "?";
 }
 
+const LIVE_SENTINEL_URL = "/latest/version.json";
+const LIVE_MANIFEST_URL = "/manifest/latest/index.json";
+
+function latestSurface(root) {
+  const manifest = readInlineManifest(root);
+  if (manifest && manifest.scope) return manifest.scope === "/latest/";
+  const path = normalizedPath(window.location.pathname || "/");
+  return path === "/" || path === "/latest/";
+}
+
+function newestShardURL(manifest) {
+  const ref = manifest && Array.isArray(manifest.shards) ? manifest.shards[0] : null;
+  if (!ref) return "";
+  if (Array.isArray(ref.parts) && ref.parts.length) return ref.parts[0];
+  return ref.url || "";
+}
+
+function defaultLiveLabel(type, slug, fallback) {
+  return fallback || slug || "";
+}
+
+class LiveRefresh {
+  constructor(root, list, options) {
+    this.root = root;
+    this.list = list;
+    this.doc = options.document || list.ownerDocument || document;
+    this.win = this.doc.defaultView || window;
+    const fetcher = options.fetch || this.win.fetch || globalThis.fetch;
+    this.fetcher = typeof fetcher === "function" ? fetcher.bind(this.win) : null;
+    this.setTimer = options.setTimeout || this.win.setTimeout.bind(this.win);
+    this.clearTimer = options.clearTimeout || this.win.clearTimeout.bind(this.win);
+    const interval = Number(options.intervalMs || 0);
+    this.minIntervalMs = interval || Number(options.minIntervalMs || 30000);
+    this.maxIntervalMs = interval || Number(options.maxIntervalMs || 60000);
+    this.maxBackoffMs = Number(options.maxBackoffMs || 300000);
+    this.autoStart = options.autoStart !== false;
+    this.timer = null;
+    this.errorCount = 0;
+    this.inFlight = false;
+    this.destroyed = false;
+    this.etag = "";
+    this.version = "";
+    this.pendingEntries = [];
+    this.pendingSentinel = null;
+    this.banner = null;
+    this._onVisibility = () => this.onVisibility();
+  }
+
+  async init() {
+    if (!this.fetcher || this.list.hasAttribute("data-live-refresh-init")) return null;
+    if (!latestSurface(this.root)) return null;
+    try {
+      const initial = await this.fetchSentinel(false);
+      if (!initial || initial.notModified || !initial.v) return null;
+      this.commitSentinel(initial);
+    } catch {
+      return null;
+    }
+    this.list.setAttribute("data-live-refresh-init", "");
+    this.doc.addEventListener("visibilitychange", this._onVisibility);
+    if (this.autoStart) this.schedule();
+    return this;
+  }
+
+  async fetchSentinel(withValidator) {
+    const headers = {};
+    if (withValidator && this.etag) headers["If-None-Match"] = this.etag;
+    const res = await this.fetcher(absURL(LIVE_SENTINEL_URL), {
+      headers,
+      cache: "no-cache",
+    });
+    if (res.status === 304) return { notModified: true };
+    if (!res.ok) {
+      const err = new Error("version sentinel fetch failed");
+      err.status = res.status;
+      throw err;
+    }
+    const body = await res.json();
+    return {
+      etag: res.headers && res.headers.get ? res.headers.get("ETag") || "" : "",
+      v: body && body.v,
+    };
+  }
+
+  async fetchJSON(url) {
+    const res = await this.fetcher(absURL(url), { cache: "no-cache" });
+    if (!res.ok) throw new Error("live refresh fetch failed: " + url);
+    return res.json();
+  }
+
+  async fetchNewestEntries() {
+    const manifest = await this.fetchJSON(LIVE_MANIFEST_URL);
+    const shardURL = newestShardURL(manifest);
+    if (!shardURL) return [];
+    const entries = await this.fetchJSON(shardURL);
+    return Array.isArray(entries) ? entries : [];
+  }
+
+  renderedKeys() {
+    const keys = new Set();
+    for (const link of this.list.querySelectorAll(".article-item .card-link[href]")) {
+      keys.add(normalizedPath(link.getAttribute("href")));
+    }
+    return keys;
+  }
+
+  diffNewEntries(entries) {
+    const rendered = this.renderedKeys();
+    const seen = new Set(rendered);
+    const fresh = [];
+    for (const entry of entries) {
+      const key = entry && entry.url ? normalizedPath(entry.url) : entry && entry.slug;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      fresh.push(entry);
+    }
+    return fresh;
+  }
+
+  async checkNow() {
+    if (this.destroyed || this.inFlight || this.pendingEntries.length || this.isHidden()) return;
+    this.inFlight = true;
+    try {
+      const sentinel = await this.fetchSentinel(true);
+      if (sentinel.notModified) {
+        this.errorCount = 0;
+        return;
+      }
+      if (!sentinel.v || sentinel.v === this.version) {
+        this.commitSentinel(sentinel);
+        this.errorCount = 0;
+        return;
+      }
+      const entries = await this.fetchNewestEntries();
+      const fresh = this.diffNewEntries(entries);
+      if (fresh.length) this.showBanner(fresh, sentinel);
+      else this.commitSentinel(sentinel);
+      this.errorCount = 0;
+    } catch (err) {
+      this.errorCount += 1;
+    } finally {
+      this.inFlight = false;
+      if (this.autoStart) this.schedule();
+    }
+  }
+
+  showBanner(entries, sentinel) {
+    this.pendingEntries = entries;
+    this.pendingSentinel = sentinel;
+    if (!this.banner) {
+      this.banner = el("button", {
+        type: "button",
+        class: "live-refresh-banner",
+        "data-live-refresh-banner": "",
+        "aria-live": "polite",
+      });
+      this.banner.addEventListener("click", () => this.applyPending());
+      this.list.parentNode.insertBefore(this.banner, this.list);
+    }
+    const n = entries.length;
+    this.banner.textContent = n + " new " + (n === 1 ? "story" : "stories");
+    this.banner.removeAttribute("hidden");
+  }
+
+  applyPending() {
+    const entries = this.pendingEntries.filter(
+      (entry) => entry && entry.url && !this.renderedKeys().has(normalizedPath(entry.url))
+    );
+    if (entries.length) {
+      const frag = this.doc.createDocumentFragment();
+      for (const entry of entries) {
+        frag.appendChild(
+          articleItemFromEntry(entry, {
+            labelFor: defaultLiveLabel,
+            facetURL: fallbackFacetURL,
+            avatarFor: () => "",
+          })
+        );
+      }
+      this.list.prepend(frag);
+    }
+    if (this.pendingSentinel) this.commitSentinel(this.pendingSentinel);
+    this.pendingEntries = [];
+    this.pendingSentinel = null;
+    if (this.banner) this.banner.setAttribute("hidden", "");
+  }
+
+  commitSentinel(sentinel) {
+    if (sentinel.etag) this.etag = sentinel.etag;
+    if (sentinel.v) this.version = sentinel.v;
+  }
+
+  isHidden() {
+    return this.doc.visibilityState === "hidden";
+  }
+
+  nextDelay() {
+    if (this.errorCount > 0) {
+      const base = this.minIntervalMs * Math.pow(2, this.errorCount - 1);
+      return Math.min(this.maxBackoffMs, Math.max(this.minIntervalMs, base));
+    }
+    if (this.maxIntervalMs <= this.minIntervalMs) return this.minIntervalMs;
+    return this.minIntervalMs + Math.floor(Math.random() * (this.maxIntervalMs - this.minIntervalMs));
+  }
+
+  schedule() {
+    if (this.destroyed || this.isHidden()) return;
+    this.clearSchedule();
+    this.timer = this.setTimer(() => {
+      this.timer = null;
+      this.checkNow();
+    }, this.nextDelay());
+  }
+
+  clearSchedule() {
+    if (this.timer) {
+      this.clearTimer(this.timer);
+      this.timer = null;
+    }
+  }
+
+  onVisibility() {
+    if (this.destroyed) return;
+    if (this.isHidden()) {
+      this.clearSchedule();
+      return;
+    }
+    if (this.autoStart) this.schedule();
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.clearSchedule();
+    this.doc.removeEventListener("visibilitychange", this._onVisibility);
+    if (this.banner) this.banner.remove();
+  }
+}
+
 function initTheme(root = document) {
   const controls = root.querySelectorAll("[data-theme-choice]");
   if (!controls.length) return;
@@ -582,6 +848,58 @@ function initTheme(root = document) {
   apply(stored);
 }
 
+function initMenu(root = document) {
+  const header = root.querySelector("[data-site-header]");
+  const toggle = root.querySelector("[data-menu-toggle]");
+  const panel = root.querySelector("[data-menu-panel]");
+  if (!header || !toggle || !panel) return;
+
+  const setOpen = (open) => {
+    header.dataset.menuOpen = String(open);
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+
+  header.dataset.menuReady = "true";
+  markCurrentNav(panel);
+  toggle.addEventListener("click", () => setOpen(header.dataset.menuOpen !== "true"));
+  panel.addEventListener("click", (event) => {
+    const isMobile =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 42rem)").matches;
+    if (isMobile && event.target.closest("a")) setOpen(false);
+  });
+
+  setOpen(false);
+}
+
+function markCurrentNav(panel) {
+  const links = Array.from(panel.querySelectorAll(".site-nav-link[href]"));
+  const current = normalizedPath(window.location.pathname || "/");
+  let active = null;
+  let activeLen = -1;
+  for (const link of links) {
+    const href = normalizedPath(link.getAttribute("href"));
+    const matches =
+      href === current ||
+      (href === "/latest/" && current === "/") ||
+      (href !== "/" && current.startsWith(href));
+    if (matches && href.length > activeLen) {
+      active = link;
+      activeLen = href.length;
+    }
+  }
+  for (const link of links) {
+    if (link === active) {
+      link.setAttribute("aria-current", "page");
+      link.dataset.current = "true";
+    } else {
+      link.removeAttribute("aria-current");
+      delete link.dataset.current;
+    }
+  }
+}
+
 // initRefine enhances one listing root. Returns the controller, or null on an
 // article page / non-listing fragment / unrecoverable manifest failure.
 export async function initRefine(root = document) {
@@ -593,12 +911,23 @@ export async function initRefine(root = document) {
   return refiner.init();
 }
 
+export async function initLiveRefresh(root = document, options = {}) {
+  const scope = root || document;
+  const list = scope.querySelector("[data-articles]");
+  if (!list) return null;
+  const live = new LiveRefresh(scope, list, options);
+  return live.init();
+}
+
 // Auto-initialize on the real page. Module scripts are deferred, so the DOM is
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
+    initMenu(document);
     initTheme(document);
-    initRefine(document);
+    initRefine(document).finally(() => {
+      initLiveRefresh(document);
+    });
   };
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);

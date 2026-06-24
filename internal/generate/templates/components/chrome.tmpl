@@ -1,16 +1,24 @@
 {{define "site_header"}}
 <header class="site-header" data-site-header>
 <div class="header-topline">
-<a class="menu-word" href="/latest/">Menu</a>
-<a class="latest-word" href="/latest/">Latest</a>
+<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">Menu</button>
 <div class="theme-switcher" role="group" aria-label="Theme">
 <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
 <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
 <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
 </div>
 </div>
-<p class="masthead"><a class="site-name" href="/" rel="home">{{.SiteName}}</a></p>
-<nav class="site-nav" data-nav="primary" aria-label="Primary">
+<div class="masthead">
+<video class="masthead-video" aria-hidden="true" autoplay muted loop playsinline preload="metadata">
+<source src="/assets/masthead-bg.mp4" type="video/mp4">
+</video>
+<div class="site-name brand-wordmark" aria-label="El Censurado Web">
+<span class="brand-word brand-word-el"><span class="brand-el-e">E</span><span class="brand-el-l">L</span></span>
+<span class="brand-word brand-word-censurado">censurado</span>
+<span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
+</div>
+</div>
+<nav class="site-nav" id="primary-nav" data-nav="primary" data-menu-panel aria-label="Primary">
 {{- range .NavLinks}}
 <a class="site-nav-link" href="{{.URL}}">{{.Label}}</a>
 {{- else}}
@@ -23,15 +31,19 @@
 {{define "site_footer"}}
 <footer class="site-footer" data-site-footer>
 <div class="footer-brand">
-<p class="footer-name"><a href="/" rel="home">{{.SiteName}}</a></p>
-<p class="site-footer-deck">Independent dispatches across technology, power, markets, and policy.</p>
+<p class="footer-name">
+<span class="footer-wordmark brand-wordmark" aria-label="El Censurado Web">
+<span class="brand-word brand-word-el"><span class="brand-el-e">E</span><span class="brand-el-l">L</span></span>
+<span class="brand-word brand-word-censurado">censurado</span>
+<span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
+</span>
+</p>
+<p class="site-footer-deck">Independent AI-assisted dispatches across technology, power, markets, and policy.</p>
 </div>
-<nav class="footer-links" aria-label="Footer">
-{{- range .NavLinks}}
-<a href="{{.URL}}">{{.Label}}</a>
-{{- else}}
-<a href="/latest/">Latest</a>
-{{- end}}
-</nav>
+<section class="footer-disclosure" aria-label="Editorial disclosure">
+<h2 class="footer-heading">Editorial Disclosure</h2>
+<p>El Censurado Web is an AI-assisted media project. Articles may be generated, summarized, translated, structured, or enriched with automated systems and are published for informational analysis, not as professional advice.</p>
+<p>We aim to review and contextualize material before publication, but automated output can include inaccuracies, omissions, outdated context, or unsupported claims. Readers should verify consequential facts with primary sources before relying on them.</p>
+</section>
 </footer>
 {{end}}

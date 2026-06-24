@@ -280,6 +280,7 @@ func (assetCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactS
 		{"templates/assets/style.css", "assets/style.css", "/assets/style.css"},
 		{"templates/assets/app.js", "assets/app.js", "/assets/app.js"},
 		{"templates/assets/favicon.svg", "assets/favicon.svg", "/assets/favicon.svg"},
+		{"templates/assets/masthead-bg.mp4", "assets/masthead-bg.mp4", "/assets/masthead-bg.mp4"},
 	} {
 		b, err := assetFS.ReadFile(a.src)
 		if err != nil {

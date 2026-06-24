@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { within, waitFor } from "@testing-library/dom";
 import userEvent from "@testing-library/user-event";
 
-import { initRefine } from "../internal/generate/templates/assets/app.js";
+import { initLiveRefresh, initRefine } from "../internal/generate/templates/assets/app.js";
 import {
   E,
   LATEST_STREAM,
@@ -32,6 +32,7 @@ import {
 
 let container;
 let refiner;
+let liveRefresh;
 
 function mount(html) {
   container = document.createElement("div");
@@ -55,8 +56,10 @@ beforeEach(() => {
 
 afterEach(() => {
   if (refiner && refiner.destroy) refiner.destroy();
+  if (liveRefresh && liveRefresh.destroy) liveRefresh.destroy();
   if (container) container.remove();
   refiner = null;
+  liveRefresh = null;
   container = null;
   vi.restoreAllMocks();
   window.history.replaceState({}, "", "/");
@@ -70,6 +73,12 @@ const latestFragment = () =>
     monthBase: "/",
     manifest: LATEST_MANIFEST,
   });
+
+function responseJSON(data, { etag } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (etag) headers.ETag = etag;
+  return new Response(JSON.stringify(data), { status: 200, headers });
+}
 
 describe("Censurado refiner", () => {
   // Scenario 1
@@ -311,5 +320,53 @@ describe("Censurado refiner", () => {
     );
     expect(chip.getAttribute("aria-pressed")).toBe("false");
     expect(push).toHaveBeenLastCalledWith(expect.anything(), "", "/latest/");
+  });
+
+  test("live refresh polls the sentinel, shows a new-stories banner, and prepends new cards on click", async () => {
+    const breaking = {
+      ...E.techAdaJune,
+      slug: "breaking-story",
+      url: "/a/breaking-story-11111111/",
+      title: "Breaking Story",
+      published_at: "2026-06-08T10:00:00Z",
+      ts: E.techAdaJune.ts + 3600,
+    };
+    const shard = [breaking, ...LATEST_SHARDS["/shards/latest/2026/06.json"]];
+    let sentinelHits = 0;
+    const fetchMock = vi.fn(async (input, init = {}) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/latest/version.json") {
+        sentinelHits += 1;
+        if (sentinelHits === 1) {
+          return responseJSON(
+            { v: "v1", latest_ids: LATEST_STREAM.map((e) => e.slug) },
+            { etag: '"v1"' }
+          );
+        }
+        return responseJSON(
+          { v: "v2", latest_ids: [breaking.slug, ...LATEST_STREAM.map((e) => e.slug)] },
+          { etag: '"v2"' }
+        );
+      }
+      if (url.pathname === "/manifest/latest/index.json") return responseJSON(LATEST_MANIFEST);
+      if (url.pathname === "/shards/latest/2026/06.json") return responseJSON(shard);
+      throw new Error("unexpected fetch: " + url.pathname + " " + JSON.stringify(init));
+    });
+
+    mount(latestFragment());
+    liveRefresh = await initLiveRefresh(container, { fetch: fetchMock, autoStart: false });
+    expect(liveRefresh).toBeTruthy();
+
+    await liveRefresh.checkNow();
+
+    expect(fetchMock.mock.calls[1][1].headers["If-None-Match"]).toBe('"v1"');
+    const banner = within(container).getByRole("button", { name: "1 new story" });
+    expect(banner).not.toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(banner);
+
+    expect(itemURLs()[0]).toBe(breaking.url);
+    expect(container.querySelector("[data-live-refresh-banner]").hasAttribute("hidden")).toBe(true);
   });
 });

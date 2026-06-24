@@ -19,10 +19,10 @@ import (
 //go:embed templates/*.tmpl templates/components/*.tmpl
 var templateFS embed.FS
 
-// assetFS holds the public frontend assets emitted at stable /assets/ URLs: the shipped
-// stylesheet and the client-side Tier-B facet refiner.
+// assetFS holds the public frontend assets emitted at stable /assets/ URLs:
+// stylesheet, client-side Tier-B facet/menu/theme script, favicon, and masthead media.
 //
-//go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg
+//go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg templates/assets/masthead-bg.mp4
 var assetFS embed.FS
 
 var templateFuncs = template.FuncMap{

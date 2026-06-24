@@ -32,6 +32,9 @@ The client refiner and tests depend on these hooks:
   `.author-link`, `.section-link`, `.topic-link`, and `.published`.
 - Landing pages embed `#cnz-manifest`; sealed/deep pages link to
   `<link rel="manifest" href="/manifest/.../index.json">`.
+- Latest pages can be live-refreshed by `/assets/app.js`, which uses
+  `/latest/version.json`, `/manifest/latest/index.json`, and the newest latest
+  shard. The behavior and polling rules are specified in `LIVE-REFRESH.md`.
 - Article pages render sanitized Markdown through `.article-body`; raw author
   HTML is never trusted.
 
@@ -85,8 +88,14 @@ metadata.
 
 Theme support is presentation-only. `/assets/app.js` stores `cnz-theme` as
 `system`, `light`, or `dark`; CSS reads `html[data-theme]`, while the absence of
-that attribute means system preference. The favicon is emitted as
-`/assets/favicon.svg`.
+that attribute means system preference. The same script also toggles the
+mobile-only primary menu through `data-menu-open`, marks the current primary nav
+item with `aria-current="page"`, and runs the latest-page live refresh loop.
+Desktop navigation remains fully visible without a menu button.
+
+The favicon is emitted as `/assets/favicon.svg`. The masthead background video
+is emitted as `/assets/masthead-bg.mp4`; replace that file with the final brand
+video without changing templates or generator contracts.
 
 The CSS keeps the public site static and cacheable:
 

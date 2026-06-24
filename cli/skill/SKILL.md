@@ -76,3 +76,10 @@ contacting the server.
 - `2` auth or usage problem (missing or invalid token, missing URL).
 - `3` validation problem (missing or malformed fields, unknown fields).
 - `1` network failure or server error; safe to retry with the same key.
+
+## Publishing many at once
+
+This CLI publishes one article per call. To publish a whole batch (50, 100, or more)
+in a single atomic request, post directly to the `POST /articles:batch` HTTP
+endpoint instead; see `BATCH.md` in this folder for the request shape, the per-item
+idempotency keys, and the all-or-nothing semantics.

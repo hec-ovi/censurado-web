@@ -184,8 +184,9 @@ network or 5xx, 2 auth or usage, 3 validation or 4xx) so an orchestrator can bra
 `--dry-run` validates without a network call. `SKILL.md` is the prose contract that tells an
 author-persona agent how to drive it.
 
-- `cli/main.go` :: the CLI (`run` is the testable core; local validation, then the authed idempotent POST).
-- `cli/skill/SKILL.md` :: the agent skill: env vars, the article JSON shape, publish/dry-run, idempotency, exit codes.
+- `cli/main.go` :: the CLI (`run` is the testable core; local validation, then the authed idempotent POST). Single-article only.
+- `cli/skill/SKILL.md` :: the single-article agent skill: env vars, the article JSON shape, publish/dry-run, idempotency, exit codes.
+- `cli/skill/BATCH.md` :: the agent skill for `POST /articles:batch` (HTTP, not the CLI): the `{"articles":[...]}` shape with per-item idempotency keys, the multi-author rule, the atomic all-or-nothing semantics, and the response/status codes, for a producer that posts directly (the brain).
 
 ### 9. Ops, deploy, and recovery
 
@@ -241,9 +242,10 @@ that personas exist.
 ## Docs map (what to trust)
 
 Tracked, current, operator/contract facing: `README.md`, `OPERATIONS.md`, `deploy/README.md`,
-`deploy/CACHING.md`, `deploy/tofu/README.md`, `cli/skill/SKILL.md`,
-`internal/generate/templates/README.md`, and `internal/generate/templates/LIVE-REFRESH.md`
-(the frontend contract for the live-refresh client). `PLAN.md` is the tracked phase history.
+`deploy/CACHING.md`, `deploy/tofu/README.md`, `cli/skill/SKILL.md` (single publish) and
+`cli/skill/BATCH.md` (the batch HTTP endpoint), `internal/generate/templates/README.md`, and
+`internal/generate/templates/LIVE-REFRESH.md` (the frontend contract for the live-refresh
+client). `PLAN.md` is the tracked phase history.
 
 The `docs/` tree (`ARCHITECTURE.md`, `GENERATOR-DESIGN.md`, `CODE_STYLE.md`, `REQUIREMENTS.md`,
 `AGENTIC_WORKFLOW.md`, `NEWSROOM-BRAIN-DESIGN.md`) is gitignored internal design notes: useful

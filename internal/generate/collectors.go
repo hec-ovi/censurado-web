@@ -80,6 +80,7 @@ func (env *buildEnv) manifestFor(sc Scope) (PageManifest, error) {
 func collectors() []collector {
 	return []collector{
 		tierAPageCollector{},
+		aboutPageCollector{},
 		articleCollector{},
 		shardCollector{},
 		manifestCollector{},
@@ -182,6 +183,28 @@ func (tierAPageCollector) collect(ctx context.Context, env *buildEnv, out *Artif
 		}
 	}
 	return nil
+}
+
+// aboutPageCollector emits the single /about/ page listing every author. It is a
+// KindPage artifact covered by the default "Listings" cache policy.
+type aboutPageCollector struct{}
+
+func (aboutPageCollector) name() string { return "about-page" }
+
+func (aboutPageCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
+	if len(env.plan.Index.All) == 0 {
+		return nil
+	}
+	b, err := renderAbout(env)
+	if err != nil {
+		return err
+	}
+	return out.Add(Artifact{
+		Path:  "about/index.html",
+		URL:   "/about/",
+		Kind:  KindPage,
+		Bytes: b,
+	})
 }
 
 // articleCollector emits each article's permalink HTML.

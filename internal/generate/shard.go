@@ -56,7 +56,7 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 		URL:         articleURL(a),
 		Title:       a.Title,
 		Author:      auth,
-		AuthorLabel: a.Author,
+		AuthorLabel: authorDisplayLabel(a),
 		Section:     sec,
 		Topics:      topics,
 		PublishedAt: a.PublishedAt.UTC().Format(time.RFC3339),

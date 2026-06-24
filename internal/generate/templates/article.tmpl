@@ -6,7 +6,7 @@
 <h1 class="article-title">{{.Title}}</h1>
 <div class="article-meta">
 {{template "author_avatar" .}}
-<p class="byline">By <a class="author-link" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a> in <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
+<p class="byline">Por <a class="author-link" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a> en <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
 <time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 </div>
 {{template "topic_list" .Topics}}

@@ -31,12 +31,48 @@ var templateFuncs = template.FuncMap{
 	"humandate": func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 }
 
+// sectionLabelsES maps a section slug (the English URL slug discovered from
+// articles) to its Spanish display name. The URL slug stays English (e.g.
+// /section/tech/) while the heading and facet label render in Spanish. A slug not
+// listed here falls back to the stored, Title-cased label (Facet.labelOr). This
+// applies ONLY to section-axis facets, never to author or topic labels.
+var sectionLabelsES = map[string]string{
+	"tech":      "Tecnología",
+	"world":     "Mundo",
+	"politics":  "Política",
+	"economics": "Economía",
+	"economy":   "Economía",
+	"crypto":    "Cripto",
+}
+
+// sectionDisplayLabel resolves a section facet's reader-facing label: the Spanish
+// name when the slug is mapped, else the facet's stored label (Title-cased). It is
+// keyed on Facet.Value (the slug), so it depends only on the scope and stays
+// byte-stable on sealed pages.
+func sectionDisplayLabel(f Facet) string {
+	if es, ok := sectionLabelsES[f.Value]; ok {
+		return es
+	}
+	return f.labelOr()
+}
+
+// facetDisplayLabel returns the reader-facing label for any facet, applying the
+// Spanish section map only on the section axis and leaving author/topic labels
+// (and month, which has no label) to the stored casing.
+func facetDisplayLabel(f Facet) string {
+	if f.Kind == AxisSection {
+		return sectionDisplayLabel(f)
+	}
+	return f.labelOr()
+}
+
 // Two parsed sets share base.tmpl; each pairs it with one content template that
 // defines "content". A single combined set is impossible because listing.tmpl and
 // article.tmpl both define "content" (and listing.tmpl also defines "headextra").
 var (
 	listingTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
 	articleTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
+	aboutTmpl   = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/about.tmpl", "templates/components/*.tmpl"))
 )
 
 // headData is the shared <head> model: the SEO/social meta plus the per-scope
@@ -70,6 +106,10 @@ type pageView struct {
 	Pager     pagerView
 	Months    []monthLink
 	Manifest  template.HTML
+	// Author bio block, populated only on a single-author listing page.
+	AuthorName   string
+	AuthorBio    string
+	AuthorAvatar string
 }
 
 type itemView struct {
@@ -177,6 +217,19 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		view.Items = append(view.Items, itemViewOf(a))
 	}
 	view.Rail = railItems(view.Items, 5)
+	if isAuthorScope(sc) {
+		slug := sc.Section.Value
+		view.AuthorName = env.plan.Index.authorName[slug]
+		if view.AuthorName == "" {
+			// No metadata.author_name on any carrier: fall back to the stored
+			// author label so the bio block still has a heading.
+			view.AuthorName = sc.Section.labelOr()
+		}
+		view.AuthorBio = env.plan.Index.authorBio[slug]
+		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
+			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
+		}
+	}
 	if pg.Landing {
 		view.Manifest = manifest
 		view.Pager = pagerFor(env.plan.Index, sc, env.pageSize, pg.Number)
@@ -191,6 +244,79 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 
 	var buf bytes.Buffer
 	if err := listingTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// aboutView is the model for the /about/ page: the site head plus the roster of
+// every author with at least one article.
+type aboutView struct {
+	headData
+	Heading string
+	Intro   string
+	Authors []authorCardView
+}
+
+type authorCardView struct {
+	Name   string
+	URL    string
+	Avatar string
+	Bio    string
+}
+
+// aboutHeading and aboutIntro are the Spanish title and lede of the /about/ page.
+const (
+	aboutHeading = "Acerca de"
+	aboutIntro   = "Conoce a las firmas que escriben en El Censurado Web."
+)
+
+// authorCards lists every author scope's display name, avatar, bio, and link to
+// the single-author page, in the index's deterministic author-slug order.
+func authorCards(env *buildEnv) []authorCardView {
+	idx := env.plan.Index
+	var out []authorCardView
+	for _, slug := range sortedStringKeys(idx.authors) {
+		card := authorCardView{
+			Name: idx.authorName[slug],
+			URL:  pageURL("author/"+slug, 0),
+			Bio:  idx.authorBio[slug],
+		}
+		if card.Name == "" {
+			card.Name = idx.authorLabel[slug]
+		}
+		if raw := idx.authorAvatar[slug]; raw != "" {
+			card.Avatar, _ = media.SafeMediaURL(env.siteBase, raw)
+		}
+		out = append(out, card)
+	}
+	return out
+}
+
+// renderAbout renders the /about/ page listing every author.
+func renderAbout(env *buildEnv) ([]byte, error) {
+	canonical := absolute(env.siteBase, "/about/")
+	ld, err := collectionJSONLD(aboutHeading, canonical, aboutIntro)
+	if err != nil {
+		return nil, err
+	}
+	view := aboutView{
+		headData: headData{
+			Title:       aboutHeading + " | " + env.siteName,
+			Canonical:   canonical,
+			Description: aboutIntro,
+			SiteName:    env.siteName,
+			OGType:      "website",
+			TwitterCard: "summary",
+			JSONLD:      ld,
+			NavLinks:    navLinksForArticles(env.plan.Index.All),
+		},
+		Heading: aboutHeading,
+		Intro:   aboutIntro,
+		Authors: authorCards(env),
+	}
+	var buf bytes.Buffer
+	if err := aboutTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -227,11 +353,11 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			JSONLD:      ld,
 			NavLinks:    navLinksForArticle(a),
 		},
-		AuthorLabel:   a.Author,
+		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
-		AuthorInitial: authorInitial(a.Author),
+		AuthorInitial: authorInitial(authorDisplayLabel(a)),
 		AuthorAvatar:  metadataMediaSrc(env.siteBase, a.Metadata, "author_avatar", "avatar"),
-		Section:       a.Section,
+		Section:       sectionLabelOf(a),
 		SectionURL:    facetURL("section", a.Section),
 		Topics:        topicLinksOf(a),
 		PublishedAt:   a.PublishedAt,
@@ -256,12 +382,12 @@ func itemViewOf(a domain.Article) itemView {
 	return itemView{
 		Title:         a.Title,
 		URL:           articleURL(a),
-		AuthorLabel:   a.Author,
+		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
 		AuthorSlug:    se.Author,
-		AuthorInitial: authorInitial(a.Author),
+		AuthorInitial: authorInitial(authorDisplayLabel(a)),
 		AuthorAvatar:  metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
-		Section:       a.Section,
+		Section:       sectionLabelOf(a),
 		SectionURL:    facetURL("section", a.Section),
 		SectionSlug:   se.Section,
 		Topics:        topicLinksOf(a),
@@ -273,14 +399,18 @@ func itemViewOf(a domain.Article) itemView {
 }
 
 func navLinksForArticles(arts []domain.Article) []navLink {
-	links := []navLink{{Label: "Latest", URL: "/latest/"}}
-	seen := map[string]struct{}{"/latest/": {}}
+	links := []navLink{
+		{Label: "Lo último", URL: "/latest/"},
+		{Label: aboutHeading, URL: "/about/"},
+	}
+	seen := map[string]struct{}{"/latest/": {}, "/about/": {}}
 	for _, a := range arts {
 		if len(links) >= 7 {
 			break
 		}
-		if _, ok := facetSlug(a.Section); ok {
-			addNavLink(&links, seen, a.Section, facetURL("section", a.Section))
+		if slug, ok := facetSlug(a.Section); ok {
+			label := sectionDisplayLabel(Facet{Kind: AxisSection, Value: slug, Label: a.Section})
+			addNavLink(&links, seen, label, facetURL("section", a.Section))
 		}
 	}
 	for _, a := range arts {
@@ -374,18 +504,18 @@ func scopeDescription(s Scope, siteName string) string {
 	if s.isSingle() {
 		switch s.Section.Kind {
 		case AxisLatest:
-			return "The latest articles published to " + siteName + "."
+			return "Los últimos artículos publicados en " + siteName + "."
 		case AxisSection:
-			return "Articles in the " + s.Section.labelOr() + " section of " + siteName + "."
+			return "Artículos de la sección " + facetDisplayLabel(s.Section) + " de " + siteName + "."
 		case AxisAuthor:
-			return "Articles by " + s.Section.labelOr() + " on " + siteName + "."
+			return "Artículos de " + facetDisplayLabel(s.Section) + " en " + siteName + "."
 		case AxisTopic:
-			return "Articles tagged " + s.Section.labelOr() + " on " + siteName + "."
+			return "Artículos etiquetados como " + facetDisplayLabel(s.Section) + " en " + siteName + "."
 		case AxisMonth:
-			return "Articles published in " + monthKey(s.Section.Year, s.Section.Month) + " on " + siteName + "."
+			return "Artículos publicados en " + monthKey(s.Section.Year, s.Section.Month) + " en " + siteName + "."
 		}
 	}
-	return scopeHeading(s) + " on " + siteName + "."
+	return scopeHeading(s) + " en " + siteName + "."
 }
 
 // metadataString reads a non-empty string value from the open metadata object.
@@ -424,7 +554,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	if yt, ok := metadataString(a.Metadata, "youtube"); ok {
 		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
-				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
+				view:    mediaView{Kind: "youtube", Src: embed, Title: "Vídeo: " + a.Title, Poster: imgSrc},
 				ogImage: imgAbs,
 				ogVideo: embed,
 			}
@@ -433,7 +563,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	if yt, ok := metadataString(a.Metadata, "youtube_id"); ok {
 		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
-				view:    mediaView{Kind: "youtube", Src: embed, Title: "Video: " + a.Title, Poster: imgSrc},
+				view:    mediaView{Kind: "youtube", Src: embed, Title: "Vídeo: " + a.Title, Poster: imgSrc},
 				ogImage: imgAbs,
 				ogVideo: embed,
 			}
@@ -441,7 +571,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	}
 	if vidSrc, vidAbs := metadataMediaURL(base, a.Metadata, "video"); vidSrc != "" {
 		return articleMedia{
-			view:    mediaView{Kind: "video", Src: vidSrc, Title: "Video: " + a.Title, Poster: imgSrc},
+			view:    mediaView{Kind: "video", Src: vidSrc, Title: "Vídeo: " + a.Title, Poster: imgSrc},
 			ogImage: imgAbs,
 			ogVideo: vidAbs,
 		}
@@ -480,6 +610,27 @@ func firstMetadataString(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// sectionLabelOf is the reader-facing section label for one article: the Spanish
+// display name when the slug is mapped, else the stored section string. The URL
+// slug and data-section hook are unchanged (they keep the English slug).
+func sectionLabelOf(a domain.Article) string {
+	slug, ok := facetSlug(a.Section)
+	if !ok {
+		return a.Section
+	}
+	return sectionDisplayLabel(Facet{Kind: AxisSection, Value: slug, Label: a.Section})
+}
+
+// authorDisplayLabel is the reader-facing byline label for one article: the
+// sibling system's metadata.author_name when present, else the raw author string.
+// The URL slug is still derived from a.Author, so /author/<slug>/ is unchanged.
+func authorDisplayLabel(a domain.Article) string {
+	if name := firstMetadataString(a.Metadata, "author_name"); name != "" {
+		return name
+	}
+	return a.Author
 }
 
 func authorInitial(name string) string {
@@ -581,13 +732,19 @@ func isLatest(s Scope) bool {
 	return s.Section.Kind == AxisLatest && s.isSingle()
 }
 
+// isAuthorScope reports whether s is a single-author listing page (Scope with
+// AxisAuthor and no Sub), where the author bio block is rendered.
+func isAuthorScope(s Scope) bool {
+	return s.Section.Kind == AxisAuthor && s.isSingle()
+}
+
 func scopeHeading(s Scope) string {
 	if s.isSingle() {
 		switch s.Section.Kind {
 		case AxisLatest:
-			return "Latest"
+			return "Lo último"
 		case AxisSection, AxisAuthor, AxisTopic:
-			return s.Section.labelOr()
+			return facetDisplayLabel(s.Section)
 		case AxisMonth:
 			return monthKey(s.Section.Year, s.Section.Month)
 		}
@@ -595,25 +752,25 @@ func scopeHeading(s Scope) string {
 	sub := ""
 	switch s.Sub.Kind {
 	case AxisAuthor, AxisTopic:
-		sub = s.Sub.labelOr()
+		sub = facetDisplayLabel(s.Sub)
 	case AxisMonth:
 		sub = monthKey(s.Sub.Year, s.Sub.Month)
 	}
-	return s.Section.labelOr() + " / " + sub
+	return facetDisplayLabel(s.Section) + " / " + sub
 }
 
 func pageTitle(heading, siteName string, pg Page) string {
 	if pg.Number >= 1 {
-		return fmt.Sprintf("%s (page %d) | %s", heading, pg.Number, siteName)
+		return fmt.Sprintf("%s (página %d) | %s", heading, pg.Number, siteName)
 	}
 	return heading + " | " + siteName
 }
 
 func feedLinksFor(siteBase, siteName string) []feedLink {
 	return []feedLink{
-		{Rel: "alternate", Type: "application/rss+xml", Href: absolute(siteBase, "/feed.xml"), Title: siteName + " RSS"},
-		{Rel: "alternate", Type: "application/atom+xml", Href: absolute(siteBase, "/atom.xml"), Title: siteName + " Atom"},
-		{Rel: "alternate", Type: "application/feed+json", Href: absolute(siteBase, "/feed.json"), Title: siteName + " JSON Feed"},
+		{Rel: "alternate", Type: "application/rss+xml", Href: absolute(siteBase, "/feed.xml"), Title: "Canal RSS de " + siteName},
+		{Rel: "alternate", Type: "application/atom+xml", Href: absolute(siteBase, "/atom.xml"), Title: "Canal Atom de " + siteName},
+		{Rel: "alternate", Type: "application/feed+json", Href: absolute(siteBase, "/feed.json"), Title: "Canal JSON de " + siteName},
 	}
 }
 

@@ -6,12 +6,23 @@
 {{- end}}{{end}}
 {{- end}}
 {{define "content"}}
+{{- if .AuthorName}}
+<section class="author-bio" data-author-bio>
+{{- if .AuthorAvatar}}
+<img class="author-bio-avatar" src="{{.AuthorAvatar}}" alt="" loading="lazy" decoding="async">
+{{- end}}
+<h2 class="author-bio-name">{{.AuthorName}}</h2>
+{{- if .AuthorBio}}
+<p class="author-bio-text">{{.AuthorBio}}</p>
+{{- end}}
+</section>
+{{- end}}
 <header class="listing-hero">
-<p class="eyebrow">Front Page</p>
+<p class="eyebrow">Portada</p>
 <h1 class="listing-heading">{{.Heading}}</h1>
 <p class="listing-summary">{{.Description}}</p>
 </header>
-<section class="portal-front" data-facets aria-label="Front page">
+<section class="portal-front" data-facets aria-label="Portada">
 <ol class="article-list" data-articles>
 {{- range .Items}}
 <li class="article-item" data-author="{{.AuthorSlug}}" data-author-avatar="{{.AuthorAvatar}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
@@ -20,8 +31,8 @@
 {{- end}}
 </ol>
 {{- if .Rail}}
-<aside class="ranked-rail" aria-label="Most read">
-<h2 class="rail-heading">Most Read</h2>
+<aside class="ranked-rail" aria-label="Lo más leído">
+<h2 class="rail-heading">Lo más leído</h2>
 <ol class="ranked-list">
 {{- range .Rail}}
 <li class="ranked-item">
@@ -35,14 +46,14 @@
 </aside>
 {{- end}}
 {{- if gt (len .Pager.Pages) 1}}
-<nav class="pager" data-pager aria-label="Pages">
+<nav class="pager" data-pager aria-label="Páginas">
 {{- range .Pager.Pages}}
 <a class="pager-link" href="{{.URL}}">{{.N}}</a>
 {{- end}}
 </nav>
 {{- end}}
 {{- if .Months}}
-<nav class="months" data-months aria-label="Months">
+<nav class="months" data-months aria-label="Meses">
 {{- range .Months}}
 <a class="month-link" href="{{.URL}}" data-month="{{.Slug}}">{{.Label}}</a>
 {{- end}}

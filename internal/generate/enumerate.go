@@ -31,6 +31,13 @@ type Index struct {
 	sectionLabel map[string]string
 	authorLabel  map[string]string
 	topicLabel   map[string]string
+
+	// Author profile fields stamped on articles by a sibling system, keyed by
+	// author slug and recorded from the first (earliest-inserted) carrier, the
+	// same representative the labels use.
+	authorBio    map[string]string
+	authorName   map[string]string
+	authorAvatar map[string]string
 }
 
 func newIndex(n int) *Index {
@@ -46,6 +53,9 @@ func newIndex(n int) *Index {
 		sectionLabel: map[string]string{},
 		authorLabel:  map[string]string{},
 		topicLabel:   map[string]string{},
+		authorBio:    map[string]string{},
+		authorName:   map[string]string{},
+		authorAvatar: map[string]string{},
 	}
 }
 
@@ -80,7 +90,24 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 		}
 		if aOK {
 			idx.authors[aSlug] = append(idx.authors[aSlug], i)
-			recordLabel(idx.authorLabel, aSlug, a.Author)
+			// Prefer the sibling system's metadata.author_name for the display
+			// label, falling back to the raw author string. recordLabel keeps the
+			// earliest-inserted carrier's value, matching the section/topic labels.
+			name := firstMetadataString(a.Metadata, "author_name")
+			label := a.Author
+			if name != "" {
+				label = name
+			}
+			recordLabel(idx.authorLabel, aSlug, label)
+			if name != "" {
+				recordLabel(idx.authorName, aSlug, name)
+			}
+			if bio := firstMetadataString(a.Metadata, "author_bio"); bio != "" {
+				recordLabel(idx.authorBio, aSlug, bio)
+			}
+			if avatar := firstMetadataString(a.Metadata, "author_avatar"); avatar != "" {
+				recordLabel(idx.authorAvatar, aSlug, avatar)
+			}
 		}
 		idx.months[m] = append(idx.months[m], i)
 

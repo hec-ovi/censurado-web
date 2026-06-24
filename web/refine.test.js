@@ -91,7 +91,7 @@ describe("Censurado refiner", () => {
     expect(refiner).toBeTruthy();
 
     const user = userEvent.setup();
-    const chip = within(container).getByRole("button", { name: "Author ada" });
+    const chip = within(container).getByRole("button", { name: "Autor ada" });
     expect(chip.getAttribute("aria-pressed")).toBe("false");
 
     await user.click(chip);
@@ -133,7 +133,7 @@ describe("Censurado refiner", () => {
     expect(manifestHits["/manifest/section/tech/index.json"]).toBe(1);
 
     const user = userEvent.setup();
-    await user.click(within(container).getByRole("button", { name: "Author ada" }));
+    await user.click(within(container).getByRole("button", { name: "Autor ada" }));
 
     await waitFor(() =>
       expect(container.querySelectorAll("[data-articles] .article-item").length).toBe(2)
@@ -157,7 +157,7 @@ describe("Censurado refiner", () => {
 
     refiner = await initRefine(container);
     const user = userEvent.setup();
-    await user.click(within(container).getByRole("button", { name: "Section caps" }));
+    await user.click(within(container).getByRole("button", { name: "Sección caps" }));
 
     await waitFor(() =>
       expect(container.querySelectorAll("[data-articles] .article-item").length).toBe(7)
@@ -193,7 +193,7 @@ describe("Censurado refiner", () => {
 
     refiner = await initRefine(container);
     const user = userEvent.setup();
-    await user.click(within(container).getByRole("button", { name: "Section pp" }));
+    await user.click(within(container).getByRole("button", { name: "Sección pp" }));
 
     await waitFor(() =>
       expect(container.querySelectorAll("[data-articles] .article-item").length).toBe(4)
@@ -232,7 +232,7 @@ describe("Censurado refiner", () => {
 
     refiner = await initRefine(container);
     const user = userEvent.setup();
-    const chip = within(container).getByRole("button", { name: "Author phantom" });
+    const chip = within(container).getByRole("button", { name: "Autor phantom" });
     await user.click(chip);
 
     await waitFor(() =>
@@ -241,7 +241,7 @@ describe("Censurado refiner", () => {
     expect(container.querySelector("[data-articles] .article-item")).toBeNull();
     expect(chip.disabled).toBe(true);
     expect(chip.getAttribute("aria-disabled")).toBe("true");
-    expect(container.querySelector(".refine-status").textContent).toMatch(/no articles/i);
+    expect(container.querySelector(".refine-status").textContent).toMatch(/ningún artículo/i);
   });
 
   // Scenario 5
@@ -281,7 +281,7 @@ describe("Censurado refiner", () => {
 
     refiner = await initRefine(container);
     const user = userEvent.setup();
-    await user.click(within(container).getByRole("button", { name: "Author ada" }));
+    await user.click(within(container).getByRole("button", { name: "Autor ada" }));
     await waitFor(() =>
       expect(container.querySelectorAll("[data-articles] .article-item").length).toBe(3)
     );
@@ -306,7 +306,7 @@ describe("Censurado refiner", () => {
 
     refiner = await initRefine(container);
     const user = userEvent.setup();
-    const chip = within(container).getByRole("button", { name: "Author lin" });
+    const chip = within(container).getByRole("button", { name: "Autor lin" });
 
     await user.click(chip);
     await waitFor(() =>
@@ -360,7 +360,7 @@ describe("Censurado refiner", () => {
     await liveRefresh.checkNow();
 
     expect(fetchMock.mock.calls[1][1].headers["If-None-Match"]).toBe('"v1"');
-    const banner = within(container).getByRole("button", { name: "1 new story" });
+    const banner = within(container).getByRole("button", { name: "1 historia nueva" });
     expect(banner).not.toBeNull();
 
     const user = userEvent.setup();

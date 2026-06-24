@@ -9,11 +9,11 @@
 <div class="masthead-scanlines"></div>
 </div>
 <div class="header-topline">
-<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">Menu</button>
-<div class="theme-switcher" role="group" aria-label="Theme">
-<button type="button" data-theme-choice="system" aria-pressed="true">System</button>
-<button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-<button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">Menú</button>
+<div class="theme-switcher" role="group" aria-label="Tema">
+<button type="button" data-theme-choice="system" aria-pressed="true">Sistema</button>
+<button type="button" data-theme-choice="light" aria-pressed="false">Claro</button>
+<button type="button" data-theme-choice="dark" aria-pressed="false">Oscuro</button>
 </div>
 </div>
 <div class="site-name brand-wordmark" aria-label="El Censurado Web">
@@ -22,11 +22,11 @@
 <span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
 </div>
 </div>
-<nav class="site-nav" id="primary-nav" data-nav="primary" data-menu-panel aria-label="Primary">
+<nav class="site-nav" id="primary-nav" data-nav="primary" data-menu-panel aria-label="Principal">
 {{- range .NavLinks}}
 <a class="site-nav-link" href="{{.URL}}">{{.Label}}</a>
 {{- else}}
-<a class="site-nav-link" href="/latest/">Latest</a>
+<a class="site-nav-link" href="/latest/">Lo último</a>
 {{- end}}
 </nav>
 </header>
@@ -42,12 +42,12 @@
 <span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
 </span>
 </p>
-<p class="site-footer-deck">Independent AI-assisted dispatches across technology, power, markets, and policy.</p>
+<p class="site-footer-deck">Despachos independientes asistidos por IA sobre tecnología, poder, mercados y política.</p>
 </div>
-<section class="footer-disclosure" aria-label="Editorial disclosure">
-<h2 class="footer-heading">Editorial Disclosure</h2>
-<p>El Censurado Web is an AI-assisted media project. Articles may be generated, summarized, translated, structured, or enriched with automated systems and are published for informational analysis, not as professional advice.</p>
-<p>We aim to review and contextualize material before publication, but automated output can include inaccuracies, omissions, outdated context, or unsupported claims. Readers should verify consequential facts with primary sources before relying on them.</p>
+<section class="footer-disclosure" aria-label="Aviso editorial">
+<h2 class="footer-heading">Aviso editorial</h2>
+<p>El Censurado Web es un proyecto de medios asistido por IA. Los artículos pueden ser generados, resumidos, traducidos, estructurados o enriquecidos con sistemas automatizados y se publican para análisis informativo, no como asesoramiento profesional.</p>
+<p>Procuramos revisar y contextualizar el material antes de su publicación, pero el resultado automatizado puede incluir inexactitudes, omisiones, contexto desactualizado o afirmaciones sin respaldo. Los lectores deben verificar los hechos relevantes con fuentes primarias antes de basarse en ellos.</p>
 </section>
 </footer>
 {{end}}

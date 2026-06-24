@@ -1,0 +1,26 @@
+{{define "content"}}
+<header class="listing-hero">
+<p class="eyebrow">El Censurado Web</p>
+<h1 class="listing-heading">{{.Heading}}</h1>
+<p class="listing-summary">{{.Intro}}</p>
+</header>
+<section class="about-authors" aria-label="Autores">
+{{- if .Authors}}
+<ul class="author-cards">
+{{- range .Authors}}
+<li class="author-card">
+<a class="author-card-link" href="{{.URL}}">
+{{- if .Avatar}}
+<img class="author-card-avatar" src="{{.Avatar}}" alt="" loading="lazy" decoding="async">
+{{- end}}
+<span class="author-card-name">{{.Name}}</span>
+</a>
+{{- if .Bio}}
+<p class="author-card-bio">{{.Bio}}</p>
+{{- end}}
+</li>
+{{- end}}
+</ul>
+{{- end}}
+</section>
+{{end}}

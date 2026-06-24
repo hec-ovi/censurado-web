@@ -21,7 +21,7 @@
 // auto-initializes on the real page.
 
 const FACET_TYPES = ["author", "section", "topic", "month"];
-const FACET_LABEL = { author: "Author", section: "Section", topic: "Topic", month: "Month" };
+const FACET_LABEL = { author: "Autor", section: "Sección", topic: "Tema", month: "Mes" };
 
 // absURL resolves a root-relative URL against the document base. Browsers do
 // this implicitly for fetch(); resolving explicitly also keeps the same code
@@ -180,7 +180,7 @@ function articleItemFromEntry(e, helpers) {
   }
 
   const byline = el("p", { class: "byline" });
-  byline.append("By ");
+  byline.append("Por ");
   const authorLink = el("a", {
     class: "author-link",
     href: facetURL("author", e.author),
@@ -340,7 +340,7 @@ class Refiner {
   // ahead of the article list. It never removes the server-rendered fallbacks.
   buildPanel() {
     const panel = el("div", { class: "facet-panel", role: "group" });
-    panel.setAttribute("aria-label", "Refine by facet");
+    panel.setAttribute("aria-label", "Filtrar por faceta");
 
     for (const type of FACET_TYPES) {
       const values = this.facetValues(type).filter((v) => this.facetURL(type, v));
@@ -376,7 +376,7 @@ class Refiner {
     }
 
     this.clearBtn = el("button", { type: "button", class: "facet-clear", hidden: "" });
-    this.clearBtn.textContent = "Clear filter";
+    this.clearBtn.textContent = "Quitar filtro";
     this.clearBtn.addEventListener("click", () => this.clearFilter(true));
     panel.appendChild(this.clearBtn);
 
@@ -439,7 +439,7 @@ class Refiner {
       this.setPressed(null);
       this.activeFacet = null;
       this.showClear(true);
-      this.announce("No articles match " + FACET_LABEL[type] + " " + value + ".");
+      this.announce("Ningún artículo coincide con " + FACET_LABEL[type] + " " + value + ".");
       this.focusHeading();
       return;
     }
@@ -449,11 +449,10 @@ class Refiner {
     this.showClear(true);
     if (push && href) this.pushState(href);
     this.announce(
-      "Showing " +
+      "Mostrando " +
         filtered.length +
-        " article" +
-        (filtered.length === 1 ? "" : "s") +
-        " for " +
+        (filtered.length === 1 ? " artículo" : " artículos") +
+        " de " +
         FACET_LABEL[type] +
         " " +
         value +
@@ -480,7 +479,7 @@ class Refiner {
     this.activeFacet = null;
     this.showClear(false);
     if (push) this.pushState(this.basePath);
-    this.announce("Filter cleared. Showing all articles.");
+    this.announce("Filtro quitado. Mostrando todos los artículos.");
     this.focusHeading();
   }
 
@@ -503,7 +502,7 @@ class Refiner {
   renderEmpty(type, value) {
     const li = el("li", { class: "empty-state", role: "note" });
     li.textContent =
-      'No articles match ' + FACET_LABEL[type] + ' "' + this.labelFor(type, value, value) + '".';
+      'Ningún artículo coincide con ' + FACET_LABEL[type] + ' "' + this.labelFor(type, value, value) + '".';
     this.list.replaceChildren(li);
   }
 
@@ -738,7 +737,7 @@ class LiveRefresh {
       this.list.parentNode.insertBefore(this.banner, this.list);
     }
     const n = entries.length;
-    this.banner.textContent = n + " new " + (n === 1 ? "story" : "stories");
+    this.banner.textContent = n + (n === 1 ? " historia nueva" : " historias nuevas");
     this.banner.removeAttribute("hidden");
   }
 

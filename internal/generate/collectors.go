@@ -360,6 +360,17 @@ func (metaCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSe
 	if err := out.Add(Artifact{Path: "feed.json", URL: "/feed.json", Kind: KindMeta, Bytes: jf}); err != nil {
 		return err
 	}
+
+	// The version sentinel: a byte-stable fingerprint of the latest window that the
+	// client polls to detect new content. KindMeta, so it rides the diff/purge
+	// pipeline and lands in purge.json exactly when it changes.
+	sentinel, err := buildVersionSentinel(env)
+	if err != nil {
+		return err
+	}
+	if err := out.Add(Artifact{Path: "latest/version.json", URL: "/latest/version.json", Kind: KindMeta, Bytes: sentinel}); err != nil {
+		return err
+	}
 	return nil
 }
 

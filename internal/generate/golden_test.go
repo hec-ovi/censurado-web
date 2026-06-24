@@ -47,9 +47,11 @@ func TestGolden_AddArticleChangesExactURLs(t *testing.T) {
 	// The listings sitemap gains the two new June scope URLs (and refreshed
 	// lastmods); a brand-new per-month article sitemap appears for 2026-06; the
 	// sitemap index gains that child. The 2026-05 article sitemap is byte-stable.
+	// The version sentinel changes because the new article is the newest, so it is
+	// purged too; its fingerprint over the latest window moved.
 	meta := []string{
 		"/sitemap.xml", "/sitemaps/listings.xml", "/sitemaps/articles-2026-06.xml",
-		"/feed.xml", "/atom.xml", "/feed.json",
+		"/feed.xml", "/atom.xml", "/feed.json", "/latest/version.json",
 	}
 	want := append(append(append([]string{}, listings...), shards...), manifests...)
 	want = append(want, meta...)

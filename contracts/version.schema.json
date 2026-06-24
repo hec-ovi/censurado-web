@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://censurado.local/contracts/version.schema.json",
+  "title": "Version sentinel",
+  "description": "Served at /latest/version.json. A tiny, aggressively edge-cacheable file the static page polls with If-None-Match so a reader currently viewing the portal sees new stories within the poll interval, without the origin doing per-user work. The value v is a content fingerprint over the newest articles in display order, byte-stable when nothing changed (the edge answers 304) and changing the moment the top of the site does. latest_ids are those articles' slugs, newest first. Field set is frozen.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "latest_ids"],
+  "properties": {
+    "v": {
+      "type": "string",
+      "description": "Hex SHA-256 content fingerprint of the latest window; identical bytes mean nothing changed.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "latest_ids": {
+      "type": "array",
+      "description": "Slugs of the newest articles in display order (newest first).",
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+    }
+  }
+}

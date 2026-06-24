@@ -65,6 +65,29 @@ func (k FailureKind) String() string {
 // already used for a different article (a content-hash mismatch).
 var ErrIdempotencyKeyReused = errors.New("idempotency key reused for a different article")
 
+// validateInput is the validation half of Apply: it builds the canonical article
+// (NewArticle) and runs the Markdown safety gate (RenderMarkdown), writing
+// nothing. On success it returns the article and FailureNone. On failure it
+// returns the FailureKind, the validation field map (FailureValidation only), and
+// the underlying error. Both the single path (Apply) and the batch path use it so
+// validation is identical, and the batch can validate every item before any
+// write.
+func validateInput(in domain.PublishInput, now time.Time) (domain.Article, FailureKind, map[string]string, error) {
+	article, err := domain.NewArticle(in, now)
+	if err != nil {
+		var ve *domain.ValidationError
+		if errors.As(err, &ve) {
+			return domain.Article{}, FailureValidation, ve.Fields, err
+		}
+		return domain.Article{}, FailureInvalidArticle, nil, err
+	}
+	// Safety gate: the body must render to sanitized HTML without error.
+	if _, err := content.RenderMarkdown(article.Body); err != nil {
+		return domain.Article{}, FailureUnrenderableBody, nil, err
+	}
+	return article, FailureNone, nil, nil
+}
+
 // ApplyResult is the outcome of the accept core. On success Failure is FailureNone
 // and Article + Created describe the stored article (Created=true => a brand-new
 // write that maps to 201; false => an idempotent replay or content-hash dedup that
@@ -93,18 +116,9 @@ type ApplyResult struct {
 // writes a second article, which is what makes archived-payload replay safe to run
 // repeatedly.
 func Apply(ctx context.Context, repo store.Repository, log store.SubmissionLog, in domain.PublishInput, idemKey string, scopes []string, now time.Time) (ApplyResult, error) {
-	article, err := domain.NewArticle(in, now)
-	if err != nil {
-		var ve *domain.ValidationError
-		if errors.As(err, &ve) {
-			return ApplyResult{Failure: FailureValidation, Fields: ve.Fields, Err: err}, err
-		}
-		return ApplyResult{Failure: FailureInvalidArticle, Err: err}, err
-	}
-
-	// Safety gate: the body must render to sanitized HTML without error.
-	if _, err := content.RenderMarkdown(article.Body); err != nil {
-		return ApplyResult{Failure: FailureUnrenderableBody, Err: err}, err
+	article, fk, fields, err := validateInput(in, now)
+	if fk != FailureNone {
+		return ApplyResult{Failure: fk, Fields: fields, Err: err}, err
 	}
 
 	if prev, found, err := log.FindSubmission(ctx, idemKey); err != nil {

@@ -124,7 +124,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// authenticated persona. The sole exception is a key holding ScopePublishAny
 	// (the operator console key), which may publish as any author. A non-empty
 	// author is still required and enforced by NewArticle inside Apply.
-	if !id.HasScope(ScopePublishAny) && strings.TrimSpace(in.Author) != id.Author {
+	if !authorAllowed(id, in.Author) {
 		writeProblem(w, problem{Status: http.StatusForbidden, Code: "author_mismatch", Detail: "author must match the authenticated key"})
 		return
 	}
@@ -202,6 +202,15 @@ func authenticateWrite(auth Authenticator, w http.ResponseWriter, r *http.Reques
 		return Identity{}, false
 	}
 	return id, true
+}
+
+// authorAllowed reports whether identity id may publish as the given author. Any
+// key may publish as its own author; only a key holding ScopePublishAny (the
+// operator console key) may publish as a different one. A blank author is left for
+// NewArticle to reject, so this only governs the author-binding rule. Shared by
+// the single handler and the batch handler so per-item binding is identical.
+func authorAllowed(id Identity, author string) bool {
+	return id.HasScope(ScopePublishAny) || strings.TrimSpace(author) == id.Author
 }
 
 func bearerToken(header string) string {

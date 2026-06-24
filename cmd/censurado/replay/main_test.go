@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,6 +252,82 @@ func TestRun_ExitCodes(t *testing.T) {
 			t.Fatalf("exit = %d, want %d (a payload failed)", code, exitFailed)
 		}
 	})
+}
+
+// TestReplay_RecoversBatchArchive proves the full durability round-trip for a batch
+// publish: drive the real POST /articles:batch handler with an archive attached, so
+// it writes one envelope per created item, then recover those writes through the
+// replay tool into a FRESH empty store (as after a restore that lost the batch).
+// All items come back, multi-author attribution is preserved, and a second replay
+// is exactly-once. No replay code is batch-aware: each envelope is a single article,
+// which is exactly what makes a batch recoverable like single publishes.
+func TestReplay_RecoversBatchArchive(t *testing.T) {
+	base := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+
+	// Produce a batch archive through the real handler.
+	srcRepo, err := sqlite.Open(filepath.Join(t.TempDir(), "src.db"))
+	if err != nil {
+		t.Fatalf("src store: %v", err)
+	}
+	t.Cleanup(func() { _ = srcRepo.Close() })
+
+	arch, _ := openArchive(t)
+	const secret = "batch-replay-secret-1234567890"
+	auth := publish.NewStaticKeyAuth()
+	auth.Add("ak_ed", publish.HashSecret(secret), "editor", publish.ScopeWrite, publish.ScopePublishAny)
+	h := publish.NewHandler(srcRepo, srcRepo, auth, func() time.Time { return base }).WithArchive(arch)
+	srv := publish.NewServerHandler(h, nil, nil)
+
+	body := `{"articles":[
+		{"title":"Batch A","body":"b","author":"ada","section":"tech","idempotency_key":"ba"},
+		{"title":"Batch B","body":"b","author":"bo","section":"world","idempotency_key":"bb"},
+		{"title":"Batch C","body":"b","author":"cy","section":"politics","idempotency_key":"bc"},
+		{"title":"Batch D","body":"b","author":"di","section":"economics","idempotency_key":"bd"}
+	]}`
+	req := httptest.NewRequest(http.MethodPost, "/articles:batch", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer ak_ed."+secret)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("batch publish status = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Recover into a fresh, empty store.
+	repo := openStore(t)
+	var out bytes.Buffer
+	tl, err := replay(context.Background(), repo, repo, arch, time.Time{}, false, &out)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if tl.Considered != 4 || tl.Recovered != 4 || tl.Failed != 0 {
+		t.Fatalf("tally = %+v, want considered/recovered=4, failed 0", tl)
+	}
+	if got := count(t, repo); got != 4 {
+		t.Fatalf("recovered article count = %d, want 4", got)
+	}
+	// Multi-author attribution survives the round-trip.
+	for _, author := range []string{"ada", "bo", "cy", "di"} {
+		n, err := repo.Count(context.Background(), store.Filter{Author: author})
+		if err != nil {
+			t.Fatalf("count author %s: %v", author, err)
+		}
+		if n != 1 {
+			t.Errorf("recovered %d articles for author %s, want 1", n, author)
+		}
+	}
+
+	// Second replay is exactly-once: everything is already present, nothing doubles.
+	out.Reset()
+	second, err := replay(context.Background(), repo, repo, arch, time.Time{}, false, &out)
+	if err != nil {
+		t.Fatalf("second replay: %v", err)
+	}
+	if second.Recovered != 0 || second.AlreadyPresent != 4 {
+		t.Fatalf("second tally = %+v, want present=4 recovered=0 (exactly-once)", second)
+	}
+	if got := count(t, repo); got != 4 {
+		t.Fatalf("count after second replay = %d, want 4", got)
+	}
 }
 
 func TestParseSince(t *testing.T) {

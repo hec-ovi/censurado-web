@@ -39,6 +39,12 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+// execer is satisfied by both *sql.DB and *sql.Tx so a write helper runs the
+// same statement in or out of a transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // argBuilder assigns positional placeholders ($1, $2, ...) as args are added.
 type argBuilder struct{ args []any }
 
@@ -66,6 +72,12 @@ func Open(dsn string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("postgres ping: %w", pingErr)
 	}
+	// Single-writer model, matching the SQLite adapter: one connection serializes
+	// writes so two concurrent batches commit one after the other rather than
+	// racing to a unique-constraint violation. The stated write volume (tens per
+	// day, bursts to ~100/24h) is far below where one writer connection is a
+	// bottleneck, and batch ingest is what keeps that cheap.
+	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(context.Background(), schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("postgres schema: %w", err)
@@ -79,16 +91,87 @@ func (s *Store) Close() error { return s.db.Close() }
 // Upsert inserts the article, or returns the existing one when its content hash
 // already exists (idempotent, deduplicated). Topics are written only on create.
 func (s *Store) Upsert(ctx context.Context, a domain.Article) (store.UpsertResult, error) {
-	meta, err := marshalMeta(a.Metadata)
-	if err != nil {
-		return store.UpsertResult{}, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return store.UpsertResult{}, err
 	}
 	defer tx.Rollback()
 
+	stored, created, err := upsertTx(ctx, tx, a)
+	if err != nil {
+		return store.UpsertResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return store.UpsertResult{}, err
+	}
+	return store.UpsertResult{Article: stored, Created: created}, nil
+}
+
+// UpsertMany stores a batch of articles and their submission-ledger records in
+// one transaction, mirroring the single path's Upsert + RecordSubmission per item
+// but committing them together so the batch is atomic. Behavior is identical to
+// the SQLite adapter (proven by the shared conformance suite): per item it reads
+// the ledger first (a replayed key returns the prior article with no write), then
+// upserts the article (content-hash deduplicated) and appends the submission
+// record. A key reused for a different article rolls the whole batch back and
+// returns *store.BatchConflictError.
+func (s *Store) UpsertMany(ctx context.Context, items []store.UpsertItem) ([]store.UpsertResult, error) {
+	results := make([]store.UpsertResult, len(items))
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	for i, item := range items {
+		prev, found, err := findSubmissionTx(ctx, tx, item.IdempotencyKey)
+		if err != nil {
+			return nil, fmt.Errorf("batch item %d: lookup: %w", i, err)
+		}
+		if found {
+			if prev.ContentHash != item.Article.ContentHash {
+				return nil, &store.BatchConflictError{Index: i, IdempotencyKey: item.IdempotencyKey}
+			}
+			results[i] = store.UpsertResult{
+				Article: domain.Article{ID: prev.ArticleID, Slug: prev.Slug, ContentHash: prev.ContentHash},
+				Created: false,
+			}
+			continue
+		}
+
+		stored, created, err := upsertTx(ctx, tx, item.Article)
+		if err != nil {
+			return nil, fmt.Errorf("batch item %d: %w", i, err)
+		}
+		if err := recordSubmissionTx(ctx, tx, store.Submission{
+			IdempotencyKey: item.IdempotencyKey,
+			ContentHash:    stored.ContentHash,
+			ArticleID:      stored.ID,
+			Slug:           stored.Slug,
+			Author:         stored.Author,
+			Scopes:         item.Scopes,
+			CreatedAt:      stored.CreatedAt,
+		}); err != nil {
+			return nil, fmt.Errorf("batch item %d: audit: %w", i, err)
+		}
+		results[i] = store.UpsertResult{Article: stored, Created: created}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// upsertTx inserts the article and (on create) its topics within tx, returning
+// the stored article and whether it was newly created. It is the per-item core
+// shared by Upsert and UpsertMany so the SQL, dedup, and timestamp handling never
+// drift between the single and batch paths.
+func upsertTx(ctx context.Context, tx *sql.Tx, a domain.Article) (domain.Article, bool, error) {
+	meta, err := marshalMeta(a.Metadata)
+	if err != nil {
+		return domain.Article{}, false, err
+	}
 	var id int64
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO articles (slug,title,body,author,section,published_at,content_hash,metadata,created_at)
@@ -108,29 +191,26 @@ func (s *Store) Upsert(ctx context.Context, a domain.Article) (store.UpsertResul
 		created = false
 		if err = tx.QueryRowContext(ctx,
 			`SELECT id FROM articles WHERE content_hash = $1`, a.ContentHash).Scan(&id); err != nil {
-			return store.UpsertResult{}, fmt.Errorf("lookup existing: %w", err)
+			return domain.Article{}, false, fmt.Errorf("lookup existing: %w", err)
 		}
 	} else if err != nil {
-		return store.UpsertResult{}, fmt.Errorf("insert article: %w", err)
+		return domain.Article{}, false, fmt.Errorf("insert article: %w", err)
 	}
 
 	if created {
 		for _, topic := range a.Topics {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO article_topics (article_id,topic) VALUES ($1,$2)`, id, topic); err != nil {
-				return store.UpsertResult{}, fmt.Errorf("insert topic: %w", err)
+				return domain.Article{}, false, fmt.Errorf("insert topic: %w", err)
 			}
 		}
 	}
 
 	stored, err := getByID(ctx, tx, id)
 	if err != nil {
-		return store.UpsertResult{}, err
+		return domain.Article{}, false, err
 	}
-	if err := tx.Commit(); err != nil {
-		return store.UpsertResult{}, err
-	}
-	return store.UpsertResult{Article: stored, Created: created}, nil
+	return stored, created, nil
 }
 
 // BySlug returns the article with the given slug, or store.ErrNotFound.
@@ -448,7 +528,14 @@ func scanSubmission(sc scanner) (store.Submission, error) {
 
 // FindSubmission returns a prior submission for the idempotency key, or found=false.
 func (s *Store) FindSubmission(ctx context.Context, key string) (store.Submission, bool, error) {
-	row := s.db.QueryRowContext(ctx,
+	return findSubmissionTx(ctx, s.db, key)
+}
+
+// findSubmissionTx looks up a submission by key using q, which may be the *sql.DB
+// or an open *sql.Tx, so the batch path can read the ledger inside its own
+// transaction exactly as FindSubmission reads it outside one.
+func findSubmissionTx(ctx context.Context, q querier, key string) (store.Submission, bool, error) {
+	row := q.QueryRowContext(ctx,
 		`SELECT `+submissionCols+` FROM submissions WHERE idempotency_key = $1`, key)
 	sub, err := scanSubmission(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -505,7 +592,14 @@ func (s *Store) ListSubmissions(ctx context.Context, f store.ListSubmissionsFilt
 
 // RecordSubmission appends a submission record (audit log + idempotency ledger).
 func (s *Store) RecordSubmission(ctx context.Context, sub store.Submission) error {
-	_, err := s.db.ExecContext(ctx,
+	return recordSubmissionTx(ctx, s.db, sub)
+}
+
+// recordSubmissionTx appends a submission record using ex, which may be the
+// *sql.DB or an open *sql.Tx, so the batch path writes the ledger inside the same
+// transaction as the article and topics.
+func recordSubmissionTx(ctx context.Context, ex execer, sub store.Submission) error {
+	_, err := ex.ExecContext(ctx,
 		`INSERT INTO submissions (idempotency_key,content_hash,article_id,slug,author,scopes,created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		sub.IdempotencyKey, sub.ContentHash, sub.ArticleID, sub.Slug, sub.Author,

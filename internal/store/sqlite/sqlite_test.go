@@ -41,6 +41,17 @@ func TestSQLiteFacets(t *testing.T) {
 	storetest.RunFacets(t, repo)
 }
 
+func TestSQLiteUpsertMany(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "batch.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunUpsertMany(t, repo)
+}
+
 func TestSQLiteSubmissionLog(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "sub.db")
 	repo, err := sqlite.Open(dbPath)

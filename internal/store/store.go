@@ -8,6 +8,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hec-ovi/censurado-web/internal/domain"
@@ -92,12 +93,48 @@ type UpsertResult struct {
 	Created bool
 }
 
+// UpsertItem is one article to store together with the idempotency-ledger
+// metadata that UpsertMany writes in the SAME transaction. Bundling them is what
+// makes a batch publish atomic: the article, its topics, and its submission
+// record commit together or not at all. The article's CreatedAt is reused as the
+// submission timestamp, exactly as the single-publish path does in publish.Apply.
+type UpsertItem struct {
+	Article        domain.Article
+	IdempotencyKey string
+	Scopes         []string
+}
+
+// BatchConflictError reports that the item at Index reused an idempotency key
+// that already maps to a different article (a content-hash mismatch), the same
+// condition the single path answers with idempotency_key_reused. UpsertMany rolls
+// back the entire batch and returns this so the caller can answer with a per-item
+// error and write nothing.
+type BatchConflictError struct {
+	Index          int
+	IdempotencyKey string
+}
+
+func (e *BatchConflictError) Error() string {
+	return fmt.Sprintf("store: batch item %d reused idempotency key %q for a different article", e.Index, e.IdempotencyKey)
+}
+
 // Repository is the article source of truth. Implementations must be safe for a
 // single writer with concurrent readers.
 type Repository interface {
 	// Upsert stores an article, deduplicating on content hash: a later call with
 	// the same hash returns the existing row with Created=false.
 	Upsert(ctx context.Context, a domain.Article) (UpsertResult, error)
+	// UpsertMany stores a batch of articles and their submission-ledger records in
+	// a single transaction: either every item commits or none does. Each item is
+	// deduplicated on content hash and idempotent on its key exactly like Upsert
+	// followed by RecordSubmission, so a replayed key returns the prior article
+	// with Created=false and writes nothing. It returns one UpsertResult per input
+	// item, in order. If any item reuses an idempotency key for a different article
+	// it writes nothing and returns a *BatchConflictError naming the offending
+	// index. Callers validate every item (NewArticle, the safety gate, author
+	// binding, intra-batch duplicate keys/slugs) before calling this; UpsertMany
+	// owns only the atomic write.
+	UpsertMany(ctx context.Context, items []UpsertItem) ([]UpsertResult, error)
 	// BySlug returns the article with the given slug, or ErrNotFound.
 	BySlug(ctx context.Context, slug string) (domain.Article, error)
 	// Find returns articles matching the filter, ordered and paged.

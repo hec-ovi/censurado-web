@@ -800,3 +800,198 @@ func assertSubmissionEqual(t *testing.T, got, want store.Submission) {
 		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt.UTC(), want.CreatedAt.UTC())
 	}
 }
+
+// RunUpsertMany executes the UpsertMany conformance suite against repo, which
+// must be empty and also implement store.SubmissionLog (both adapters do, since
+// the article and ledger writes must commit in one transaction). Running the
+// identical suite against both SQLite and Postgres is what proves the atomic
+// batch write, the per-item created/deduplicated classification, idempotent
+// replay, and the all-or-nothing rollback are byte-identical across the engines.
+// Subtests run sequentially and share the seeded state, so each asserts the
+// running article count it expects.
+func RunUpsertMany(t *testing.T, repo store.Repository) {
+	ctx := context.Background()
+	log, ok := repo.(store.SubmissionLog)
+	if !ok {
+		t.Fatalf("repo %T does not implement store.SubmissionLog; UpsertMany must write the ledger in the same tx", repo)
+	}
+	base := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	item := func(title, body, author, section string, topics []string, key string, at time.Time) store.UpsertItem {
+		return store.UpsertItem{
+			Article:        mustArticle(t, domain.PublishInput{Title: title, Body: body, Author: author, Section: section, Topics: topics}, at),
+			IdempotencyKey: key,
+			Scopes:         []string{"articles:write"},
+		}
+	}
+	count := func(t *testing.T) int {
+		t.Helper()
+		n, err := repo.Count(ctx, store.Filter{})
+		if err != nil {
+			t.Fatalf("Count: %v", err)
+		}
+		return n
+	}
+
+	t.Run("Empty batch is a no-op", func(t *testing.T) {
+		res, err := repo.UpsertMany(ctx, nil)
+		if err != nil {
+			t.Fatalf("UpsertMany(nil): %v", err)
+		}
+		if len(res) != 0 {
+			t.Errorf("results = %d, want 0", len(res))
+		}
+		if n := count(t); n != 0 {
+			t.Errorf("count = %d after empty batch, want 0", n)
+		}
+	})
+
+	batch := []store.UpsertItem{
+		item("Batch one", "body one", "ada", "tech", []string{"go", "release"}, "k-1", base),
+		item("Batch two", "body two", "bo", "politics", []string{"election"}, "k-2", base.Add(time.Hour)),
+		item("Batch three", "body three", "ada", "economics", []string{"markets", "go"}, "k-3", base.Add(2*time.Hour)),
+	}
+
+	t.Run("Batch commits all items in order, with topics and ledger rows", func(t *testing.T) {
+		res, err := repo.UpsertMany(ctx, batch)
+		if err != nil {
+			t.Fatalf("UpsertMany: %v", err)
+		}
+		if len(res) != len(batch) {
+			t.Fatalf("results = %d, want %d", len(res), len(batch))
+		}
+		for i := range res {
+			if !res[i].Created {
+				t.Errorf("item %d Created=false, want true", i)
+			}
+			if res[i].Article.ID == "" {
+				t.Errorf("item %d empty ID, want store-assigned", i)
+			}
+			if res[i].Article.Slug != batch[i].Article.Slug {
+				t.Errorf("item %d slug = %q, want %q (input order preserved)", i, res[i].Article.Slug, batch[i].Article.Slug)
+			}
+			sub, found, err := log.FindSubmission(ctx, batch[i].IdempotencyKey)
+			if err != nil {
+				t.Fatalf("FindSubmission(%q): %v", batch[i].IdempotencyKey, err)
+			}
+			if !found {
+				t.Errorf("item %d: no submission ledger row for key %q", i, batch[i].IdempotencyKey)
+			}
+			if sub.ContentHash != res[i].Article.ContentHash {
+				t.Errorf("item %d: ledger content hash = %q, want %q", i, sub.ContentHash, res[i].Article.ContentHash)
+			}
+			if !setEqual(sub.Scopes, []string{"articles:write"}) {
+				t.Errorf("item %d: ledger scopes = %v, want [articles:write]", i, sub.Scopes)
+			}
+			got, err := repo.BySlug(ctx, res[i].Article.Slug)
+			if err != nil {
+				t.Fatalf("BySlug(%q): %v", res[i].Article.Slug, err)
+			}
+			if !setEqual(got.Topics, batch[i].Article.Topics) {
+				t.Errorf("item %d topics = %v, want %v", i, got.Topics, batch[i].Article.Topics)
+			}
+		}
+		if n := count(t); n != len(batch) {
+			t.Errorf("count = %d, want %d", n, len(batch))
+		}
+	})
+
+	t.Run("Replaying the same batch deduplicates every item and writes nothing", func(t *testing.T) {
+		res, err := repo.UpsertMany(ctx, batch)
+		if err != nil {
+			t.Fatalf("UpsertMany replay: %v", err)
+		}
+		for i := range res {
+			if res[i].Created {
+				t.Errorf("item %d Created=true on replay, want false (deduplicated)", i)
+			}
+			if res[i].Article.Slug != batch[i].Article.Slug {
+				t.Errorf("item %d slug = %q on replay, want %q", i, res[i].Article.Slug, batch[i].Article.Slug)
+			}
+		}
+		if n := count(t); n != len(batch) {
+			t.Errorf("count = %d after replay, want %d (no new rows)", n, len(batch))
+		}
+	})
+
+	t.Run("Mixed batch: a repeated key deduplicates, a new item is created", func(t *testing.T) {
+		mixed := []store.UpsertItem{
+			batch[0], // already published -> deduplicated
+			item("Batch four", "body four", "cy", "tech", []string{"ai"}, "k-4", base.Add(3*time.Hour)),
+		}
+		res, err := repo.UpsertMany(ctx, mixed)
+		if err != nil {
+			t.Fatalf("UpsertMany mixed: %v", err)
+		}
+		if res[0].Created {
+			t.Errorf("mixed[0] Created=true, want false (replay)")
+		}
+		if !res[1].Created {
+			t.Errorf("mixed[1] Created=false, want true (new)")
+		}
+		if n := count(t); n != len(batch)+1 {
+			t.Errorf("count = %d, want %d", n, len(batch)+1)
+		}
+	})
+
+	t.Run("Content-hash dedup: a fresh key for existing content records the key but adds no article", func(t *testing.T) {
+		// Same content as batch[1] (identical content hash) under a brand-new key.
+		// Mirrors the single path: the article deduplicates, yet the new key is
+		// still recorded in the ledger pointing at the existing article.
+		dup := store.UpsertItem{Article: batch[1].Article, IdempotencyKey: "k-2-again", Scopes: []string{"articles:write"}}
+		before := count(t)
+		res, err := repo.UpsertMany(ctx, []store.UpsertItem{dup})
+		if err != nil {
+			t.Fatalf("UpsertMany dup-content: %v", err)
+		}
+		if res[0].Created {
+			t.Errorf("Created=true for an existing content hash, want false")
+		}
+		if after := count(t); after != before {
+			t.Errorf("count %d -> %d on content dedup, want unchanged", before, after)
+		}
+		sub, found, err := log.FindSubmission(ctx, "k-2-again")
+		if err != nil {
+			t.Fatalf("FindSubmission: %v", err)
+		}
+		if !found {
+			t.Errorf("fresh key k-2-again not recorded in the ledger")
+		}
+		if sub.ContentHash != batch[1].Article.ContentHash {
+			t.Errorf("ledger content hash = %q, want %q", sub.ContentHash, batch[1].Article.ContentHash)
+		}
+	})
+
+	t.Run("Atomic rollback: a key reused for different content writes nothing and returns BatchConflictError", func(t *testing.T) {
+		before := count(t)
+		// Item 0 is brand new and valid; item 1 reuses k-1 (already mapped to
+		// batch[0]'s content) for DIFFERENT content. The whole batch must roll back,
+		// so item 0 must not persist either.
+		probe := item("Atomic probe", "should not persist", "di", "tech", []string{"code"}, "k-atomic", base.Add(10*time.Hour))
+		conflict := store.UpsertItem{
+			Article:        mustArticle(t, domain.PublishInput{Title: "Different content", Body: "different body", Author: "ada", Section: "tech"}, base),
+			IdempotencyKey: "k-1",
+			Scopes:         []string{"articles:write"},
+		}
+		_, err := repo.UpsertMany(ctx, []store.UpsertItem{probe, conflict})
+		var ce *store.BatchConflictError
+		if !errors.As(err, &ce) {
+			t.Fatalf("err = %v, want *store.BatchConflictError", err)
+		}
+		if ce.Index != 1 {
+			t.Errorf("conflict Index = %d, want 1", ce.Index)
+		}
+		if ce.IdempotencyKey != "k-1" {
+			t.Errorf("conflict key = %q, want k-1", ce.IdempotencyKey)
+		}
+		if after := count(t); after != before {
+			t.Errorf("count %d -> %d, want unchanged (atomic rollback)", before, after)
+		}
+		if _, err := repo.BySlug(ctx, probe.Article.Slug); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("BySlug(probe) err = %v, want ErrNotFound (rolled back)", err)
+		}
+		if _, found, _ := log.FindSubmission(ctx, "k-atomic"); found {
+			t.Errorf("k-atomic recorded in the ledger despite rollback")
+		}
+	})
+}

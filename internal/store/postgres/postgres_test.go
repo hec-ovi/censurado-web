@@ -84,6 +84,27 @@ func TestPostgresFacets(t *testing.T) {
 	storetest.RunFacets(t, repo)
 }
 
+// TestPostgresUpsertMany runs the shared UpsertMany conformance suite against a
+// real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the atomic batch
+// write (article + topics + ledger in one transaction), the per-item
+// created/deduplicated classification, idempotent replay, and the all-or-nothing
+// rollback behave identically to SQLite. This is the proof that batch ingest is
+// safe to run on the cloud Postgres target, not just on the local SQLite file.
+func TestPostgresUpsertMany(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunUpsertMany(t, repo)
+}
+
 // TestPostgresSubmissionLog runs the shared SubmissionLog conformance suite
 // against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the
 // Postgres adapter records and roundtrips submissions identically to SQLite.

@@ -129,6 +129,14 @@ Articles can carry a hero image or a YouTube embed, and the platform hosts the i
 
 Media attaches to an article through the open `metadata` object (`image`, `image_alt`, `youtube`), so the article contract does not change and the generator renders it directly (a YouTube reference becomes a privacy-friendly nocookie embed and takes precedence over a still image). The admin New-article form uploads an image through this endpoint, which keeps the console a non-writer: it proxies the bytes to the publish service and never touches disk itself. In a deployment the external web server serves `/media/` from the same volume on the public origin; that volume needs its own backup, since Litestream covers only the database. See `internal/media` and the "Media" section of [deploy/README.md](deploy/README.md).
 
+## How it's served
+
+The read path runs no application code and touches no database. Every reader URL is a file on disk, rendered once at publish time and pushed to a CDN: an article, a section page, the latest feed, a JSON shard. A request is answered from the edge. It never reaches an origin process, never opens a connection, never runs a query. Content-addressed permalinks (`/a/<slug>-<hash>/`) are immutable and cached for a year, so the edge answers nearly every read and the origin only ever hands back a static file.
+
+That is the right call for a read-heavy content site, and the reasoning is not subtle. A database in the request path buys you a connection pool, a query planner, a cache bolted in front of it, and a scaling problem the moment traffic grows. Pre-rendering removes every bit of that. The work happens once, at publish, over only the handful of URLs a batch changed (a content-hash diff, not a full rebuild), and an exact CDN purge invalidates precisely those URLs. Readers pull static bytes from the nearest edge and the origin stays idle.
+
+The database does not disappear. It is the write inbox, the build input, and the admin's query surface, sized for tens of writes a day, and it is one SQLite file rather than a server. The part that has to survive a million readers is files behind a CDN, which is the simplest and most DoS-resistant way to put a page in front of that many people: at read time there is almost nothing left running to scale or to attack. A query-per-request stack is solving a problem this workload does not have.
+
 ## Data layer and why SQLite
 
 SQLite in WAL mode is the source of truth, behind the repository interface. The reasoning:

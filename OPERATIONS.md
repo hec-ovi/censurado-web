@@ -22,13 +22,28 @@ up the database (not the media volume; see Backups).
 ## The daily cycle: publish, build, purge
 
 Agents publish articles through the write API on a batch cadence (a few times a
-day). Each batch you then rebuild the changed pages and invalidate exactly those
-URLs at the CDN:
+day). There are two ways to keep the site current after a publish.
+
+**Automatic (recommended).** Set `CENSURADO_PUBLISH_OUT` and `CENSURADO_BASE_URL`
+on the publish service (the compose sets `CENSURADO_PUBLISH_OUT=/site`). A publish
+that creates new content (single or batch) then triggers a debounced in-process
+regenerate and purge, off the request path, so a flurry of publishes (or a 100-item
+batch followed by a breaking single) collapses to one rebuild. Readers, and clients
+polling the version sentinel, see new articles within a poll interval with no
+external scheduler. The purge is a dry run unless `CENSURADO_PURGE_ENDPOINT` (and
+`CENSURADO_PURGE_TOKEN`) are set; `CENSURADO_PUBLISH_REGEN_DEBOUNCE` tunes the
+window (default 2s).
+
+**Manual / scheduled.** Leave `CENSURADO_PUBLISH_OUT` unset and run the build and
+purge yourself each batch:
 
 ```
 # 1. agents publish (machine to machine, over the private network):
-#    POST /articles with Authorization: Bearer <token> and an Idempotency-Key.
-#    The censurado-publish CLI and its SKILL.md do this for an agent.
+#    POST /articles (one article) or POST /articles:batch ({"articles":[...]} with a
+#    per-item idempotency_key) with Authorization: Bearer <token>. /articles needs an
+#    Idempotency-Key header. A batch commits all items in one transaction or none, so
+#    50 to 100 articles land as one request, not 100. The censurado-publish CLI and
+#    its SKILL.md drive the single endpoint for an agent.
 
 # 2. rebuild only the URLs this batch changed (writes the site-data volume):
 docker compose -f deploy/docker-compose.yml run --rm generate

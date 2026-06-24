@@ -69,28 +69,40 @@ default adapter is pure-Go SQLite in WAL mode; a Postgres adapter implements the
 behavior and a single conformance suite runs against both to prove the swap. Articles,
 topics (a normalized join table), and a submission/idempotency log are explicit indexed
 columns; everything else rides a `metadata` JSON/JSONB column. `Upsert` dedups on the
-unique content hash. There is no migration framework: schema is embedded DDL applied with
+unique content hash; `UpsertMany` commits a batch (article, topics, and the submission
+ledger per item) in one transaction, so a batch publish is atomic and idempotent on both
+engines. There is no migration framework: schema is embedded DDL applied with
 `CREATE ... IF NOT EXISTS` on open (and a small additive `ALTER` step where present).
 
-- `internal/store/store.go` :: the `Repository` and `SubmissionLog` interfaces (`Upsert`/`BySlug`/`Find`/`Count`/`Facets`/`Close`), `Filter`, `Facets`, `Submission`.
+- `internal/store/store.go` :: the `Repository` and `SubmissionLog` interfaces (`Upsert`/`UpsertMany`/`BySlug`/`Find`/`Count`/`Facets`/`Close`), `UpsertItem`, `BatchConflictError`, `Filter`, `Facets`, `Submission`.
 - `internal/store/sqlite/sqlite.go` + `internal/store/sqlite/schema.sql` :: the default adapter and its STRICT-table schema.
 - `internal/store/postgres/postgres.go` + `internal/store/postgres/schema.sql` :: the mirror adapter (not wired into compose; proves the interface).
 - `internal/store/storetest/contract.go` :: the cross-engine conformance suite both adapters run (Postgres only when `CENSURADO_TEST_POSTGRES_DSN` is set).
 
 ### 3. Publish API (the only write path)
 
-The authenticated `POST /articles` service. It authenticates a bearer key, binds the
+Two authenticated write routes: `POST /articles` (one article) and `POST
+/articles:batch` (many in one transaction). Both authenticate a bearer key, bind each
 article to the key's author (unless the key holds the privileged publish-any scope),
-strict-decodes the body, runs the Markdown safety gate, checks the idempotency ledger,
-upserts (content-hash dedup), and appends a submission record. A new publish is also
-appended to an optional payload archive for replay-based recovery. A per-key token bucket
-rate-limits before auth.
+strict-decode the body, run the Markdown safety gate, check the idempotency ledger,
+upsert (content-hash dedup), and append a submission record. The single path runs that
+core (`Apply`) per request; the batch path validates every item first (no writes), then
+commits all of them in one `UpsertMany` transaction, so a 100-item batch is one request
+and is atomic: any invalid item returns `422` with a per-item error list and writes
+nothing. A batch decodes element by element under a byte cap, so the raw batch is never
+buffered whole. A new publish is appended to an optional payload archive for replay
+recovery (one envelope per created item), and a successful create can trigger a debounced
+in-process regenerate. A per-key token bucket rate-limits before auth, charging a batch
+one token regardless of item count.
 
-- `internal/publish/publish.go` :: `Handler.ServeHTTP` (the route), `authenticateWrite`, `ScopeWrite` (`articles:write`), `ScopePublishAny` (`articles:publish-any`), the author-binding rule.
-- `internal/publish/apply.go` :: `Apply`, the post-auth accept core (NewArticle, the `RenderMarkdown` gate, idempotency, upsert, audit). Shared by the replay tool so recovery takes the same exactly-once path.
+- `internal/publish/publish.go` :: `Handler.ServeHTTP` (single route), `authenticateWrite`, `authorAllowed`, `validateInput` (shared validate half), `ScopeWrite` (`articles:write`), `ScopePublishAny` (`articles:publish-any`).
+- `internal/publish/batch.go` :: `Handler.ServeBatch` (the `POST /articles:batch` route): streaming decode, validate-all-then-one-transaction, the per-item `422`, per-item archiving.
+- `internal/publish/apply.go` :: `Apply`, the post-auth accept core. Shared by the replay tool so recovery takes the same exactly-once path.
+- `internal/publish/regen.go` :: `Regenerator`, the debounced off-request regenerate+purge worker; the handler calls `Trigger` only on a create.
 - `internal/publish/auth.go` :: `StaticKeyAuth`: `<prefix>.<secret>` keys, only the secret's SHA-256 is stored, constant-time compare.
-- `internal/publish/{server.go,ratelimit.go,archive.go}` :: route assembly, the per-prefix limiter, the append-only payload archive.
-- `cmd/censurado/publish/main.go` :: the always-running server; flags/env, the keys file, `-gen-key`, `-payload-archive`, `-media-dir`.
+- `internal/publish/{server.go,ratelimit.go,archive.go}` :: route assembly (`/articles`, `POST /articles:batch`, `/media`), the per-prefix limiter, the append-only payload archive.
+- `cmd/censurado/publish/main.go` :: the always-running server; flags/env, the keys file, `-gen-key`, `-payload-archive`, `-media-dir`, `-max-body`/`-max-batch-items`, and `-out`/`-base-url`/`-regen-debounce`/`-purge-endpoint` (auto-regenerate).
+- `contracts/{batch-request,batch-response}.schema.json` :: the batch wire contract (the article shape stays owned by `article.schema.json`).
 
 ### 4. Media (self-hosted image store / CDN)
 
@@ -114,7 +126,8 @@ Turns the article store into the full set of static artifacts and does it increm
 It scans the corpus once, enumerates a bounded set of scopes (latest, section, author,
 topic, month, and section-anchored combinations), and for each emits paginated listing
 HTML, per-article permalinks, month-bucketed JSON shards for the client refiner, a shard
-manifest, the `/latest/` feeds, the sitemap, robots.txt, and the embedded assets. It
+manifest, the `/latest/` feeds, the sitemap, robots.txt, the embedded assets, and a
+byte-stable `/latest/version.json` sentinel for the client live-refresh poll. It
 content-hashes every artifact against the previous run's state, writes only what changed,
 deletes orphans, and emits `purge.json` listing exactly the URLs to invalidate. Pages are
 sealed on insertion order (so a sealed page is byte-immutable even under a back-dated
@@ -126,6 +139,9 @@ shared Markdown gate.
 - `internal/generate/{collectors.go,shard.go,shardcap.go,manifest.go}` :: the six collectors, the shard projection and cap-splitting, the page manifest.
 - `internal/generate/render.go` :: html/template execution, the view models, SEO/JSON-LD/OG, and `mediaForArticle` (precedence youtube, youtube_id, video, image).
 - `internal/generate/{state.go,materialize.go,feeds.go,sitemap.go}` :: incremental diff and `purge.json`, atomic writes, feeds, sitemap.
+- `internal/generate/sentinel.go` :: the `/latest/version.json` content fingerprint (KindMeta, byte-stable when unchanged), emitted by `metaCollector`.
+- `internal/cachepolicy/cachepolicy.go` :: the split CDN cache policy as one source of truth (`CacheControl(path)` + `Rules()`), applied at the serving layer (the generator sets no HTTP headers; only the publish `/media` serve does).
+- `internal/generate/templates/LIVE-REFRESH.md` :: the frontend contract for the live-refresh client (the sentinel, manifest, and shard endpoints plus the poll protocol).
 - `internal/content/render.go` :: `RenderMarkdown` (goldmark without unsafe, then bluemonday UGCPolicy). The same gate runs at publish (to reject) and at generate (to emit).
 - `contracts/shard.schema.json`, `contracts/manifest.schema.json` :: the frozen client-facing artifact contracts.
 - `cmd/censurado/generate/main.go` :: the one-shot CLI.
@@ -205,8 +221,9 @@ that personas exist.
 
 ## Contracts to honor
 
-- `contracts/article.schema.json` :: the publish payload. Cross-repo: the brain vendors a byte-equal copy with a drift test, so any change here must be mirrored there (and may warrant a new contract version rather than mutating v1).
-- `contracts/shard.schema.json`, `contracts/manifest.schema.json` :: the client refiner's data contracts, frozen so old pages keep working.
+- `contracts/article.schema.json` :: the single publish payload. Cross-repo: the brain vendors a byte-equal copy with a drift test, so any change here must be mirrored there (and may warrant a new contract version rather than mutating v1).
+- `contracts/batch-request.schema.json`, `contracts/batch-response.schema.json` :: the `POST /articles:batch` wire shape. New, not cross-repo; the per-item article shape stays owned by `article.schema.json`.
+- `contracts/shard.schema.json`, `contracts/manifest.schema.json`, `contracts/version.schema.json` :: the client-facing data contracts (refiner shards, page manifest, and the live-refresh sentinel), frozen so old pages and polling clients keep working.
 - `purge.json` (emitted to the state dir) :: the generate-to-purge handoff (`internal/purge` parses it).
 - The content hash (`domain.ContentHash`) :: the dedup and idempotency identity, ported byte-for-byte by the brain. Changing its inputs is a cross-repo break.
 
@@ -215,6 +232,8 @@ that personas exist.
 - Single writer: only `publish` writes the DB. The admin and generator are readers; the admin publishes through the API.
 - The contract is enforced in code, not by loading the JSON Schema at runtime (strict decode plus `domain.NewArticle`).
 - Media rides the `metadata` object (`image`, `image_alt`, `youtube`); it never changes the article contract or the content hash.
+- A batch is atomic: every item is validated first (no writes), then all commit in one transaction or none do. A batch counts as one request against the rate limiter, and only a publish that creates new content triggers the debounced regenerate.
+- The cache policy is a serving-layer contract (`internal/cachepolicy` + `deploy/CACHING.md`); the generator emits no HTTP headers on its files (only the publish `/media` serve sets one). The version sentinel is byte-stable so it returns `304` until content changes.
 - The publish key format is `<prefix>.<secret>`; only the SHA-256 is stored. Scopes are `articles:write` and the privileged `articles:publish-any`. There is no OAuth2 (the design docs mention it as a future option only).
 - The site has no reader search box by design; discovery is faceted chip filters over pre-built scope pages.
 - The generator is deterministic and incremental: same store plus same options writes nothing; sealed pages are byte-immutable; only changed URLs are purged.
@@ -223,7 +242,8 @@ that personas exist.
 
 Tracked, current, operator/contract facing: `README.md`, `OPERATIONS.md`, `deploy/README.md`,
 `deploy/CACHING.md`, `deploy/tofu/README.md`, `cli/skill/SKILL.md`,
-`internal/generate/templates/README.md`. `PLAN.md` is the tracked phase history.
+`internal/generate/templates/README.md`, and `internal/generate/templates/LIVE-REFRESH.md`
+(the frontend contract for the live-refresh client). `PLAN.md` is the tracked phase history.
 
 The `docs/` tree (`ARCHITECTURE.md`, `GENERATOR-DESIGN.md`, `CODE_STYLE.md`, `REQUIREMENTS.md`,
 `AGENTIC_WORKFLOW.md`, `NEWSROOM-BRAIN-DESIGN.md`) is gitignored internal design notes: useful

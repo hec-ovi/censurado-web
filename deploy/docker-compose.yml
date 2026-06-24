@@ -3,8 +3,11 @@
 #
 # Single-writer sqlite. Three Go binaries share ONE database file on the db-data
 # volume:
-#   - publish  : the ONLY writer. Serves the authenticated write API (POST
-#                /articles + GET /healthz). Creates and writes /data/censurado.db.
+#   - publish  : the ONLY db writer. Serves the authenticated write API (POST
+#                /articles, POST /articles:batch, GET /healthz). Creates and writes
+#                /data/censurado.db. With CENSURADO_PUBLISH_OUT set it also writes the
+#                static site volume after a publish (the debounced in-process
+#                regenerate + purge), like generate and the admin regenerate action.
 #   - admin    : a READER. The private operator console (/admin/*). It only writes
 #                the db when an operator triggers a regenerate of the static site.
 #   - generate : a READER. One-shot static site generator (run on demand).
@@ -50,12 +53,25 @@ services:
       # /media) and serves them (GET /media/{name}); the public web server below also
       # serves /media/ straight from this same volume. Leave unset to disable media.
       CENSURADO_MEDIA_DIR: /srv/media
+      # Auto-regenerate: a publish that creates new content (single or batch) triggers
+      # a debounced in-process regenerate + purge that writes the static site volume,
+      # so readers (and clients polling /latest/version.json) see new articles without
+      # an external scheduler. CENSURADO_BASE_URL comes from .env and is required for
+      # the rest of the stack too. Set CENSURADO_PURGE_ENDPOINT (+ CENSURADO_PURGE_TOKEN)
+      # in .env to invalidate a real CDN; unset = a dry-run purge (no network).
+      # CENSURADO_PUBLISH_REGEN_DEBOUNCE tunes the coalesce window (default 2s). Unset
+      # CENSURADO_PUBLISH_OUT to disable auto-regenerate and rely on the generate service.
+      CENSURADO_PUBLISH_OUT: /site
     ports:
       # Private: bound to localhost on the host. The container listens on 0.0.0.0:8080.
       - "127.0.0.1:8080:8080"
     volumes:
       - db-data:/data
       - media-data:/srv/media
+      # Auto-regenerate writes the static site here, the same volume generate and the
+      # admin regenerate action write. Read-write (a volume mount stays writable under
+      # the read-only rootfs).
+      - site-data:/site
       # Seed this as an empty JSON array FIRST (`printf '[]\n' > keys.json`) before
       # any `compose run`: Docker creates an empty DIRECTORY here if the host file is
       # missing, which breaks the documented first-run. Then mint entries with
@@ -203,8 +219,9 @@ services:
 volumes:
   # The single sqlite database (WAL): written by publish, read by admin/generate.
   db-data:
-  # The generated static site: written by generate (and admin regenerate), served
-  # by an external CDN/web server outside this compose.
+  # The generated static site: written by generate, the admin regenerate action, and
+  # the publish auto-regenerate worker; served by an external CDN/web server outside
+  # this compose.
   site-data:
   # The self-hosted image store: uploaded images written by publish, served at
   # /media/ by publish AND by the external web server (which mounts it read-only).

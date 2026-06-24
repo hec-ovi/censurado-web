@@ -34,8 +34,15 @@ Litestream backups with a CI-gated restore drill, a manifest-driven CDN purge
 tool, idempotent payload replay for restore recovery, an OpenTofu backup-bucket
 skeleton, and an operations runbook). A self-hosted image store (authenticated
 upload, immutable serve) plus YouTube support was added after Phase 6, with media
-attached through the article metadata so the contract is unchanged. The platform
-is feature-complete as a self-host kit. Nothing is deployed yet. The AI authoring
+attached through the article metadata so the contract is unchanged. Batch publishing
+and live refresh followed: `POST /articles:batch` commits 50 to 100 articles in one
+atomic, idempotent transaction (proven on both store engines); the generator emits a
+byte-stable `/latest/version.json` sentinel and the cache policy is pinned in one
+place (`internal/cachepolicy`); and the publish service can run a debounced
+in-process regenerate and purge after a publish, so the site refreshes for readers
+without an external scheduler. The browser-side live-refresh client (poll plus a
+"new stories" banner) is specified in `internal/generate/templates/LIVE-REFRESH.md`.
+The platform is feature-complete as a self-host kit. Nothing is deployed yet. The AI authoring
 layer that drives it is the sibling repo censurado-web-brain, which publishes over
 the same contract.
 

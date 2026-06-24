@@ -72,7 +72,7 @@ The canonical `Article` and the rules that define identity. It imports nothing f
 
 The article source of truth, behind a repository interface expressed purely in domain terms. No SQL or storage detail leaks through the interface, which is what keeps it swappable.
 
-- **`Repository`** is the article contract: `Upsert`, `BySlug`, `Find`, `Count`, `Close`. `Upsert` deduplicates on content hash, so a second call with the same hash returns the existing row with `Created=false`. That single behavior is what makes publishing both idempotent and deduplicated.
+- **`Repository`** is the article contract: `Upsert`, `UpsertMany`, `BySlug`, `Find`, `Count`, `Close`. `Upsert` deduplicates on content hash, so a second call with the same hash returns the existing row with `Created=false`. That single behavior is what makes publishing both idempotent and deduplicated. `UpsertMany` commits a whole batch (each article, its topics, and its submission-ledger row) in one transaction, so a batch publish is atomic and idempotent; the same conformance suite proves it on both engines.
 - **`Filter`** selects on the stable hot axes: section, author, topic, and a `[From, To)` publish-time range (inclusive lower, exclusive upper), with ordering and paging. A zero-valued field is ignored, so the empty filter matches everything. The admin also drives multi-value section, author, and topic sets (OR within an axis, AND across) and a case-insensitive full-text query over title and body; a separate `Facets` aggregate lists the distinct values with counts for the filter UI.
 - **`SubmissionLog`** is a separate interface for the append-only publish ledger (`FindSubmission`, `RecordSubmission`, `ListSubmissions`). It is the audit log and the idempotency ledger in one record.
 - **SQLite adapter (`internal/store/sqlite`)** is the default. It uses the pure-Go `modernc.org/sqlite` driver (no cgo), opens one file in WAL mode with foreign keys and a busy timeout, and caps the pool at a single connection so one writer serializes all writes. STRICT tables reject the loose typing Postgres would also reject. The hot axes (publish date, author, section) are indexed columns; topics are normalized into a join table so `/topic/<slug>` is an indexed lookup; the metadata tail is a JSON column.
@@ -85,6 +85,10 @@ Readers never call into this layer at all. They read static files.
 The only way content enters the system: an authenticated HTTP write endpoint, plus a small non-interactive CLI and the agent skill that documents it.
 
 The HTTP handler (`POST /articles`) authenticates the caller, binds the article to that author, validates and safety-checks the untrusted input, stores it (deduplicated and idempotent), and appends one audit/idempotency record per submission. See [Security](#security-model-publish) for the full layering.
+
+A second route, `POST /articles:batch`, takes many articles at once (`{"articles":[ <the same article payload> + idempotency_key, ... ]}`) so an agentic producer can push 50 or 100 stories as one request instead of 100. It validates every item first with no writes, then commits the whole batch in one transaction, so it is atomic: any invalid item returns `422` with a per-item error list and writes nothing. The body is decoded element by element under a byte cap (the raw batch is never buffered whole), a batch counts as one request against the rate limiter, and each created item is archived for replay just like a single publish. The batch wire shape is `contracts/batch-request.schema.json` and `contracts/batch-response.schema.json`; the per-item article shape stays the one contract in `article.schema.json`.
+
+Optionally the publish service regenerates the static site itself: set `CENSURADO_PUBLISH_OUT` and `CENSURADO_BASE_URL` and a publish that creates new content triggers a debounced in-process regenerate and CDN purge, off the request path, so a burst of publishes (or a 100-item batch followed by a breaking single) collapses to one rebuild and readers see new articles without an external scheduler.
 
 The CLI (`cli/main.go`, built as `censurado-publish`) reads one article as JSON on stdin or `--file`, validates it locally against the same contract the server enforces (strict decode, then build), posts it with the caller's token and an idempotency key, prints the JSON response, and returns a distinct exit code per outcome. An agent loads `cli/skill/SKILL.md` to learn the token, the payload shape, and the idempotent-retry flow. The future inference layer plugs in here, behind the same contract, with nothing downstream changing.
 
@@ -99,6 +103,8 @@ A pure reader of the store (`Find`/`Count` only, never writes) that turns the ar
 - **A standalone per-scope manifest.** Each scope writes its shard index to `/manifest/<scope>/index.json`, and every listing page (landing and sealed) links to it. The inline copy lives on the landing page only, where it can grow with the tail; deep and sealed pages reach the manifest by fetch, so they stay byte-immutable while client refine still works from any page.
 - **Feeds, sitemap, robots.** RSS 2.0, Atom 1.0, and JSON Feed 1.1 for `/latest/`; a `robots.txt`; and a `sitemap.xml` index over a listings sitemap plus per-month article sitemaps, so article permalinks are crawlable and each file stays well under the 50,000-URL limit. Feeds carry full article HTML (no truncation) and derive their timestamps from the newest item, not the build clock, so a no-op batch leaves them byte-identical.
 - **SEO and social metadata.** Each page carries a canonical URL, a meta description, Open Graph and Twitter Card tags, and JSON-LD (`NewsArticle` on articles, `CollectionPage` on listings), all derived from the page's own fixed fields, never the build clock or the live archive size, so sealed pages stay byte-stable. An optional `metadata.image` URL adds a hero image and the matching social image tags.
+- **A version sentinel for live refresh.** The generator emits a tiny `/latest/version.json` whose `v` is a content fingerprint of the newest articles, byte-stable while nothing changed (so the edge answers `304`) and changing the moment the top of the site does. A client polls it with `If-None-Match` to learn when new stories landed, with no per-user origin work. The frontend contract for that client is `internal/generate/templates/LIVE-REFRESH.md`.
+- **A split cache policy.** Content-addressed URLs (permalinks, assets, media) are immutable and cached for a year; listings, feeds, shards, and the manifest get a short window with `stale-while-revalidate`; the sentinel gets a tighter one. The values live in one place (`internal/cachepolicy`) and are applied at the serving layer; the generator sets no HTTP headers on its files. See [deploy/CACHING.md](deploy/CACHING.md), including the per-CDN guardrails.
 
 ### 5. Public site (`internal/generate/templates`)
 
@@ -154,6 +160,7 @@ The Postgres adapter is kept green in CI on every push, so a future high-write d
 
 - **Static pre-render behind a CDN.** Readers are served pre-rendered HTML and JSON. Reader access to the data layer is zero, which is the most DoS-resilient posture since the origin is barely touched.
 - **Incremental regeneration.** The generator writes only the URLs whose content changed in a batch (a content-hash diff) and emits an exact CDN purge manifest, never a wildcard.
+- **Live refresh without origin cost.** A tiny version sentinel, polled with `If-None-Match` and answered `304` at the edge, lets clients learn when new content landed without per-user origin work; the split cache policy keeps immutable URLs cached for a year while listings refresh in seconds. A publish can trigger a debounced in-process regenerate and purge so the cycle needs no external scheduler.
 - **Combinable filtering with no request-time backend.** Month-bucketed JSON shards plus client-side faceted refine cover combinations over pre-rendered pages.
 - **Stable append-only pagination.** Sealed pages are byte-immutable under inserts, so incremental work is bounded by new-article count.
 - **Idempotent, content-hash-deduplicated publishing.** A retry after an uncertain response replays the original result instead of double-publishing.
@@ -285,11 +292,12 @@ internal/
     sqlite/          default adapter (modernc.org/sqlite, WAL, STRICT tables)
     postgres/        swap-proof adapter (pgx), same interface
     storetest/       the shared conformance suite run against both engines
-  publish/           the write API plus rate limiter, payload archive, apply core, and POST/GET /media
+  publish/           the write API (POST /articles, POST /articles:batch), rate limiter, payload archive, apply core, the debounced regenerate worker, and POST/GET /media
   media/             the self-hosted content-addressed image store (validate, hash, serve)
-  generate/          the incremental static generator
-    templates/       html/template files and static assets (style.css, app.js)
+  generate/          the incremental static generator (incl. the /latest/version.json sentinel)
+    templates/       html/template files and static assets (style.css, app.js); LIVE-REFRESH.md is the client contract
   adminweb/          the private admin: session auth, htmx browse/filter/audit/regenerate, image upload
+  cachepolicy/       the split CDN cache policy as one source of truth (CacheControl by URL pattern)
   purge/             reads the generator's purge.json, invalidates exactly those CDN URLs
 cmd/censurado/
   publish/           the always-running write service (POST /articles, healthz, rate limit)
@@ -310,7 +318,7 @@ Operating it (deploy, the publish-build-purge cycle, backups, restore, and repla
 
 Honest current state:
 
-- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; a self-hosted image store with image upload and YouTube support; the incremental static generator; the reader-facing public site with its client refiner; the private admin console (Go and HTMX), including a manual New-article form (with image upload) that publishes through the write API; and the operations layer (containerized services with a self-hostable compose, Litestream backups with an automated restore drill gated in CI, a manifest-driven CDN purge tool, idempotent payload replay for restore recovery, an OpenTofu skeleton for the backup bucket, and an operations runbook).
+- **Done:** the article contract and domain model; the data layer (the repository interface plus the SQLite and Postgres adapters, with a shared conformance suite run against both in CI); the publish API, the CLI, and the agent skill; batch publishing (`POST /articles:batch`, atomic and idempotent across both store engines, so 50 to 100 articles land as one transaction); a self-hosted image store with image upload and YouTube support; the incremental static generator with a `/latest/version.json` sentinel and a split cache policy for live refresh at CDN scale, plus an optional debounced in-process regenerate-and-purge on publish; the reader-facing public site with its client refiner; the private admin console (Go and HTMX), including a manual New-article form (with image upload) that publishes through the write API; and the operations layer (containerized services with a self-hostable compose, Litestream backups with an automated restore drill gated in CI, a manifest-driven CDN purge tool, idempotent payload replay for restore recovery, an OpenTofu skeleton for the backup bucket, and an operations runbook).
 The platform is feature-complete as a self-host kit; the AI authoring layer that drives it lives in a separate repo, [censurado-web-brain](https://github.com/hec-ovi/censurado-web-brain), an agentic newsroom that publishes over the same contract. Nothing is deployed yet; [OPERATIONS.md](OPERATIONS.md) is the runbook for when it is.
 
 ## License

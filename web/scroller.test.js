@@ -53,25 +53,13 @@ describe("initTopicScroller", () => {
     expect(container.querySelectorAll(".scroll-arrow").length).toBe(2);
   });
 
-  test("enhances the portada facet topic chips", () => {
+  test("does NOT enhance the portada facet topic chips (only the article topic strip)", () => {
     mount(`
       <div class="facet-group" data-facet-group="topic">
         <ul class="facet-chips">
           <li><button class="facet-chip">go</button></li>
           <li><button class="facet-chip">ia</button></li>
         </ul>
-      </div>`);
-    initTopicScroller(container);
-    const wrap = container.querySelector(".scroll-row");
-    expect(wrap).not.toBeNull();
-    expect(wrap.querySelector(".facet-chips")).not.toBeNull();
-    expect(wrap.querySelectorAll(".scroll-arrow").length).toBe(2);
-  });
-
-  test("leaves non-topic facet groups (author/section) untouched", () => {
-    mount(`
-      <div class="facet-group" data-facet-group="author">
-        <ul class="facet-chips"><li><button class="facet-chip">ada</button></li></ul>
       </div>`);
     initTopicScroller(container);
     expect(container.querySelector(".scroll-row")).toBeNull();

@@ -1,6 +1,4 @@
 {{define "content"}}
-<div class="article-shell">
-<div class="article-main">
 <article class="article" data-article>
 {{template "lead_media" .}}
 <header class="article-header">
@@ -18,6 +16,8 @@
 {{- if .Standfirst}}
 <p class="article-standfirst">{{.Standfirst}}</p>
 {{- end}}
+<div class="article-shell">
+<div class="article-main">
 <div class="body article-body">
 {{.BodyHTML}}
 </div>
@@ -25,7 +25,23 @@
 {{template "author_avatar" .}}
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
 </footer>
-</article>
+</div>
+{{- if .AuthorMore}}
+<aside class="article-rail author-more" aria-label="Más de este autor">
+<h2 class="rail-heading">Más de este autor</h2>
+<ol class="author-more-list">
+{{- range .AuthorMore}}
+<li class="author-more-item">
+<a class="author-more-link" href="{{.URL}}">
+<span class="author-more-section">{{.Section}}</span>
+<strong>{{.Title}}</strong>
+</a>
+</li>
+{{- end}}
+</ol>
+</aside>
+{{- end}}
+</div>
 {{- if .Related}}
 <section class="related" aria-label="Relacionados">
 <h2 class="related-heading">Relacionados</h2>
@@ -36,21 +52,5 @@
 </ol>
 </section>
 {{- end}}
-</div>
-{{- if .Rail}}
-<aside class="ranked-rail article-rail" aria-label="Lo más leído">
-<h2 class="rail-heading">Lo más leído</h2>
-<ol class="ranked-list">
-{{- range .Rail}}
-<li class="ranked-item">
-<a class="ranked-link" href="{{.URL}}">
-<span class="ranked-section">{{.Section}}</span>
-<strong>{{.Title}}</strong>
-</a>
-</li>
-{{- end}}
-</ol>
-</aside>
-{{- end}}
-</div>
+</article>
 {{end}}

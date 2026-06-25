@@ -102,20 +102,21 @@ func TestListingRail_Clickable(t *testing.T) {
 	}
 }
 
-// An article permalink's rail and Relacionados are built only from articles NOT
-// newer than itself, so publishing a NEWER article never changes an older
-// permalink's bytes (append-only immutability), while the newer article links
-// back to the older one in both its rail and its related block.
-func TestArticleRailRelated_UpToSelfStable(t *testing.T) {
+// A permalink's "Más de este autor" rail and Relacionados are built only from
+// articles NOT newer than itself, so publishing a NEWER article never changes an
+// older permalink's bytes (append-only immutability), while the newer article
+// links back to the author's older piece in the rail and to the shared-topic
+// older piece in the related block.
+func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{Title: "Primero", Author: "ada", Section: "tech", Topics: []string{"go"}, Published: date(2026, 6, 1)})
 	genInto(t, repo, out, nil)
 	aBefore := string(readArtifact(t, out, articlePath(a)))
 
-	// The oldest article has nothing "up to self": no rail, no related.
-	if strings.Contains(aBefore, `class="ranked-rail article-rail"`) || strings.Contains(aBefore, `class="related-item"`) {
-		t.Errorf("oldest article should have no rail/related")
+	// The oldest article has nothing "up to self": no author rail, no related.
+	if strings.Contains(aBefore, `class="article-rail author-more"`) || strings.Contains(aBefore, `class="related-item"`) {
+		t.Errorf("oldest article should have no author rail/related")
 	}
 
 	b := seed(t, repo, seedSpec{Title: "Segundo", Author: "ada", Section: "tech", Topics: []string{"go"}, Published: date(2026, 6, 2)})
@@ -125,8 +126,13 @@ func TestArticleRailRelated_UpToSelfStable(t *testing.T) {
 		t.Errorf("older permalink bytes changed after a newer article was published")
 	}
 	bPage := string(readArtifact(t, out, articlePath(b)))
-	if !strings.Contains(bPage, `class="ranked-rail article-rail"`) || !strings.Contains(bPage, `<a class="ranked-link" href="`+articleURL(a)) {
-		t.Errorf("newer article rail does not link back to the older one")
+	if !strings.Contains(bPage, `class="article-rail author-more"`) ||
+		!strings.Contains(bPage, "Más de este autor") ||
+		!strings.Contains(bPage, `<a class="author-more-link" href="`+articleURL(a)) {
+		t.Errorf("newer article 'Más de este autor' rail does not link to the author's older piece")
+	}
+	if strings.Contains(bPage, "Lo más leído") {
+		t.Errorf("article page should not show the listing 'Lo más leído' rail")
 	}
 	if !strings.Contains(bPage, `class="related-item"`) || !strings.Contains(bPage, articleURL(a)) {
 		t.Errorf("newer article Relacionados does not include the shared-topic older one")

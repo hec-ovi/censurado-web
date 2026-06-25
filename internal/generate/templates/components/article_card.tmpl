@@ -28,6 +28,9 @@
 {{- if .Subtitle}}
 <p class="card-subtitle">{{.Subtitle}}</p>
 {{- end}}
+{{- if and (ne .Thumb.Kind "image") .Description}}
+<p class="card-description">{{.Description}}</p>
+{{- end}}
 <div class="card-meta">
 {{template "author_avatar" .}}
 <p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>

@@ -164,7 +164,7 @@ type articleView struct {
 	Media         mediaView  // optional lead media: image, video, or YouTube
 	HeroImage     string     // compatibility alias for optional hero <img> src
 	HeroAlt       string     // compatibility alias for optional hero alt text
-	Rail          []itemView // "Lo más leído" lateral rail (newest, excluding self)
+	AuthorMore    []itemView // "Más de este autor" lateral rail (same author, excluding self)
 	Related       []itemView // articles sharing topics/section, excluding self
 }
 
@@ -404,7 +404,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		view.HeroImage = media.view.Src
 		view.HeroAlt = media.view.Alt
 	}
-	view.Rail = articleRail(env.plan.Index, a, 5)
+	view.AuthorMore = articleAuthorMore(env.plan.Index, a, 6)
 	view.Related = articleRelated(env.plan.Index, a, 4)
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
@@ -522,10 +522,18 @@ func itemViewsOf(arts []domain.Article, n int) []itemView {
 	return out
 }
 
-// articleRail is the "Lo más leído" lateral rail for a permalink: the newest
-// articles up to and excluding self.
-func articleRail(idx *Index, self domain.Article, n int) []itemView {
-	return itemViewsOf(articlesUpToSelf(idx, self), n)
+// articleAuthorMore is the "Más de este autor" lateral rail for a permalink: the
+// same author's other articles, up to and excluding self (newest first).
+// Restricting to "up to self" keeps the permalink byte-stable when the author
+// publishes again later.
+func articleAuthorMore(idx *Index, self domain.Article, n int) []itemView {
+	var same []domain.Article
+	for _, a := range articlesUpToSelf(idx, self) {
+		if a.Author == self.Author {
+			same = append(same, a)
+		}
+	}
+	return itemViewsOf(same, n)
 }
 
 // articleRelated is the "Relacionados" block: articles up to self that share at

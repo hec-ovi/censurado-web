@@ -1033,9 +1033,10 @@ export function initMasthead(root = document) {
 // again once the refiner panel exists.
 export function initTopicScroller(root = document) {
   const scope = root || document;
-  const rows = scope.querySelectorAll(
-    '.topics[data-topics], .facet-group[data-facet-group="topic"] .facet-chips'
-  );
+  // Only the small per-article topic strip becomes a single arrow-scrolled line.
+  // The portada facet panel keeps its own wrapping/scroll behavior (turning it
+  // into one line read as an endless scroll over every topic).
+  const rows = scope.querySelectorAll(".topics[data-topics]");
   rows.forEach(enhanceScrollRow);
 }
 
@@ -1082,11 +1083,9 @@ if (typeof document !== "undefined") {
     initMenu(document);
     initTheme(document);
     initTopicScroller(document);
-    initRefine(document)
-      .then(() => initTopicScroller(document))
-      .finally(() => {
-        initLiveRefresh(document);
-      });
+    initRefine(document).finally(() => {
+      initLiveRefresh(document);
+    });
   };
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);

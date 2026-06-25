@@ -32,7 +32,7 @@ func TestSpanishUI_PresentationLayer(t *testing.T) {
 	}
 
 	// Chrome strings.
-	for _, want := range []string{"Portada", "Lo más leído", "Menú", "Sistema", "Claro", "Oscuro", "Aviso editorial", "Acerca de"} {
+	for _, want := range []string{"Portada", "Lo más leído", "Menú", "Sistema", "Claro", "Oscuro", "Aviso editorial", "Autores"} {
 		if !strings.Contains(listing, want) {
 			t.Errorf("listing missing translated chrome string %q", want)
 		}
@@ -184,8 +184,8 @@ func TestAboutPage_ListsAuthors(t *testing.T) {
 	}
 	about := string(readArtifact(t, out, "about/index.html"))
 
-	if !strings.Contains(about, `<h1 class="listing-heading">Acerca de</h1>`) {
-		t.Errorf("about page title is not 'Acerca de'")
+	if !strings.Contains(about, `<h1 class="listing-heading">Autores</h1>`) {
+		t.Errorf("about page title is not 'Autores'")
 	}
 	// Author with metadata: display name, bio, and link to the author page.
 	if !strings.Contains(about, "Lara Arianna") {

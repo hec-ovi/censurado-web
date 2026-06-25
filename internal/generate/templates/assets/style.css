@@ -1072,6 +1072,125 @@
     background: var(--color-page);
   }
 
+  /* /author/<slug> hero bio block: portrait + name, with the first-person bio
+     below (newlines preserved so multi-paragraph bios read as paragraphs). */
+  .author-bio {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-2) var(--space-4);
+    align-items: center;
+    max-width: 52rem;
+    margin: 0 auto var(--space-6);
+    padding-bottom: var(--space-5);
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .author-bio-avatar {
+    --avatar-size: 4.5rem;
+  }
+
+  .author-bio-name {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 900;
+    line-height: 1.05;
+  }
+
+  .author-bio-text {
+    grid-column: 1 / -1;
+    color: var(--color-muted);
+    font-size: var(--text-md);
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+
+  /* Autores roster (/about/): one row per author, portrait + first-person bio. */
+  .about-authors {
+    margin-top: var(--space-6);
+  }
+
+  .author-cards {
+    display: grid;
+    gap: var(--space-6);
+    list-style: none;
+  }
+
+  .author-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3) var(--space-5);
+    align-items: start;
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--color-line);
+  }
+
+  .author-card:first-child {
+    border-top: 4px solid var(--color-ink);
+  }
+
+  .author-card-portrait {
+    --avatar-size: 5.5rem;
+    display: inline-grid;
+    place-items: center;
+    width: var(--avatar-size);
+    height: var(--avatar-size);
+    overflow: hidden;
+    border-radius: 50%;
+    border: 1px solid var(--color-line-dark);
+    background:
+      linear-gradient(135deg, rgb(224 24 66 / 20%), transparent 52%),
+      var(--color-page);
+    text-decoration: none;
+  }
+
+  .author-card-portrait .author-card-avatar {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .author-card-initial {
+    font-family: var(--font-display);
+    font-size: var(--text-2xl);
+    font-weight: 900;
+    color: var(--color-ink);
+  }
+
+  .author-card-text {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .author-card-name {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 900;
+    line-height: 1.05;
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .author-card-name:hover {
+    color: var(--color-red);
+  }
+
+  .author-card-bio {
+    max-width: 62ch;
+    color: var(--color-muted);
+    font-size: var(--text-md);
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+
+  @media (min-width: 50rem) {
+    .author-card {
+      grid-template-columns: 5.5rem minmax(0, 1fr);
+      gap: var(--space-3) var(--space-6);
+    }
+  }
+
   .ranked-rail {
     border-top: 4px solid var(--color-ink);
   }

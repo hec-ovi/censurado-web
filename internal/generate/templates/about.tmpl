@@ -9,15 +9,19 @@
 <ul class="author-cards">
 {{- range .Authors}}
 <li class="author-card">
-<a class="author-card-link" href="{{.URL}}">
+<a class="author-card-portrait" href="{{.URL}}" aria-hidden="true" tabindex="-1">
 {{- if .Avatar}}
 <img class="author-card-avatar" src="{{.Avatar}}" alt="" loading="lazy" decoding="async">
+{{- else}}
+<span class="author-card-initial">{{.Initial}}</span>
 {{- end}}
-<span class="author-card-name">{{.Name}}</span>
 </a>
+<div class="author-card-text">
+<a class="author-card-name" href="{{.URL}}">{{.Name}}</a>
 {{- if .Bio}}
 <p class="author-card-bio">{{.Bio}}</p>
 {{- end}}
+</div>
 </li>
 {{- end}}
 </ul>

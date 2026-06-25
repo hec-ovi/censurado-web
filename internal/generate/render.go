@@ -265,24 +265,51 @@ type aboutView struct {
 }
 
 type authorCardView struct {
-	Name   string
-	URL    string
-	Avatar string
-	Bio    string
+	Name    string
+	URL     string
+	Avatar  string
+	Initial string
+	Bio     string
 }
 
 // aboutHeading and aboutIntro are the Spanish title and lede of the /about/ page.
+// aboutHeading also labels the nav link to /about/ (navLinksForArticles).
 const (
-	aboutHeading = "Acerca de"
-	aboutIntro   = "Conoce a las firmas que escriben en El Censurado Web."
+	aboutHeading = "Autores"
+	aboutIntro   = "Las firmas que escriben en El Censurado Web, en primera persona."
 )
+
+// aboutAuthorOrder is the editorial precedence of the Autores roster: the lead
+// political voice first, then the opinion/markets and literary bylines, with the
+// AI persona last. Author slugs not listed fall in afterwards in deterministic
+// slug order, so a new persona still appears (just not ahead of the leads).
+var aboutAuthorOrder = []string{"lara-arianna", "borge-luis-jorge", "glorieta-sadeta", "vector-omni"}
+
+// orderedAuthorSlugs returns the author slugs present in the index, the curated
+// aboutAuthorOrder first, then any remaining slugs in slug order.
+func orderedAuthorSlugs(authors map[string][]int) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(authors))
+	for _, slug := range aboutAuthorOrder {
+		if _, ok := authors[slug]; ok {
+			out = append(out, slug)
+			seen[slug] = true
+		}
+	}
+	for _, slug := range sortedStringKeys(authors) {
+		if !seen[slug] {
+			out = append(out, slug)
+		}
+	}
+	return out
+}
 
 // authorCards lists every author scope's display name, avatar, bio, and link to
 // the single-author page, in the index's deterministic author-slug order.
 func authorCards(env *buildEnv) []authorCardView {
 	idx := env.plan.Index
 	var out []authorCardView
-	for _, slug := range sortedStringKeys(idx.authors) {
+	for _, slug := range orderedAuthorSlugs(idx.authors) {
 		card := authorCardView{
 			Name: idx.authorName[slug],
 			URL:  pageURL("author/"+slug, 0),
@@ -291,6 +318,7 @@ func authorCards(env *buildEnv) []authorCardView {
 		if card.Name == "" {
 			card.Name = idx.authorLabel[slug]
 		}
+		card.Initial = authorInitial(card.Name)
 		if raw := idx.authorAvatar[slug]; raw != "" {
 			card.Avatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}

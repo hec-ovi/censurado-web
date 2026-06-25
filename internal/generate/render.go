@@ -376,6 +376,8 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		view.HeroImage = media.view.Src
 		view.HeroAlt = media.view.Alt
 	}
+	view.Rail = articleRail(env.plan.Index, a, 5)
+	view.Related = articleRelated(env.plan.Index, a, 4)
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
@@ -461,6 +463,75 @@ func railItems(items []itemView, n int) []itemView {
 	out := make([]itemView, n)
 	copy(out, items[:n])
 	return out
+}
+
+// articlesUpToSelf returns every article that is NOT newer than self (older or
+// same in display order), excluding self, in display order (newest first).
+// Restricting an article permalink's rail/related to "up to self" keeps the
+// page byte-stable when newer articles are later published: a forward publish
+// never enters an older page's window, so it is not re-rendered or purged. This
+// preserves the append-only immutability the listing pages also rely on.
+func articlesUpToSelf(idx *Index, self domain.Article) []domain.Article {
+	out := make([]domain.Article, 0, len(idx.All))
+	for _, a := range idx.All {
+		if a.ID == self.ID || displayLess(a, self) {
+			continue
+		}
+		out = append(out, a)
+	}
+	sortDisplay(out)
+	return out
+}
+
+func itemViewsOf(arts []domain.Article, n int) []itemView {
+	if n > len(arts) {
+		n = len(arts)
+	}
+	out := make([]itemView, 0, n)
+	for _, a := range arts[:n] {
+		out = append(out, itemViewOf(a))
+	}
+	return out
+}
+
+// articleRail is the "Lo más leído" lateral rail for a permalink: the newest
+// articles up to and excluding self.
+func articleRail(idx *Index, self domain.Article, n int) []itemView {
+	return itemViewsOf(articlesUpToSelf(idx, self), n)
+}
+
+// articleRelated is the "Relacionados" block: articles up to self that share at
+// least one topic with self (falling back to the same section when none do),
+// newest first.
+func articleRelated(idx *Index, self domain.Article, n int) []itemView {
+	selfTopics := map[string]struct{}{}
+	for _, t := range self.Topics {
+		if s, ok := facetSlug(t); ok {
+			selfTopics[s] = struct{}{}
+		}
+	}
+	pool := articlesUpToSelf(idx, self)
+	var related []domain.Article
+	for _, a := range pool {
+		for _, t := range a.Topics {
+			if s, ok := facetSlug(t); ok {
+				if _, hit := selfTopics[s]; hit {
+					related = append(related, a)
+					break
+				}
+			}
+		}
+	}
+	if len(related) == 0 {
+		if sSlug, ok := facetSlug(self.Section); ok {
+			for _, a := range pool {
+				if s, ok2 := facetSlug(a.Section); ok2 && s == sSlug {
+					related = append(related, a)
+				}
+			}
+		}
+	}
+	return itemViewsOf(related, n)
 }
 
 func thumbForArticle(a domain.Article) mediaView {

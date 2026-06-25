@@ -1158,6 +1158,67 @@
     text-decoration: none;
   }
 
+  /* Article permalink layout: the piece + a "Relacionados" grid in the main
+     column, with "Lo más leído" as a lateral rail on wide screens (stacked
+     below on narrow). */
+  .article-shell {
+    display: grid;
+    gap: var(--space-7);
+  }
+
+  .article-main {
+    display: grid;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+
+  .related {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .related-heading {
+    justify-self: start;
+    padding: 0.22rem 0.45rem;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-size: var(--text-xs);
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .related-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    gap: var(--space-5);
+    list-style: none;
+  }
+
+  .related-item {
+    min-width: 0;
+    border-top: 1px solid var(--color-line);
+    padding-top: var(--space-4);
+  }
+
+  .ranked-link:hover strong,
+  .ranked-link:focus-visible strong {
+    color: var(--color-red);
+  }
+
+  @media (min-width: 72rem) {
+    .article-shell {
+      grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.3fr);
+      align-items: start;
+      column-gap: var(--space-7);
+    }
+
+    .article-rail {
+      position: sticky;
+      top: var(--space-4);
+    }
+  }
+
   .hero {
     width: min(100%, var(--site-max));
     overflow: hidden;

@@ -36,10 +36,10 @@
 <ol class="ranked-list">
 {{- range .Rail}}
 <li class="ranked-item">
-<div class="ranked-link">
+<a class="ranked-link" href="{{.URL}}">
 <span class="ranked-section">{{.Section}}</span>
 <strong>{{.Title}}</strong>
-</div>
+</a>
 </li>
 {{- end}}
 </ol>

@@ -1,4 +1,6 @@
 {{define "content"}}
+<div class="article-shell">
+<div class="article-main">
 <article class="article" data-article>
 {{template "lead_media" .}}
 <header class="article-header">
@@ -24,4 +26,31 @@
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
 </footer>
 </article>
+{{- if .Related}}
+<section class="related" aria-label="Relacionados">
+<h2 class="related-heading">Relacionados</h2>
+<ol class="related-list">
+{{- range .Related}}
+<li class="related-item">{{template "article_card" .}}</li>
+{{- end}}
+</ol>
+</section>
+{{- end}}
+</div>
+{{- if .Rail}}
+<aside class="ranked-rail article-rail" aria-label="Lo más leído">
+<h2 class="rail-heading">Lo más leído</h2>
+<ol class="ranked-list">
+{{- range .Rail}}
+<li class="ranked-item">
+<a class="ranked-link" href="{{.URL}}">
+<span class="ranked-section">{{.Section}}</span>
+<strong>{{.Title}}</strong>
+</a>
+</li>
+{{- end}}
+</ol>
+</aside>
+{{- end}}
+</div>
 {{end}}

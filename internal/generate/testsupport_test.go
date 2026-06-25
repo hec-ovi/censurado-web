@@ -190,8 +190,21 @@ func decodePurge(t *testing.T, outDir string) purgeFile {
 
 var permalinkRe = regexp.MustCompile(`/a/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/`)
 
-// permalinksIn returns every /a/<slug>-<hash8>/ URL in b, in order of appearance.
-func permalinksIn(b []byte) []string { return permalinkRe.FindAllString(string(b), -1) }
+// articleListRe isolates the main listing's <ol data-articles> ... </ol> block so
+// permalinksIn counts only the listed article cards, not the permalinks now also
+// carried by the clickable "Lo más leído" rail on the same page.
+var articleListRe = regexp.MustCompile(`(?s)<ol class="article-list" data-articles>(.*?)</ol>`)
+
+// permalinksIn returns every /a/<slug>-<hash8>/ URL among the listed article
+// cards, in order of appearance. When the page has no article list it falls back
+// to scanning the whole document.
+func permalinksIn(b []byte) []string {
+	s := string(b)
+	if m := articleListRe.FindStringSubmatch(s); m != nil {
+		s = m[1]
+	}
+	return permalinkRe.FindAllString(s, -1)
+}
 
 // strSet builds a set from a slice.
 func strSet(in []string) map[string]bool {

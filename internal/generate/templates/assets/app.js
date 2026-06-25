@@ -133,6 +133,12 @@ function fallbackFacetURL(type, slug) {
   return null;
 }
 
+// articleItemFromEntry rebuilds the server card structure from a body-free shard
+// entry: optional hero <figure> only when the entry carries an image (no
+// placeholder box), a .card-body wrapping kicker/title/subtitle/signature, and
+// NO per-card topic list (topics filter via the data-topics attribute only). The
+// .article-item / .card-link / data-author / .author-link hooks are preserved
+// because the refiner and its tests read them.
 function articleItemFromEntry(e, helpers) {
   const labelFor = helpers.labelFor;
   const facetURL = helpers.facetURL;
@@ -145,11 +151,17 @@ function articleItemFromEntry(e, helpers) {
   li.dataset.topics = (e.topics || []).join(" ");
   li.dataset.month = monthOf(e);
 
-  const card = el("article", { class: "card" });
-  const media = el("div", { class: "card-media card-media-fallback", "aria-hidden": "true" });
-  const mediaLabel = el("span");
-  mediaLabel.textContent = labelFor("section", e.section, e.section);
-  media.appendChild(mediaLabel);
+  const hasImage = !!e.image;
+  const card = el("article", { class: "card " + (hasImage ? "card-has-media" : "card-textonly") });
+
+  if (hasImage) {
+    const figure = el("figure", { class: "card-media" });
+    const img = el("img", { src: e.image, alt: e.title || "", loading: "lazy", decoding: "async" });
+    figure.appendChild(img);
+    card.appendChild(figure);
+  }
+
+  const body = el("div", { class: "card-body" });
 
   const kicker = el("div", { class: "card-kicker" });
   const sectionLink = el("a", {
@@ -167,6 +179,14 @@ function articleItemFromEntry(e, helpers) {
   cardLink.textContent = e.title;
   h2.appendChild(cardLink);
 
+  body.append(kicker, h2);
+
+  if (e.subtitle) {
+    const sub = el("p", { class: "card-subtitle" });
+    sub.textContent = e.subtitle;
+    body.appendChild(sub);
+  }
+
   const meta = el("div", { class: "card-meta" });
   const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
   const avatarSrc = avatarFor(e.author);
@@ -180,7 +200,6 @@ function articleItemFromEntry(e, helpers) {
   }
 
   const byline = el("p", { class: "byline" });
-  byline.append("Por ");
   const authorLink = el("a", {
     class: "author-link",
     href: facetURL("author", e.author),
@@ -189,21 +208,9 @@ function articleItemFromEntry(e, helpers) {
   authorLink.textContent = labelFor("author", e.author, e.author_label);
   byline.appendChild(authorLink);
   meta.append(avatar, byline);
+  body.appendChild(meta);
 
-  card.append(media, kicker, h2, meta);
-
-  if (e.topics && e.topics.length) {
-    const ul = el("ul", { class: "topics", "data-topics": "" });
-    for (const t of e.topics) {
-      const liT = el("li");
-      const tl = el("a", { class: "topic-link", href: facetURL("topic", t) });
-      tl.textContent = labelFor("topic", t, t);
-      liT.appendChild(tl);
-      ul.appendChild(liT);
-    }
-    card.appendChild(ul);
-  }
-
+  card.appendChild(body);
   li.appendChild(card);
   return li;
 }

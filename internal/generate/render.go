@@ -114,6 +114,8 @@ type pageView struct {
 
 type itemView struct {
 	Title         string
+	Subtitle      string // authored dek (metadata.subtitle); "" when absent
+	Description   string // authored standfirst (metadata.description); "" when absent
 	URL           string
 	AuthorLabel   string
 	AuthorURL     string
@@ -148,6 +150,8 @@ type navLink struct{ Label, URL string }
 
 type articleView struct {
 	headData
+	Subtitle      string // authored dek (metadata.subtitle); "" when absent
+	Standfirst    string // authored description/lede (metadata.description); "" when absent
 	AuthorLabel   string
 	AuthorURL     string
 	AuthorInitial string
@@ -157,9 +161,11 @@ type articleView struct {
 	Topics        []topicLink
 	PublishedAt   time.Time
 	BodyHTML      template.HTML
-	Media         mediaView // optional lead media: image, video, or YouTube
-	HeroImage     string    // compatibility alias for optional hero <img> src
-	HeroAlt       string    // compatibility alias for optional hero alt text
+	Media         mediaView  // optional lead media: image, video, or YouTube
+	HeroImage     string     // compatibility alias for optional hero <img> src
+	HeroAlt       string     // compatibility alias for optional hero alt text
+	Rail          []itemView // "Lo más leído" lateral rail (newest, excluding self)
+	Related       []itemView // articles sharing topics/section, excluding self
 }
 
 type mediaView struct {
@@ -353,6 +359,8 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			JSONLD:      ld,
 			NavLinks:    navLinksForArticle(a),
 		},
+		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
+		Standfirst:    firstMetadataString(a.Metadata, "description"),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
 		AuthorInitial: authorInitial(authorDisplayLabel(a)),
@@ -381,6 +389,8 @@ func itemViewOf(a domain.Article) itemView {
 	se := ShardEntryOf(a)
 	return itemView{
 		Title:         a.Title,
+		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
+		Description:   firstMetadataString(a.Metadata, "description"),
 		URL:           articleURL(a),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),

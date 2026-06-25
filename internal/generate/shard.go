@@ -9,13 +9,17 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (9 fields); id is unexported and never
+// The JSON field set is frozen (11 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
-// listing (ties by id).
+// listing (ties by id). Subtitle and Image carry the authored dek and hero URL
+// so client-rebuilt cards (facet filter + live refresh) match the server cards;
+// both are always present (possibly "") to keep the exact-key-set invariant.
 type ShardEntry struct {
 	Slug        string   `json:"slug"`
 	URL         string   `json:"url"`
 	Title       string   `json:"title"`
+	Subtitle    string   `json:"subtitle"`
+	Image       string   `json:"image"`
 	Author      string   `json:"author"`
 	AuthorLabel string   `json:"author_label"`
 	Section     string   `json:"section"`
@@ -55,6 +59,8 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 		Slug:        a.Slug,
 		URL:         articleURL(a),
 		Title:       a.Title,
+		Subtitle:    firstMetadataString(a.Metadata, "subtitle"),
+		Image:       metadataMediaSrc("", a.Metadata, "image"),
 		Author:      auth,
 		AuthorLabel: authorDisplayLabel(a),
 		Section:     sec,

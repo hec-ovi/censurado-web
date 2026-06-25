@@ -154,6 +154,7 @@ type articleView struct {
 	Standfirst    string // authored description/lede (metadata.description); "" when absent
 	AuthorLabel   string
 	AuthorURL     string
+	AuthorSlug    string // slug form, for the client-side "Más de este autor" fetch
 	AuthorInitial string
 	AuthorAvatar  string
 	Section       string
@@ -391,6 +392,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		Standfirst:    firstMetadataString(a.Metadata, "description"),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
+		AuthorSlug:    ShardEntryOf(a).Author,
 		AuthorInitial: authorInitial(authorDisplayLabel(a)),
 		AuthorAvatar:  metadataMediaSrc(env.siteBase, a.Metadata, "author_avatar", "avatar"),
 		Section:       sectionLabelOf(a),

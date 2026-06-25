@@ -28,7 +28,7 @@
 {{- if .Subtitle}}
 <p class="card-subtitle">{{.Subtitle}}</p>
 {{- end}}
-{{- if and (ne .Thumb.Kind "image") .Description}}
+{{- if .Description}}
 <p class="card-description">{{.Description}}</p>
 {{- end}}
 <div class="card-meta">

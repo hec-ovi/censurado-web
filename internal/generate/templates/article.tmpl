@@ -26,10 +26,9 @@
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
 </footer>
 </div>
-{{- if .AuthorMore}}
-<aside class="article-rail author-more" aria-label="Más de este autor">
+<aside class="article-rail author-more" data-author-more="{{.AuthorSlug}}" data-self="{{.Canonical}}" aria-label="Más de este autor">
 <h2 class="rail-heading">Más de este autor</h2>
-<ol class="author-more-list">
+<ol class="author-more-list" data-author-more-list>
 {{- range .AuthorMore}}
 <li class="author-more-item">
 <a class="author-more-link" href="{{.URL}}">
@@ -40,7 +39,6 @@
 {{- end}}
 </ol>
 </aside>
-{{- end}}
 </div>
 {{- if .Related}}
 <section class="related" aria-label="Relacionados">

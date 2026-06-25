@@ -114,9 +114,13 @@ func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 	genInto(t, repo, out, nil)
 	aBefore := string(readArtifact(t, out, articlePath(a)))
 
-	// The oldest article has nothing "up to self": no author rail, no related.
-	if strings.Contains(aBefore, `class="article-rail author-more"`) || strings.Contains(aBefore, `class="related-item"`) {
-		t.Errorf("oldest article should have no author rail/related")
+	// The "Más de este autor" bar always renders (even empty); the oldest article
+	// has no static items (its up-to-self set is empty) and no related.
+	if !strings.Contains(aBefore, `class="article-rail author-more"`) || !strings.Contains(aBefore, `data-author-more="ada"`) {
+		t.Errorf("the 'Más de este autor' bar should always render with the author slug")
+	}
+	if strings.Contains(aBefore, `class="author-more-link"`) || strings.Contains(aBefore, `class="related-item"`) {
+		t.Errorf("oldest article should have no static author-more items / related")
 	}
 
 	b := seed(t, repo, seedSpec{Title: "Segundo", Author: "ada", Section: "tech", Topics: []string{"go"}, Published: date(2026, 6, 2)})

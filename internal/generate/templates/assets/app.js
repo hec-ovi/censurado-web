@@ -1033,10 +1033,11 @@ export function initMasthead(root = document) {
 // again once the refiner panel exists.
 export function initTopicScroller(root = document) {
   const scope = root || document;
-  // Only the small per-article topic strip becomes a single arrow-scrolled line.
-  // The portada facet panel keeps its own wrapping/scroll behavior (turning it
-  // into one line read as an endless scroll over every topic).
-  const rows = scope.querySelectorAll(".topics[data-topics]");
+  // The article-page topic strip and the portada topic filter both become a
+  // single bounded line scrolled with arrows (and mouse drag / native swipe).
+  const rows = scope.querySelectorAll(
+    '.topics[data-topics], .facet-group[data-facet-group="topic"] .facet-chips'
+  );
   rows.forEach(enhanceScrollRow);
 }
 
@@ -1064,7 +1065,91 @@ function enhanceScrollRow(row) {
   next.addEventListener("click", () => row.scrollBy({ left: step(), behavior: "smooth" }));
   row.addEventListener("scroll", update, { passive: true });
   if (win && win.addEventListener) win.addEventListener("resize", update);
+
+  // Mouse drag-to-scroll (touch / trackpad already scroll the overflow natively).
+  let dragging = false, moved = false, startX = 0, startLeft = 0;
+  row.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    dragging = true;
+    moved = false;
+    startX = e.clientX;
+    startLeft = row.scrollLeft;
+  });
+  row.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 3) moved = true;
+    if (moved) {
+      row.scrollLeft = startLeft - dx;
+      if (e.cancelable) e.preventDefault();
+    }
+  });
+  const endDrag = () => {
+    dragging = false;
+  };
+  row.addEventListener("pointerup", endDrag);
+  row.addEventListener("pointerleave", endDrag);
+  // Suppress the click that terminates a drag so it never activates a chip/link.
+  row.addEventListener(
+    "click",
+    (e) => {
+      if (moved) {
+        e.preventDefault();
+        e.stopPropagation();
+        moved = false;
+      }
+    },
+    true
+  );
+
   update();
+  if (win && win.requestAnimationFrame) win.requestAnimationFrame(update);
+}
+
+// initAuthorMore fills the "Más de este autor" rail on a permalink with the
+// CURRENT author's other articles (all of them, newest first), fetched from the
+// author scope manifest. The server pre-renders the author's older pieces as a
+// byte-stable static fallback (so the permalink stays immutable and works with
+// JS off); this enhancement replaces that with the full live set, so a piece
+// also surfaces the author's newer work. The bar is always present, even empty.
+export async function initAuthorMore(root = document) {
+  const scope = root || document;
+  const aside = scope.querySelector("[data-author-more]");
+  if (!aside) return null;
+  const list = aside.querySelector("[data-author-more-list]");
+  const slug = aside.getAttribute("data-author-more");
+  if (!list || !slug) return null;
+  const selfPath = normalizedPath(aside.getAttribute("data-self") || (window.location && window.location.pathname) || "");
+
+  let manifest;
+  try {
+    const res = await fetch(absURL("/manifest/author/" + slug + "/index.json"), { cache: "no-cache" });
+    if (!res.ok) return null;
+    manifest = await res.json();
+  } catch {
+    return null; // keep the server-rendered fallback
+  }
+  let entries;
+  try {
+    entries = await loadScopeEntries(manifest);
+  } catch {
+    return null;
+  }
+  const others = entries.filter((e) => e && e.url && normalizedPath(e.url) !== selfPath).slice(0, 8);
+  const frag = document.createDocumentFragment();
+  for (const e of others) {
+    const li = el("li", { class: "author-more-item" });
+    const a = el("a", { class: "author-more-link", href: e.url });
+    const sec = el("span", { class: "author-more-section" });
+    sec.textContent = e.section || "";
+    const strong = el("strong");
+    strong.textContent = e.title || "";
+    a.append(sec, strong);
+    li.appendChild(a);
+    frag.appendChild(li);
+  }
+  list.replaceChildren(frag);
+  return { aside, count: others.length };
 }
 
 function arrowButton(doc, glyph, label) {
@@ -1083,9 +1168,12 @@ if (typeof document !== "undefined") {
     initMenu(document);
     initTheme(document);
     initTopicScroller(document);
-    initRefine(document).finally(() => {
-      initLiveRefresh(document);
-    });
+    initAuthorMore(document);
+    initRefine(document)
+      .then(() => initTopicScroller(document))
+      .finally(() => {
+        initLiveRefresh(document);
+      });
   };
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);

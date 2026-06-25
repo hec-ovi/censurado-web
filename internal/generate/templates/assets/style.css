@@ -761,6 +761,23 @@
     max-width: 100%;
   }
 
+  /* The portada topic filter ("Tema") becomes one bounded scroll line: the group
+     takes its own full-width row and the chips shrink + scroll inside it (with
+     arrows / drag) instead of wrapping over several rows. */
+  .facet-panel {
+    min-width: 0;
+  }
+
+  .facet-group[data-facet-group="topic"] {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+
+  .facet-group[data-facet-group="topic"] .scroll-row {
+    flex: 1 1 auto;
+  }
+
   .scroll-row .topics,
   .scroll-row .facet-chips {
     flex-wrap: nowrap;
@@ -943,12 +960,23 @@
     line-height: 1.45;
   }
 
-  /* A card with no image shows the description too, so it does not read as an
-     empty box: title + subtitle + a short standfirst fill the space. */
+  /* Every card shows the description so it fills next to (or below) the image;
+     it is line-clamped with an ellipsis so it never outgrows the card. The lead
+     story has a taller image, so it gets more lines. */
   .card-description {
     color: var(--color-muted);
     font-size: var(--text-sm);
     line-height: 1.55;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+  }
+
+  .article-item:first-child .card-description {
+    -webkit-line-clamp: 7;
+    line-clamp: 7;
   }
 
   .card-textonly .card-subtitle {
@@ -1336,6 +1364,7 @@
   .article-sign {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--space-3);
     max-width: var(--measure);
     margin-inline: auto;

@@ -739,6 +739,65 @@
     list-style: none;
   }
 
+  /* Single-line topic/chip scroller (initTopicScroller): the row never wraps; it
+     scrolls horizontally with the scrollbar hidden, flanked by arrows that show
+     only when it overflows. */
+  .scroll-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .scroll-row .topics,
+  .scroll-row .facet-chips {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-behavior: smooth;
+  }
+
+  .scroll-row .topics::-webkit-scrollbar,
+  .scroll-row .facet-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scroll-row .topics li,
+  .scroll-row .facet-chips li {
+    flex: 0 0 auto;
+  }
+
+  .scroll-arrow {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-ink);
+    font-size: var(--text-xl);
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .scroll-row[data-overflow="true"] .scroll-arrow {
+    display: inline-flex;
+  }
+
+  .scroll-arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .scroll-arrow:hover:not(:disabled) {
+    color: var(--color-red);
+  }
+
   .facet-chip,
   .facet-clear,
   .topic-link,
@@ -892,36 +951,29 @@
     transform: scale(1.025);
   }
 
-  .card-media-fallback {
-    display: grid;
-    place-items: end start;
-    min-height: 9rem;
-    padding: var(--space-3);
-    background:
-      linear-gradient(135deg, rgb(7 95 122 / 94%), transparent 34%),
-      linear-gradient(315deg, rgb(201 129 36 / 72%), transparent 36%),
-      linear-gradient(180deg, transparent, rgb(32 224 192 / 30%)),
-      var(--color-blue);
-    color: var(--color-paper);
-  }
-
-  .card-media-fallback span {
-    max-width: 11ch;
-    font-size: var(--text-lg);
-    font-weight: 950;
-    line-height: 0.92;
-    text-transform: uppercase;
-  }
-
   .card-kicker {
     display: none;
   }
 
+  /* Portada titles are always a single full-width line; a too-long title is
+     clipped with an ellipsis rather than wrapping. Titles are kept short at the
+     source (the authored title is a <=5-word synthesis). */
   .card-title {
     font-family: var(--font-display);
     font-size: var(--text-xl);
     font-weight: 930;
-    line-height: 0.98;
+    line-height: 1.08;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-link {
+    display: block;
+    overflow: hidden;
+    color: inherit;
+    text-decoration: none;
+    text-overflow: ellipsis;
   }
 
   .card-link {

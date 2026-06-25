@@ -1025,15 +1025,68 @@ export function initMasthead(root = document) {
 }
 
 // Auto-initialize on the real page. Module scripts are deferred, so the DOM is
+// initTopicScroller turns a wrapping chip/topic row into a single horizontal line
+// with prev/next arrows that appear only when the row overflows. Applied to the
+// article-page topic list and (after the refiner builds it) the portada facet
+// topic chips, so topics read as one line "< topic . topic . topic >" instead of
+// wrapping. Idempotent: a row already wrapped is skipped, so it is safe to call
+// again once the refiner panel exists.
+export function initTopicScroller(root = document) {
+  const scope = root || document;
+  const rows = scope.querySelectorAll(
+    '.topics[data-topics], .facet-group[data-facet-group="topic"] .facet-chips'
+  );
+  rows.forEach(enhanceScrollRow);
+}
+
+function enhanceScrollRow(row) {
+  if (!row || row.dataset.scrollEnhanced) return;
+  row.dataset.scrollEnhanced = "1";
+  const doc = row.ownerDocument || document;
+  const win = doc.defaultView || (typeof window !== "undefined" ? window : null);
+
+  const wrap = doc.createElement("div");
+  wrap.className = "scroll-row";
+  row.parentNode.insertBefore(wrap, row);
+  const prev = arrowButton(doc, "‹", "Desplazar a la izquierda");
+  const next = arrowButton(doc, "›", "Desplazar a la derecha");
+  wrap.append(prev, row, next);
+
+  const step = () => Math.max(140, Math.round(row.clientWidth * 0.7));
+  const update = () => {
+    const overflow = row.scrollWidth - row.clientWidth > 2;
+    wrap.dataset.overflow = overflow ? "true" : "false";
+    prev.disabled = row.scrollLeft <= 1;
+    next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+  };
+  prev.addEventListener("click", () => row.scrollBy({ left: -step(), behavior: "smooth" }));
+  next.addEventListener("click", () => row.scrollBy({ left: step(), behavior: "smooth" }));
+  row.addEventListener("scroll", update, { passive: true });
+  if (win && win.addEventListener) win.addEventListener("resize", update);
+  update();
+}
+
+function arrowButton(doc, glyph, label) {
+  const b = doc.createElement("button");
+  b.type = "button";
+  b.className = "scroll-arrow";
+  b.setAttribute("aria-label", label);
+  b.textContent = glyph;
+  return b;
+}
+
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
     initMasthead(document);
     initMenu(document);
     initTheme(document);
-    initRefine(document).finally(() => {
-      initLiveRefresh(document);
-    });
+    initTopicScroller(document);
+    initRefine(document)
+      .then(() => initTopicScroller(document))
+      .finally(() => {
+        initLiveRefresh(document);
+      });
   };
   if (document.readyState !== "loading") boot();
   else document.addEventListener("DOMContentLoaded", boot);

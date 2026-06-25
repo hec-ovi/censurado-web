@@ -853,9 +853,24 @@
   }
 
   .card {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-3);
     min-height: 100%;
+  }
+
+  .card-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .card-subtitle {
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    line-height: 1.45;
   }
 
   .card-media {
@@ -919,9 +934,28 @@
     color: var(--color-red);
   }
 
-  .card-meta,
+  /* Card signature: the author "signs" each card, bottom-right. margin-top:auto
+     pushes it to the foot of the (flex-column) card body regardless of how much
+     title/subtitle sits above it, so signatures line up across a row. */
+  .card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: auto;
+    padding-top: var(--space-2);
+  }
+
   .article-meta {
-    display: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .card-meta .byline {
+    font-weight: 800;
   }
 
   .byline,
@@ -946,19 +980,26 @@
     color: var(--color-red);
   }
 
+  /* Unified avatar: one circular treatment used in every context (card
+     signature, article footer, author hero, About roster). The wrapper
+     <span class="author-avatar"> holds either an <img> or an initial; the
+     standalone <img class="author-bio-avatar"|"author-card-avatar"> portraits
+     get the same circle + cover crop directly. --avatar-size scales per use. */
   .author-avatar {
+    --avatar-size: 1.7rem;
     display: inline-grid;
     flex: 0 0 auto;
     place-items: center;
-    width: 2.1rem;
-    height: 2.1rem;
+    width: var(--avatar-size);
+    height: var(--avatar-size);
     overflow: hidden;
+    border-radius: 50%;
     border: 1px solid var(--color-line-dark);
     background:
       linear-gradient(135deg, rgb(224 24 66 / 20%), transparent 52%),
       var(--color-page);
     color: var(--color-ink);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     font-weight: 900;
   }
 
@@ -966,6 +1007,17 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .author-bio-avatar,
+  .author-card-avatar {
+    width: var(--avatar-size, 4.5rem);
+    height: var(--avatar-size, 4.5rem);
+    flex: 0 0 auto;
+    border-radius: 50%;
+    border: 1px solid var(--color-line-dark);
+    object-fit: cover;
+    background: var(--color-page);
   }
 
   .ranked-rail {
@@ -1063,6 +1115,47 @@
 
   .article-title {
     max-width: 16ch;
+  }
+
+  .article-subtitle {
+    max-width: 36rem;
+    color: var(--color-muted);
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 650;
+    line-height: 1.24;
+  }
+
+  .article-standfirst {
+    max-width: var(--measure);
+    margin-inline: auto;
+    color: var(--color-ink);
+    font-family: var(--font-serif);
+    font-size: var(--text-md);
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  /* The author "signs" the foot of the piece: circled portrait + name. */
+  .article-sign {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    max-width: var(--measure);
+    margin-inline: auto;
+    padding-top: var(--space-4);
+    border-top: 2px solid var(--color-ink);
+  }
+
+  .article-sign .author-avatar {
+    --avatar-size: 2.8rem;
+  }
+
+  .article-sign-name {
+    font-family: var(--font-display);
+    font-size: var(--text-md);
+    font-weight: 850;
+    text-decoration: none;
   }
 
   .hero {
@@ -1180,14 +1273,15 @@
       grid-column: 1 / -1;
     }
 
-    .article-item:first-child .card {
-      grid-template-columns: minmax(16rem, 0.95fr) minmax(0, 1fr);
-      align-items: end;
+    .article-item:first-child .card-has-media {
+      display: grid;
+      grid-template-columns: minmax(16rem, 1.05fr) minmax(0, 1fr);
+      align-items: stretch;
       gap: var(--space-5);
     }
 
-    .article-item:first-child .card-media {
-      grid-row: span 4;
+    .article-item:first-child .card-has-media .card-media {
+      height: 100%;
       min-height: 18rem;
     }
 

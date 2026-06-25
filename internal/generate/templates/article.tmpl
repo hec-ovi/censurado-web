@@ -8,7 +8,6 @@
 <p class="article-subtitle">{{.Subtitle}}</p>
 {{- end}}
 <div class="article-meta">
-{{template "author_avatar" .}}
 <p class="byline">Por <a class="author-link" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a> en <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
 <time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 </div>
@@ -20,5 +19,9 @@
 <div class="body article-body">
 {{.BodyHTML}}
 </div>
+<footer class="article-sign">
+{{template "author_avatar" .}}
+<a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
+</footer>
 </article>
 {{end}}

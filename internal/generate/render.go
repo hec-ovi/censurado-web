@@ -446,6 +446,12 @@ func navLinksForArticles(arts []domain.Article) []navLink {
 		{Label: aboutHeading, URL: "/about/"},
 	}
 	seen := map[string]struct{}{"/latest/": {}, "/about/": {}}
+	if s, ok := facetSlug("Lo último"); ok {
+		seen["label:"+s] = struct{}{}
+	}
+	if s, ok := facetSlug(aboutHeading); ok {
+		seen["label:"+s] = struct{}{}
+	}
 	for _, a := range arts {
 		if len(links) >= 7 {
 			break
@@ -463,8 +469,8 @@ func navLinksForArticles(arts []domain.Article) []navLink {
 			if len(links) >= 7 {
 				break
 			}
-			if _, ok := facetSlug(topic); ok {
-				addNavLink(&links, seen, topic, facetURL("topic", topic))
+			if slug, ok := facetSlug(topic); ok {
+				addNavLink(&links, seen, slug, facetURL("topic", topic))
 			}
 		}
 	}
@@ -482,7 +488,20 @@ func addNavLink(links *[]navLink, seen map[string]struct{}, label, href string) 
 	if _, ok := seen[href]; ok {
 		return
 	}
+	// Also dedupe by display label (accent- and case-folded via facetSlug), so a
+	// section and a topic that read the same in the menu (e.g. the section
+	// "Política" and the topics "politica" / "política") do not both appear.
+	var lkey string
+	if s, ok := facetSlug(label); ok {
+		lkey = "label:" + s
+		if _, ok := seen[lkey]; ok {
+			return
+		}
+	}
 	seen[href] = struct{}{}
+	if lkey != "" {
+		seen[lkey] = struct{}{}
+	}
 	*links = append(*links, navLink{Label: label, URL: href})
 }
 
@@ -832,7 +851,10 @@ func topicLinksOf(a domain.Article) []topicLink {
 			continue
 		}
 		seen[slug] = struct{}{}
-		out = append(out, topicLink{Label: t, URL: pageURL("topic/"+slug, 0)})
+		// Display the normalized slug (lowercase, no accents) rather than the raw
+		// topic, so topics read consistently regardless of how they were stored
+		// ("Análisis político", "política", "politica" all show the same).
+		out = append(out, topicLink{Label: slug, URL: pageURL("topic/"+slug, 0)})
 	}
 	return out
 }

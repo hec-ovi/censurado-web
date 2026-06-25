@@ -61,12 +61,27 @@ func (e *ValidationError) Error() string {
 
 var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 
+// slugTranslit folds common Latin (especially Spanish) accented letters to ASCII
+// so "política", "politica" and "Política" all slugify to the same value. It runs
+// after lowercasing. Scripts with no ASCII fold (e.g. CJK) are still dropped, and
+// callers supply a fallback for an empty result.
+var slugTranslit = strings.NewReplacer(
+	"á", "a", "à", "a", "ä", "a", "â", "a", "ã", "a", "å", "a",
+	"é", "e", "è", "e", "ë", "e", "ê", "e",
+	"í", "i", "ì", "i", "ï", "i", "î", "i",
+	"ó", "o", "ò", "o", "ö", "o", "ô", "o", "õ", "o",
+	"ú", "u", "ù", "u", "ü", "u", "û", "u",
+	"ñ", "n", "ç", "c", "ý", "y", "ÿ", "y",
+)
+
 // Slugify turns arbitrary text into a URL-safe slug: lowercase ASCII
 // alphanumerics joined by single hyphens, with no leading or trailing hyphen.
-// Non-ASCII characters are dropped (transliteration is intentionally out of
-// scope). Returns "" when nothing usable remains; callers supply a fallback.
+// Common Latin accents are transliterated (á->a, ñ->n, ...); other non-ASCII
+// characters are dropped. Returns "" when nothing usable remains; callers supply
+// a fallback.
 func Slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
+	s = slugTranslit.Replace(s)
 	s = slugNonAlnum.ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
 }

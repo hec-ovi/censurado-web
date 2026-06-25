@@ -116,7 +116,12 @@ func TestSlugify(t *testing.T) {
 		"  spaced  out ": "spaced-out",
 		"AI & ML":        "ai-ml",
 		"---":            "",
-		"café münchen":   "caf-m-nchen",
+		// Common Latin accents transliterate to ASCII (so "política" and
+		// "politica" slugify the same); other scripts still drop.
+		"café münchen":      "cafe-munchen",
+		"Análisis Político": "analisis-politico",
+		"política":          "politica",
+		"日本語":               "",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {

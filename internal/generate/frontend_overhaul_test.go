@@ -143,6 +143,41 @@ func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 	}
 }
 
+// Topic labels render normalized (lowercase, no accents) regardless of how the
+// topic was stored, so "Análisis Político", "política" and "politica" all read
+// consistently.
+func TestTopicLabels_Normalized(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{Title: "Pieza", Author: "lara", Section: "world", Topics: []string{"Análisis Político"}, Published: date(2026, 6, 2)})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	if !strings.Contains(page, `>analisis-politico</a>`) {
+		t.Errorf("topic label not normalized to slug form")
+	}
+	if strings.Contains(page, "Análisis Político") {
+		t.Errorf("raw accented/capitalized topic label leaked into output")
+	}
+}
+
+// The nav menu does not repeat a label: a section and a topic that read the same
+// (the section "Política" vs the topic "política") collapse to one entry.
+func TestNav_NoDuplicateLabel(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara", Section: "politics", Topics: []string{"política"}, Published: date(2026, 6, 2)})
+	genInto(t, repo, out, nil)
+	listing := string(readArtifact(t, out, "latest/index.html"))
+
+	if c := strings.Count(listing, `<a class="site-nav-link" href="/section/politics/">Política</a>`); c != 1 {
+		t.Errorf("section 'Política' nav link count = %d, want 1", c)
+	}
+	if strings.Contains(listing, `class="site-nav-link" href="/topic/politica/"`) {
+		t.Errorf("a topic that reads like the 'Política' section leaked into the nav")
+	}
+}
+
 // The About page is titled "Autores" and lists authors in the curated editorial
 // order (lara-arianna ahead of borge-luis-jorge), not alphabetically.
 func TestAutores_RenameAndOrder(t *testing.T) {

@@ -1361,13 +1361,13 @@
   }
 
   /* The author "signs" the foot of the piece: circled portrait + name. */
+  /* The signature spans the body column and sits hard against its right edge
+     (not a centered measure-width block, which read as centered). */
   .article-sign {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-3);
-    max-width: var(--measure);
-    margin-inline: auto;
     padding-top: var(--space-4);
     border-top: 2px solid var(--color-ink);
   }

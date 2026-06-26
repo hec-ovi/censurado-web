@@ -224,3 +224,42 @@ type AuthorStore interface {
 	// absent handle returns ErrNotFound.
 	DeleteAuthor(ctx context.Context, handle string) error
 }
+
+// Topic is a managed topic: the canonical, operator-owned topic the public site
+// renders and the brain mirrors. Slug is the stable key and matches the
+// article_topics.topic column as a soft string reference (not a foreign key), so
+// existing topic memberships are unaffected. Deleted reports whether the topic is
+// soft-deleted (tombstoned); a tombstoned topic is hidden from the default listing
+// but kept for audit and re-activation.
+type Topic struct {
+	ID          string
+	Slug        string
+	Label       string
+	Description string
+	Metadata    map[string]any
+	Deleted     bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// TopicStore is the managed-topic registry. It is a separate concern from the
+// article Repository (like SubmissionLog and AuthorStore) so the article contract
+// stays focused even when one adapter implements both. Writes go through the same
+// single writer as the publish path.
+type TopicStore interface {
+	// UpsertTopic creates or updates a topic keyed on Slug. On create it sets
+	// CreatedAt and UpdatedAt from the supplied values (defaulting to now when
+	// zero); on an existing slug it updates the mutable fields, advances UpdatedAt,
+	// preserves the stored CreatedAt, and clears any tombstone (re-activating a
+	// previously deleted slug). It returns the stored row.
+	UpsertTopic(ctx context.Context, t Topic) (Topic, error)
+	// TopicBySlug returns the topic for the slug, or found=false. A soft-deleted
+	// topic is still returned (found=true, Deleted=true).
+	TopicBySlug(ctx context.Context, slug string) (Topic, bool, error)
+	// ListTopics returns topics ordered by slug ascending in byte order, so the two
+	// adapters agree. Tombstoned topics are excluded unless includeDeleted.
+	ListTopics(ctx context.Context, includeDeleted bool) ([]Topic, error)
+	// DeleteTopic soft-deletes the topic by setting a tombstone. Deleting an absent
+	// slug returns ErrNotFound.
+	DeleteTopic(ctx context.Context, slug string) error
+}

@@ -774,3 +774,131 @@ func (s *Store) DeleteAuthor(ctx context.Context, handle string) error {
 	}
 	return nil
 }
+
+const topicCols = "id,slug,label,description,metadata,deleted_at,created_at,updated_at"
+
+// scanTopic decodes one topics row, mirroring scanAuthor: metadata round-trips
+// through the shared marshal/unmarshal helpers; the timestamps are whole-second
+// RFC3339 TEXT (deleted_at "" means active), so Deleted is the tombstone being
+// non-empty. Shared by TopicBySlug and ListTopics.
+func scanTopic(sc scanner) (store.Topic, error) {
+	var (
+		id                               int64
+		slug, label, desc, meta, deleted string
+		created, updated                 string
+	)
+	if err := sc.Scan(&id, &slug, &label, &desc, &meta, &deleted, &created, &updated); err != nil {
+		return store.Topic{}, err
+	}
+	m, err := unmarshalMeta(meta)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	createdT, err := time.Parse(timeLayout, created)
+	if err != nil {
+		return store.Topic{}, fmt.Errorf("parse topic created_at: %w", err)
+	}
+	updatedT, err := time.Parse(timeLayout, updated)
+	if err != nil {
+		return store.Topic{}, fmt.Errorf("parse topic updated_at: %w", err)
+	}
+	return store.Topic{
+		ID:          strconv.FormatInt(id, 10),
+		Slug:        slug,
+		Label:       label,
+		Description: desc,
+		Metadata:    m,
+		Deleted:     deleted != "",
+		CreatedAt:   createdT,
+		UpdatedAt:   updatedT,
+	}, nil
+}
+
+// UpsertTopic creates or updates a topic keyed on slug, mirroring UpsertAuthor: on
+// an existing slug it updates the mutable fields, advances updated_at, preserves
+// created_at, and clears the tombstone (re-activating a previously deleted slug).
+func (s *Store) UpsertTopic(ctx context.Context, t store.Topic) (store.Topic, error) {
+	meta, err := marshalMeta(t.Metadata)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	created := t.CreatedAt
+	if created.IsZero() {
+		created = time.Now()
+	}
+	updated := t.UpdatedAt
+	if updated.IsZero() {
+		updated = created
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO topics (slug,label,description,metadata,deleted_at,created_at,updated_at)
+		 VALUES (?,?,?,?,'',?,?)
+		 ON CONFLICT(slug) DO UPDATE SET
+		   label=excluded.label, description=excluded.description,
+		   metadata=excluded.metadata, deleted_at='', updated_at=excluded.updated_at`,
+		t.Slug, t.Label, t.Description, meta,
+		created.UTC().Truncate(time.Second).Format(timeLayout),
+		updated.UTC().Truncate(time.Second).Format(timeLayout),
+	); err != nil {
+		return store.Topic{}, fmt.Errorf("upsert topic: %w", err)
+	}
+	got, _, err := s.TopicBySlug(ctx, t.Slug)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	return got, nil
+}
+
+// TopicBySlug returns the topic for the slug, or found=false. A soft-deleted topic
+// is still returned (found=true, Deleted=true) so callers can re-activate it.
+func (s *Store) TopicBySlug(ctx context.Context, slug string) (store.Topic, bool, error) {
+	tp, err := scanTopic(s.db.QueryRowContext(ctx,
+		`SELECT `+topicCols+` FROM topics WHERE slug = ?`, slug))
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Topic{}, false, nil
+	}
+	if err != nil {
+		return store.Topic{}, false, err
+	}
+	return tp, true, nil
+}
+
+// ListTopics returns topics ordered by slug ascending (SQLite BINARY default; the
+// Postgres adapter pins COLLATE "C" to match). Tombstoned topics are excluded
+// unless includeDeleted.
+func (s *Store) ListTopics(ctx context.Context, includeDeleted bool) ([]store.Topic, error) {
+	q := `SELECT ` + topicCols + ` FROM topics`
+	if !includeDeleted {
+		q += ` WHERE deleted_at = ''`
+	}
+	q += ` ORDER BY slug ASC`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Topic
+	for rows.Next() {
+		tp, err := scanTopic(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tp)
+	}
+	return out, rows.Err()
+}
+
+// DeleteTopic soft-deletes the topic by setting a whole-second RFC3339 tombstone.
+// Deleting an absent slug returns store.ErrNotFound.
+func (s *Store) DeleteTopic(ctx context.Context, slug string) error {
+	now := time.Now().UTC().Truncate(time.Second).Format(timeLayout)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE topics SET deleted_at = ?, updated_at = ? WHERE slug = ?`, now, now, slug)
+	if err != nil {
+		return fmt.Errorf("delete topic: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}

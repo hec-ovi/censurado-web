@@ -60,3 +60,20 @@ CREATE TABLE IF NOT EXISTS authors (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
+
+-- topics is the operator-owned topic registry: the canonical topic identity the
+-- site renders and the brain mirrors. slug matches the article_topics.topic column
+-- as a soft string reference (no foreign key, so existing memberships are
+-- unaffected). deleted_at is a tombstone ('' = active) so a removed topic is hidden
+-- from the default listing but kept for audit and re-activation; the timestamps are
+-- whole-second RFC3339 TEXT, the same encoding the submissions ledger uses.
+CREATE TABLE IF NOT EXISTS topics (
+  id          INTEGER PRIMARY KEY,
+  slug        TEXT NOT NULL UNIQUE,
+  label       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  metadata    TEXT NOT NULL DEFAULT '{}',
+  deleted_at  TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+) STRICT;

@@ -22,7 +22,7 @@ func resetPostgres(t *testing.T, dsn string) {
 		t.Fatalf("reset open: %v", err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`TRUNCATE articles, article_topics, submissions, authors RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := db.Exec(`TRUNCATE articles, article_topics, submissions, authors, topics RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("reset truncate: %v", err)
 	}
 }
@@ -160,4 +160,23 @@ func TestPostgresAuthorStore(t *testing.T) {
 	resetPostgres(t, dsn)
 
 	storetest.RunAuthorStore(t, repo)
+}
+
+// TestPostgresTopicStore runs the shared TopicStore conformance suite against a
+// real Postgres when CENSURADO_TEST_POSTGRES_DSN is set, proving the managed-topic
+// registry round-trips, orders (slug COLLATE "C"), and tombstones/re-activates
+// byte-identically to SQLite.
+func TestPostgresTopicStore(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunTopicStore(t, repo)
 }

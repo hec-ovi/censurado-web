@@ -84,3 +84,14 @@ func TestSQLiteAuthorStore(t *testing.T) {
 
 	storetest.RunAuthorStore(t, repo)
 }
+
+func TestSQLiteTopicStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "topics.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunTopicStore(t, repo)
+}

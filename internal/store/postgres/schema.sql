@@ -58,3 +58,19 @@ CREATE TABLE IF NOT EXISTS authors (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- topics is the operator-owned topic registry (see the SQLite schema for the
+-- contract). slug is a soft string reference to article_topics.topic (no FK).
+-- created_at/updated_at/deleted_at are whole-second RFC3339 TEXT (not TIMESTAMPTZ)
+-- for byte-identical parity with the SQLite adapter and so deleted_at can use ''
+-- as the active sentinel.
+CREATE TABLE IF NOT EXISTS topics (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  slug        TEXT NOT NULL UNIQUE,
+  label       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  deleted_at  TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);

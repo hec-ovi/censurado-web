@@ -1192,3 +1192,188 @@ func RunAuthorStore(t *testing.T, as store.AuthorStore) {
 		}
 	})
 }
+
+func topicSlugsOf(ts []store.Topic) []string {
+	out := make([]string, len(ts))
+	for i, tp := range ts {
+		out[i] = tp.Slug
+	}
+	return out
+}
+
+func assertTopicEqual(t *testing.T, got, want store.Topic) {
+	t.Helper()
+	if got.Slug != want.Slug {
+		t.Errorf("Slug = %q, want %q", got.Slug, want.Slug)
+	}
+	if got.Label != want.Label {
+		t.Errorf("Label = %q, want %q", got.Label, want.Label)
+	}
+	if got.Description != want.Description {
+		t.Errorf("Description = %q, want %q", got.Description, want.Description)
+	}
+	if len(got.Metadata) != len(want.Metadata) {
+		t.Errorf("Metadata = %v, want %v", got.Metadata, want.Metadata)
+	}
+	for k, v := range want.Metadata {
+		if got.Metadata[k] != v {
+			t.Errorf("Metadata[%q] = %v, want %v", k, got.Metadata[k], v)
+		}
+	}
+	if !got.CreatedAt.UTC().Equal(want.CreatedAt.UTC().Truncate(time.Second)) {
+		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt.UTC(), want.CreatedAt.UTC().Truncate(time.Second))
+	}
+}
+
+// RunTopicStore executes the TopicStore conformance suite against ts, which must
+// back an empty topics table. Running the identical suite against both SQLite and
+// Postgres proves the registry round-trips every field, orders by slug in byte
+// order (SQLite BINARY default; Postgres COLLATE "C" pin), and tombstones and
+// re-activates identically on the two engines. Subtests run sequentially and share
+// the seeded state; it does not call t.Parallel. It mirrors RunAuthorStore.
+func RunTopicStore(t *testing.T, ts store.TopicStore) {
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("TopicBySlug on a missing slug reports not found", func(t *testing.T) {
+		got, found, err := ts.TopicBySlug(ctx, "ghost")
+		if err != nil {
+			t.Fatalf("TopicBySlug: %v", err)
+		}
+		if found {
+			t.Errorf("found = true for missing slug, want false")
+		}
+		if got.Slug != "" || got.ID != "" {
+			t.Errorf("got = %+v for missing slug, want zero Topic", got)
+		}
+	})
+
+	economia := store.Topic{
+		Slug: "economia", Label: "Economia", Description: "Cobertura economica.",
+		Metadata: map[string]any{"color": "green"}, CreatedAt: base, UpdatedAt: base,
+	}
+
+	t.Run("UpsertTopic creates then TopicBySlug round-trips every field", func(t *testing.T) {
+		stored, err := ts.UpsertTopic(ctx, economia)
+		if err != nil {
+			t.Fatalf("UpsertTopic: %v", err)
+		}
+		if stored.ID == "" {
+			t.Errorf("empty ID, want store-assigned")
+		}
+		if stored.Deleted {
+			t.Errorf("Deleted = true on create, want false")
+		}
+		got, found, err := ts.TopicBySlug(ctx, economia.Slug)
+		if err != nil {
+			t.Fatalf("TopicBySlug: %v", err)
+		}
+		if !found {
+			t.Fatalf("found = false after create, want true")
+		}
+		assertTopicEqual(t, got, economia)
+	})
+
+	t.Run("UpsertTopic on an existing slug updates in place (created_at preserved, updated_at advances)", func(t *testing.T) {
+		before, _, _ := ts.TopicBySlug(ctx, economia.Slug)
+		edit := economia
+		edit.Label = "Economia y mercados"
+		edit.Description = "Descripcion editada."
+		edit.Metadata = map[string]any{"color": "green", "edited": "yes"}
+		edit.UpdatedAt = base.Add(48 * time.Hour)
+		stored, err := ts.UpsertTopic(ctx, edit)
+		if err != nil {
+			t.Fatalf("UpsertTopic update: %v", err)
+		}
+		if stored.ID != before.ID {
+			t.Errorf("ID changed on update: %s -> %s (want same row)", before.ID, stored.ID)
+		}
+		if stored.Label != "Economia y mercados" || stored.Description != "Descripcion editada." {
+			t.Errorf("mutable fields not updated: %+v", stored)
+		}
+		if !stored.CreatedAt.UTC().Equal(base) {
+			t.Errorf("CreatedAt = %v, want preserved %v", stored.CreatedAt.UTC(), base)
+		}
+		if !stored.UpdatedAt.UTC().Equal(base.Add(48 * time.Hour)) {
+			t.Errorf("UpdatedAt = %v, want advanced to %v", stored.UpdatedAt.UTC(), base.Add(48*time.Hour))
+		}
+		all, err := ts.ListTopics(ctx, true)
+		if err != nil {
+			t.Fatalf("ListTopics: %v", err)
+		}
+		n := 0
+		for _, tp := range all {
+			if tp.Slug == economia.Slug {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("rows for slug %q = %d, want 1 (update, not a second insert)", economia.Slug, n)
+		}
+	})
+
+	deportes := store.Topic{Slug: "deportes", Label: "Deportes", CreatedAt: base, UpdatedAt: base}
+
+	t.Run("ListTopics orders by slug ascending (byte order)", func(t *testing.T) {
+		if _, err := ts.UpsertTopic(ctx, deportes); err != nil {
+			t.Fatalf("UpsertTopic: %v", err)
+		}
+		got, err := ts.ListTopics(ctx, false)
+		if err != nil {
+			t.Fatalf("ListTopics: %v", err)
+		}
+		want := []string{"deportes", "economia"}
+		if s := topicSlugsOf(got); !equalOrdered(s, want) {
+			t.Errorf("order = %v, want %v", s, want)
+		}
+	})
+
+	t.Run("DeleteTopic tombstones: excluded by default, included with includeDeleted, re-upsert re-activates", func(t *testing.T) {
+		if err := ts.DeleteTopic(ctx, deportes.Slug); err != nil {
+			t.Fatalf("DeleteTopic: %v", err)
+		}
+		def, err := ts.ListTopics(ctx, false)
+		if err != nil {
+			t.Fatalf("ListTopics(false): %v", err)
+		}
+		if contains(topicSlugsOf(def), deportes.Slug) {
+			t.Errorf("deleted topic %q still listed by default", deportes.Slug)
+		}
+		all, err := ts.ListTopics(ctx, true)
+		if err != nil {
+			t.Fatalf("ListTopics(true): %v", err)
+		}
+		if !contains(topicSlugsOf(all), deportes.Slug) {
+			t.Errorf("deleted topic %q missing from includeDeleted list", deportes.Slug)
+		}
+		got, found, err := ts.TopicBySlug(ctx, deportes.Slug)
+		if err != nil {
+			t.Fatalf("TopicBySlug(deleted): %v", err)
+		}
+		if !found || !got.Deleted {
+			t.Errorf("TopicBySlug(deleted) found=%v Deleted=%v, want true/true", found, got.Deleted)
+		}
+		reborn := deportes
+		reborn.UpdatedAt = base.Add(72 * time.Hour)
+		stored, err := ts.UpsertTopic(ctx, reborn)
+		if err != nil {
+			t.Fatalf("re-upsert: %v", err)
+		}
+		if stored.Deleted {
+			t.Errorf("Deleted = true after re-upsert, want re-activated")
+		}
+		def2, err := ts.ListTopics(ctx, false)
+		if err != nil {
+			t.Fatalf("ListTopics(false) after re-upsert: %v", err)
+		}
+		if !contains(topicSlugsOf(def2), deportes.Slug) {
+			t.Errorf("re-activated topic %q missing from default list", deportes.Slug)
+		}
+	})
+
+	t.Run("DeleteTopic on a missing slug returns ErrNotFound", func(t *testing.T) {
+		if err := ts.DeleteTopic(ctx, "no-such-topic"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("DeleteTopic(missing) = %v, want ErrNotFound", err)
+		}
+	})
+}

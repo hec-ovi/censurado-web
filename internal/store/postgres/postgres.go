@@ -768,3 +768,133 @@ func (s *Store) DeleteAuthor(ctx context.Context, handle string) error {
 	}
 	return nil
 }
+
+const topicCols = "id,slug,label,description,metadata,deleted_at,created_at,updated_at"
+
+// scanTopic decodes one topics row. metadata is JSONB (scanned as bytes) and
+// round-trips through the shared marshal/unmarshal helpers; the timestamps are
+// whole-second RFC3339 TEXT (deleted_at "" means active). Identical observable
+// result to the SQLite adapter.
+func scanTopic(sc scanner) (store.Topic, error) {
+	var (
+		id                        int64
+		slug, label, desc         string
+		deleted, created, updated string
+		meta                      []byte
+	)
+	if err := sc.Scan(&id, &slug, &label, &desc, &meta, &deleted, &created, &updated); err != nil {
+		return store.Topic{}, err
+	}
+	m, err := unmarshalMeta(meta)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	createdT, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return store.Topic{}, fmt.Errorf("parse topic created_at: %w", err)
+	}
+	updatedT, err := time.Parse(time.RFC3339, updated)
+	if err != nil {
+		return store.Topic{}, fmt.Errorf("parse topic updated_at: %w", err)
+	}
+	return store.Topic{
+		ID:          strconv.FormatInt(id, 10),
+		Slug:        slug,
+		Label:       label,
+		Description: desc,
+		Metadata:    m,
+		Deleted:     deleted != "",
+		CreatedAt:   createdT,
+		UpdatedAt:   updatedT,
+	}, nil
+}
+
+// UpsertTopic creates or updates a topic keyed on slug. Behavior is identical to
+// the SQLite adapter (proven by the shared conformance suite): an existing slug is
+// updated in place, updated_at advances, created_at is preserved, and the tombstone
+// is cleared so a previously deleted slug is re-activated.
+func (s *Store) UpsertTopic(ctx context.Context, t store.Topic) (store.Topic, error) {
+	meta, err := marshalMeta(t.Metadata)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	created := t.CreatedAt
+	if created.IsZero() {
+		created = time.Now()
+	}
+	updated := t.UpdatedAt
+	if updated.IsZero() {
+		updated = created
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO topics (slug,label,description,metadata,deleted_at,created_at,updated_at)
+		 VALUES ($1,$2,$3,$4::jsonb,'',$5,$6)
+		 ON CONFLICT (slug) DO UPDATE SET
+		   label=excluded.label, description=excluded.description,
+		   metadata=excluded.metadata, deleted_at='', updated_at=excluded.updated_at`,
+		t.Slug, t.Label, t.Description, meta,
+		created.UTC().Truncate(time.Second).Format(time.RFC3339),
+		updated.UTC().Truncate(time.Second).Format(time.RFC3339),
+	); err != nil {
+		return store.Topic{}, fmt.Errorf("upsert topic: %w", err)
+	}
+	got, _, err := s.TopicBySlug(ctx, t.Slug)
+	if err != nil {
+		return store.Topic{}, err
+	}
+	return got, nil
+}
+
+// TopicBySlug returns the topic for the slug, or found=false. A soft-deleted topic
+// is still returned (found=true, Deleted=true) so callers can re-activate it.
+func (s *Store) TopicBySlug(ctx context.Context, slug string) (store.Topic, bool, error) {
+	tp, err := scanTopic(s.db.QueryRowContext(ctx,
+		`SELECT `+topicCols+` FROM topics WHERE slug = $1`, slug))
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Topic{}, false, nil
+	}
+	if err != nil {
+		return store.Topic{}, false, err
+	}
+	return tp, true, nil
+}
+
+// ListTopics returns topics ordered by slug ascending. The order is pinned to
+// COLLATE "C" (raw byte order) so it matches SQLite's default BINARY collation for
+// any slug set. Tombstoned topics are excluded unless includeDeleted.
+func (s *Store) ListTopics(ctx context.Context, includeDeleted bool) ([]store.Topic, error) {
+	q := `SELECT ` + topicCols + ` FROM topics`
+	if !includeDeleted {
+		q += ` WHERE deleted_at = ''`
+	}
+	q += ` ORDER BY slug COLLATE "C" ASC`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Topic
+	for rows.Next() {
+		tp, err := scanTopic(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tp)
+	}
+	return out, rows.Err()
+}
+
+// DeleteTopic soft-deletes the topic by setting a whole-second RFC3339 tombstone.
+// Deleting an absent slug returns store.ErrNotFound.
+func (s *Store) DeleteTopic(ctx context.Context, slug string) error {
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE topics SET deleted_at = $1, updated_at = $2 WHERE slug = $3`, now, now, slug)
+	if err != nil {
+		return fmt.Errorf("delete topic: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}

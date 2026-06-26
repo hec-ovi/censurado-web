@@ -379,21 +379,25 @@ func (s *Store) Count(ctx context.Context, f store.Filter) (int, error) {
 // differently. Pinning "C" makes the ordering byte-identical across engines for
 // ANY value set, not just the ASCII lowercase ones the conformance suite seeds.
 func (s *Store) Facets(ctx context.Context) (store.Facets, error) {
+	// Tombstoned articles are excluded so the facet counts match what Find returns:
+	// a soft-deleted article is hidden from the public site, so it must not inflate
+	// the admin filter counts either.
 	sections, err := facetRows(ctx, s.db,
-		`SELECT section, COUNT(*) FROM articles GROUP BY section ORDER BY COUNT(*) DESC, section COLLATE "C" ASC`)
+		`SELECT section, COUNT(*) FROM articles WHERE deleted_at = '' GROUP BY section ORDER BY COUNT(*) DESC, section COLLATE "C" ASC`)
 	if err != nil {
 		return store.Facets{}, fmt.Errorf("facets sections: %w", err)
 	}
 	authors, err := facetRows(ctx, s.db,
-		`SELECT author, COUNT(*) FROM articles GROUP BY author ORDER BY COUNT(*) DESC, author COLLATE "C" ASC`)
+		`SELECT author, COUNT(*) FROM articles WHERE deleted_at = '' GROUP BY author ORDER BY COUNT(*) DESC, author COLLATE "C" ASC`)
 	if err != nil {
 		return store.Facets{}, fmt.Errorf("facets authors: %w", err)
 	}
 	// Topic counts are per-article (one row per article carrying the topic); the
 	// join table's (article_id, topic) primary key already forbids duplicates, so
-	// COUNT(*) cannot double-count a single article on one topic.
+	// COUNT(*) cannot double-count a single article on one topic. The join to
+	// articles drops a tombstoned article's topics from the counts.
 	topics, err := facetRows(ctx, s.db,
-		`SELECT topic, COUNT(*) FROM article_topics GROUP BY topic ORDER BY COUNT(*) DESC, topic COLLATE "C" ASC`)
+		`SELECT topic, COUNT(*) FROM article_topics t JOIN articles a ON a.id = t.article_id WHERE a.deleted_at = '' GROUP BY topic ORDER BY COUNT(*) DESC, topic COLLATE "C" ASC`)
 	if err != nil {
 		return store.Facets{}, fmt.Errorf("facets topics: %w", err)
 	}

@@ -462,6 +462,18 @@ func RunFacets(t *testing.T, repo store.Repository) {
 		}
 	}
 
+	// A soft-deleted article must NOT inflate any facet count: seed one whose
+	// section/author/topic differ from every value asserted below, then delete it.
+	// The exact-equality assertions (which never mention these values) would fail if
+	// Facets counted it, so this proves tombstoned rows are excluded.
+	gone := mustArticle(t, domain.PublishInput{Title: "T7", Body: "b", Author: "ghost", Section: "sports", Topics: []string{"tombstone"}}, base.Add(144*time.Hour))
+	if _, err := repo.Upsert(ctx, gone); err != nil {
+		t.Fatalf("seed deleted upsert: %v", err)
+	}
+	if err := repo.DeleteArticle(ctx, gone.Slug); err != nil {
+		t.Fatalf("delete article: %v", err)
+	}
+
 	got, err := repo.Facets(ctx)
 	if err != nil {
 		t.Fatalf("Facets: %v", err)

@@ -44,7 +44,7 @@ func archiveServer(t *testing.T) (http.Handler, string) {
 	}
 	h = h.WithArchive(arch)
 	// A nil limiter disables limiting so the test is not rate-bound.
-	return publish.NewServerHandler(h, nil, nil, nil), dir
+	return publish.NewServerHandler(h, nil, nil, nil, nil), dir
 }
 
 // A new publish is archived exactly once; an idempotent replay (same key+body) is
@@ -104,7 +104,7 @@ func TestServer_MaliciousKeyDoesNotEscapeArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new dir archive: %v", err)
 	}
-	srv := publish.NewServerHandler(h.WithArchive(arch), nil, nil, nil)
+	srv := publish.NewServerHandler(h.WithArchive(arch), nil, nil, nil, nil)
 	adaToken := "ak_ada." + adaSecret
 
 	const evil = "../../escape"
@@ -152,7 +152,7 @@ func TestServer_FailingArchiveDoesNotFailCommittedPublish(t *testing.T) {
 	h = h.WithArchive(failArchive{}).WithLogger(func(format string, args ...any) {
 		logged = append(logged, fmt.Sprintf(format, args...))
 	})
-	srv := publish.NewServerHandler(h, nil, nil, nil) // nil limiter: not rate-bound
+	srv := publish.NewServerHandler(h, nil, nil, nil, nil) // nil limiter: not rate-bound
 	adaToken := "ak_ada." + adaSecret
 
 	rec := post(t, srv, adaToken, "arch-fail-1", validBody)

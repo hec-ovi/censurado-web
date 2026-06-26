@@ -235,8 +235,16 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	// author and topic registries, so a CLI and the brain can list and mirror.
 	readH := publish.NewReadHandler(repo, auth)
 
+	// ...and the operator mutation lane (authors/topics CRUD + article edit/delete/
+	// restore) behind the admin:write scope. It fires the SAME regenerate+purge as a
+	// publish, so an edit or delete refreshes the static site off the request path.
+	opH := publish.NewOperatorHandler(repo, auth, time.Now)
+	if regen != nil {
+		opH = opH.WithRegenerator(regen)
+	}
+
 	limiter := publish.NewRateLimiter(*f.rate, *f.burst, time.Now)
-	handler := publish.NewServerHandler(h, limiter, mediaH, readH)
+	handler := publish.NewServerHandler(h, limiter, mediaH, readH, opH)
 
 	srv := newServer(*f.addr, handler)
 

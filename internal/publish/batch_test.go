@@ -39,7 +39,7 @@ type batchResult struct {
 func batchServer(t *testing.T, limiter *publish.RateLimiter) (http.Handler, store.Repository, *publish.Handler) {
 	t.Helper()
 	h, repo := newHandler(t)
-	return publish.NewServerHandler(h, limiter, nil, nil), repo, h
+	return publish.NewServerHandler(h, limiter, nil, nil, nil), repo, h
 }
 
 func batchBody(t *testing.T, items []bItem) string {
@@ -395,7 +395,7 @@ func TestBatch_ArchivesEachCreatedItem(t *testing.T) {
 		t.Fatalf("archive: %v", err)
 	}
 	h.WithArchive(arch)
-	srv := publish.NewServerHandler(h, nil, nil, nil)
+	srv := publish.NewServerHandler(h, nil, nil, nil, nil)
 
 	body := batchBody(t, []bItem{
 		{Title: "Arch one", Body: "b1", Author: "ada", Section: "tech", Key: "arc-1"},

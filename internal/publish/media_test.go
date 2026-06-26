@@ -28,7 +28,7 @@ func mediaServer(t *testing.T, maxBytes int64) (http.Handler, *media.Store) {
 	auth.Add("ak_ro", publish.HashSecret(roSecret), "ro", "articles:read")
 	mediaH := publish.NewMediaHandler(store, auth)
 	h := publish.NewHandler(nil, nil, auth, nil)
-	return publish.NewServerHandler(h, nil, mediaH, nil), store
+	return publish.NewServerHandler(h, nil, mediaH, nil, nil), store
 }
 
 func postMedia(t *testing.T, h http.Handler, token string, body []byte, contentType string) *httptest.ResponseRecorder {

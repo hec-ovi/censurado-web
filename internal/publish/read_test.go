@@ -36,7 +36,7 @@ func newReadServer(t *testing.T) (http.Handler, *sqlite.Store) {
 	h := publish.NewHandler(repo, repo, auth, now)
 	rh := publish.NewReadHandler(repo, auth)
 	limiter := publish.NewRateLimiter(1000, 1000, now)
-	return publish.NewServerHandler(h, limiter, nil, rh), repo
+	return publish.NewServerHandler(h, limiter, nil, rh, nil), repo
 }
 
 func getAuth(t *testing.T, h http.Handler, token, path string) *httptest.ResponseRecorder {

@@ -117,7 +117,7 @@ func TestHandler_RegenIsOffRequestPath(t *testing.T) {
 	defer cancel()
 	rg.Start(ctx)
 	h.WithRegenerator(rg)
-	srv := publish.NewServerHandler(h, nil, nil, nil)
+	srv := publish.NewServerHandler(h, nil, nil, nil, nil)
 
 	resp := make(chan int, 1)
 	go func() { resp <- post(t, srv, "ak_ada."+adaSecret, "regen-1", validBody).Code }()
@@ -143,7 +143,7 @@ func TestHandler_TriggersRegenOnCreateOnly(t *testing.T) {
 	h, _ := newHandler(t)
 	fake := &countingTrigger{}
 	h.WithRegenerator(fake)
-	srv := publish.NewServerHandler(h, nil, nil, nil)
+	srv := publish.NewServerHandler(h, nil, nil, nil, nil)
 	tok := "ak_ada." + adaSecret
 
 	post(t, srv, tok, "c1", validBody) // create -> trigger

@@ -134,7 +134,66 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 			addYM(idx.secMonths, sSlug, m)
 		}
 	}
+	if err := overlayRegistry(ctx, idx, repo); err != nil {
+		return nil, err
+	}
 	return idx, nil
+}
+
+// overlayRegistry prefers the operator-managed author/topic registry over the
+// per-article metadata for the public profile fields (author name/bio/avatar, topic
+// label). It is purely additive: a store that does not implement the registries, or
+// empty registries, leaves the metadata-derived values exactly as they were, so the
+// generator behaves identically until the tables are populated. A table value
+// overlays only when non-empty, so a half-filled registry row never blanks a good
+// metadata-derived value; and only slugs that already have published articles are
+// touched, so a registry entry never manufactures a roster card or a heading for an
+// author/topic with no articles.
+func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) error {
+	if as, ok := repo.(store.AuthorStore); ok {
+		authors, err := as.ListAuthors(ctx, false)
+		if err != nil {
+			return err
+		}
+		for _, a := range authors {
+			slug, ok := facetSlug(a.Handle)
+			if !ok {
+				continue
+			}
+			if _, has := idx.authors[slug]; !has {
+				continue
+			}
+			if a.Name != "" {
+				idx.authorName[slug] = a.Name
+				idx.authorLabel[slug] = a.Name
+			}
+			if a.Bio != "" {
+				idx.authorBio[slug] = a.Bio
+			}
+			if a.Avatar != "" {
+				idx.authorAvatar[slug] = a.Avatar
+			}
+		}
+	}
+	if ts, ok := repo.(store.TopicStore); ok {
+		topics, err := ts.ListTopics(ctx, false)
+		if err != nil {
+			return err
+		}
+		for _, t := range topics {
+			slug, ok := facetSlug(t.Slug)
+			if !ok {
+				continue
+			}
+			if _, has := idx.topics[slug]; !has {
+				continue
+			}
+			if t.Label != "" {
+				idx.topicLabel[slug] = t.Label
+			}
+		}
+	}
+	return nil
 }
 
 // idLess compares decimal id strings numerically; both adapters use integer PKs.

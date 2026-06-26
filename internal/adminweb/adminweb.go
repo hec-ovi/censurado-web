@@ -63,6 +63,22 @@ type Config struct {
 	// touching disk. When nil, the create form hides the file-upload control; an
 	// operator can still reference an image by URL.
 	UploadMedia func(ctx context.Context, filename, contentType string, data []byte) (string, error)
+
+	// Authors and Topics back the operator registry pages (the lists and the edit
+	// prefills). They are READ directly off the store, like the article browse, since
+	// a read never breaks the single-writer invariant; the concrete *sqlite.Store
+	// satisfies both. When nil, the corresponding registry page shows a disabled note.
+	Authors store.AuthorStore
+	Topics  store.TopicStore
+
+	// Operator performs one mutation against the operator API (the admin:write lane:
+	// authors/topics CRUD and article edit/delete/restore). It is an injected closure
+	// so the admin stays a NON-WRITER: it POSTs to the publish service exactly as the
+	// create form does, never opening the store for writing. It returns the response
+	// body on a 2xx, or an *OperatorError on a 4xx/5xx so the handler renders a
+	// friendly message. When nil, the mutation controls show a disabled note and a
+	// POST returns a friendly response (never a 500/panic).
+	Operator func(ctx context.Context, method, path string, body any) ([]byte, error)
 }
 
 // CreateArticleInput is one operator-entered article handed to the Publish
@@ -132,6 +148,9 @@ type Handler struct {
 	regenerate    func(ctx context.Context) (RegenResult, error)
 	publish       func(ctx context.Context, in CreateArticleInput) (CreateArticleResult, error)
 	uploadMedia   func(ctx context.Context, filename, contentType string, data []byte) (string, error)
+	authors       store.AuthorStore
+	topics        store.TopicStore
+	operator      func(ctx context.Context, method, path string, body any) ([]byte, error)
 	mux           *http.ServeMux
 }
 
@@ -176,6 +195,9 @@ func New(cfg Config) (*Handler, error) {
 		regenerate:    cfg.Regenerate,  // optional; nil disables the regenerate action
 		publish:       cfg.Publish,     // optional; nil disables the create action
 		uploadMedia:   cfg.UploadMedia, // optional; nil hides the upload control
+		authors:       cfg.Authors,     // optional; nil disables the authors registry
+		topics:        cfg.Topics,      // optional; nil disables the topics registry
+		operator:      cfg.Operator,    // optional; nil disables all operator mutations
 	}
 	h.routes()
 	return h, nil
@@ -198,6 +220,28 @@ func (h *Handler) routes() {
 	mux.HandleFunc("POST /admin/create", h.requireSession(h.requireCSRF(h.handleCreateSubmit)))
 	mux.HandleFunc("GET /admin/articles", h.requireSession(h.handleArticles))
 	mux.HandleFunc("GET /admin/articles/{slug}", h.requireSession(h.handleDetail))
+	// Article edit/delete: the operator mutation lane. Browse/detail stay read-only;
+	// these go over the operator API so the admin never writes the store directly.
+	mux.HandleFunc("GET /admin/articles/{slug}/edit", h.requireSession(h.handleArticleEdit))
+	mux.HandleFunc("POST /admin/articles/{slug}", h.requireSession(h.requireCSRF(h.handleArticleUpdate)))
+	mux.HandleFunc("POST /admin/articles/{slug}/delete", h.requireSession(h.requireCSRF(h.handleArticleDelete)))
+	mux.HandleFunc("POST /admin/articles/{slug}/restore", h.requireSession(h.requireCSRF(h.handleArticleRestore)))
+	// Managed authors registry (CRUD via the operator API).
+	mux.HandleFunc("GET /admin/authors", h.requireSession(h.handleAuthors))
+	mux.HandleFunc("GET /admin/authors/new", h.requireSession(h.handleAuthorNew))
+	mux.HandleFunc("POST /admin/authors", h.requireSession(h.requireCSRF(h.handleAuthorCreate)))
+	mux.HandleFunc("GET /admin/authors/{handle}/edit", h.requireSession(h.handleAuthorEdit))
+	mux.HandleFunc("POST /admin/authors/{handle}", h.requireSession(h.requireCSRF(h.handleAuthorUpdate)))
+	mux.HandleFunc("POST /admin/authors/{handle}/delete", h.requireSession(h.requireCSRF(h.handleAuthorDelete)))
+	mux.HandleFunc("POST /admin/authors/{handle}/restore", h.requireSession(h.requireCSRF(h.handleAuthorRestore)))
+	// Managed topics registry (CRUD via the operator API).
+	mux.HandleFunc("GET /admin/topics", h.requireSession(h.handleTopics))
+	mux.HandleFunc("GET /admin/topics/new", h.requireSession(h.handleTopicNew))
+	mux.HandleFunc("POST /admin/topics", h.requireSession(h.requireCSRF(h.handleTopicCreate)))
+	mux.HandleFunc("GET /admin/topics/{slug}/edit", h.requireSession(h.handleTopicEdit))
+	mux.HandleFunc("POST /admin/topics/{slug}", h.requireSession(h.requireCSRF(h.handleTopicUpdate)))
+	mux.HandleFunc("POST /admin/topics/{slug}/delete", h.requireSession(h.requireCSRF(h.handleTopicDelete)))
+	mux.HandleFunc("POST /admin/topics/{slug}/restore", h.requireSession(h.requireCSRF(h.handleTopicRestore)))
 	mux.HandleFunc("GET /admin/audit", h.requireSession(h.handleAudit))
 	mux.HandleFunc("GET /admin/regenerate", h.requireSession(h.handleRegenerateForm))
 	mux.HandleFunc("POST /admin/regenerate", h.requireSession(h.requireCSRF(h.handleRegenerateSubmit)))
@@ -390,6 +434,7 @@ func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	view := detailView{
 		layoutData:   h.layoutFor(r, a.Title),
+		Slug:         a.Slug,
 		ArticleTitle: a.Title,
 		Author:       a.Author,
 		Section:      a.Section,
@@ -399,6 +444,8 @@ func (h *Handler) handleDetail(w http.ResponseWriter, r *http.Request) {
 		Meta:         metaRows(a),
 		ContentHash:  a.ContentHash,
 		CreatedAt:    a.CreatedAt.UTC().Format(time.RFC3339),
+		EditEnabled:  h.operator != nil,
+		Deleted:      a.Deleted,
 	}
 	h.renderPage(w, detailTmpl, view)
 }

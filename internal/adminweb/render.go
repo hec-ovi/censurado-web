@@ -36,7 +36,99 @@ var (
 	// create is a plain full-page form: the POST re-renders the whole page so field
 	// errors can repopulate inputs, so no standalone fragment is needed.
 	createTmpl = template.Must(template.New("create").ParseFS(tmplFS, "templates/layout.tmpl", "templates/create.tmpl"))
+	// The operator registry pages (managed authors/topics) and the article edit form.
+	// Each is a plain full-page form like create: the POST redirects on success and
+	// re-renders with an inline error on failure.
+	authorsTmpl     = template.Must(template.New("authors").ParseFS(tmplFS, "templates/layout.tmpl", "templates/authors.tmpl"))
+	authorFormTmpl  = template.Must(template.New("author_form").ParseFS(tmplFS, "templates/layout.tmpl", "templates/author_form.tmpl"))
+	topicsTmpl      = template.Must(template.New("topics").ParseFS(tmplFS, "templates/layout.tmpl", "templates/topics.tmpl"))
+	topicFormTmpl   = template.Must(template.New("topic_form").ParseFS(tmplFS, "templates/layout.tmpl", "templates/topic_form.tmpl"))
+	articleEditTmpl = template.Must(template.New("article_edit").ParseFS(tmplFS, "templates/layout.tmpl", "templates/article_edit.tmpl"))
 )
+
+// authorRow is one managed author in the registry list.
+type authorRow struct {
+	Handle  string
+	Name    string
+	Bio     string
+	Avatar  string
+	Deleted bool
+	EditURL string
+}
+
+// authorsView is the managed-authors list. Configured gates the page vs a disabled
+// note; ShowDeleted toggles tombstoned rows; ToggleURL flips that view.
+type authorsView struct {
+	layoutData
+	Configured  bool
+	ShowDeleted bool
+	ToggleURL   string
+	Rows        []authorRow
+}
+
+// authorFormView is the new/edit author form. Editing makes the handle read-only
+// (the key never changes on edit); ActionURL is the POST target; Error carries an
+// operator-API failure shown inline without losing the typed values.
+type authorFormView struct {
+	layoutData
+	Configured bool
+	Editing    bool
+	ActionURL  string
+	Handle     string
+	Name       string
+	Bio        string
+	Avatar     string
+	Error      string
+}
+
+// topicRow is one managed topic in the registry list.
+type topicRow struct {
+	Slug        string
+	Label       string
+	Description string
+	Deleted     bool
+	EditURL     string
+}
+
+// topicsView is the managed-topics list.
+type topicsView struct {
+	layoutData
+	Configured  bool
+	ShowDeleted bool
+	ToggleURL   string
+	Rows        []topicRow
+}
+
+// topicFormView is the new/edit topic form (slug read-only on edit).
+type topicFormView struct {
+	layoutData
+	Configured  bool
+	Editing     bool
+	ActionURL   string
+	Slug        string
+	Label       string
+	Description string
+	Error       string
+}
+
+// articleEditView is the article edit form. The slug is fixed (the permalink never
+// moves); Fields carries per-input validation errors and Error a top-level message
+// (e.g. an edit_conflict), both shown inline while preserving the typed values.
+type articleEditView struct {
+	layoutData
+	Configured  bool
+	Slug        string
+	Title       string
+	Body        string
+	Author      string
+	Section     string
+	Topics      string
+	PublishedAt string
+	Metadata    string
+	Deleted     bool
+	Error       string
+	Fields      map[string]string
+}
 
 // layoutData is embedded by every full-page view so the shared layout can read
 // the page title and the per-session CSRF token off the same dot.
@@ -119,6 +211,7 @@ type kv struct {
 // detailView is a single article's full page.
 type detailView struct {
 	layoutData
+	Slug         string
 	ArticleTitle string
 	Author       string
 	Section      string
@@ -128,6 +221,8 @@ type detailView struct {
 	Meta         []kv
 	ContentHash  string
 	CreatedAt    string
+	EditEnabled  bool // the operator mutation lane is wired (edit/delete buttons shown)
+	Deleted      bool // soft-deleted: show Restore instead of Delete
 }
 
 // auditRow is one submission row in the audit-log table. Every field is a plain

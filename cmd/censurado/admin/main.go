@@ -100,6 +100,16 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	// token; nil when those are unset, which hides the upload control.
 	cfg.UploadMedia = buildUploadMedia(getenv)
 
+	// The managed author/topic registries are READ directly off the store (the same
+	// repo), like the article browse; reads never break the single-writer invariant.
+	cfg.Authors = repo
+	cfg.Topics = repo
+	// Operator mutations (authors/topics CRUD, article edit/delete) POST to the same
+	// publish service over HTTP, so the admin stays a NON-WRITER. The operator token
+	// must additionally hold the admin:write scope. nil when the publish URL/token are
+	// unset, which leaves the mutation controls in their disabled state.
+	cfg.Operator = buildOperator(getenv)
+
 	handler, err := adminweb.New(cfg)
 	if err != nil {
 		fmt.Fprintln(stderr, "handler:", err)
@@ -301,6 +311,55 @@ func buildUploadMedia(getenv func(string) string) func(context.Context, string, 
 			return "", errors.New("media API returned no url")
 		}
 		return out.URL, nil
+	}
+}
+
+// buildOperator returns the closure the admin runs for an operator mutation
+// (authors/topics CRUD, article edit/delete/restore), or nil when it is not
+// configured. Like buildPublish it keeps the admin a NON-WRITER: the mutation is an
+// HTTP call to the operator API on the publish service, reusing the same URL and
+// operator token (which must also hold the admin:write scope). It returns the
+// response body on a 2xx, or an *adminweb.OperatorError decoded from the
+// problem+json body on a 4xx/5xx so the handler can render a friendly message.
+func buildOperator(getenv func(string) string) func(context.Context, string, string, any) ([]byte, error) {
+	base := strings.TrimRight(strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_URL")), "/")
+	token := strings.TrimSpace(getenv("CENSURADO_ADMIN_PUBLISH_TOKEN"))
+	if base == "" || token == "" {
+		return nil
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	return func(ctx context.Context, method, path string, body any) ([]byte, error) {
+		var rdr io.Reader
+		if body != nil {
+			raw, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("encode operator request: %w", err)
+			}
+			rdr = bytes.NewReader(raw)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, base+path, rdr)
+		if err != nil {
+			return nil, fmt.Errorf("build operator request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("contact operator API: %w", err)
+		}
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return respBody, nil
+		}
+		p := decodeProblem(respBody)
+		return nil, &adminweb.OperatorError{
+			Status: resp.StatusCode,
+			Code:   p.Code,
+			Detail: firstNonEmpty(p.Detail, p.Code),
+		}
 	}
 }
 

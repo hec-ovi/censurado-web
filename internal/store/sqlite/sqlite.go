@@ -198,6 +198,101 @@ func upsertTx(ctx context.Context, tx *sql.Tx, a domain.Article) (domain.Article
 	return stored, created, nil
 }
 
+// isUniqueViolation reports whether err is a SQLite UNIQUE-constraint failure.
+// In UpdateArticle the only UNIQUE column the update touches is content_hash (the
+// slug is preserved), so a unique violation there is a content-hash collision.
+func isUniqueViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// UpdateArticle mutates the article identified by a.Slug in place: id, slug, and
+// created_at (and the tombstone) are preserved, the mutable fields are replaced,
+// and the topic set is rewritten, all in one transaction. The caller supplies the
+// recomputed a.ContentHash. Returns store.ErrNotFound when no row has the slug and
+// *store.EditConflictError when the new content hash collides with a different
+// article.
+func (s *Store) UpdateArticle(ctx context.Context, a domain.Article) (domain.Article, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	defer tx.Rollback()
+
+	var id int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM articles WHERE slug = ?`, a.Slug).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Article{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.Article{}, err
+	}
+
+	meta, err := marshalMeta(a.Metadata)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE articles SET title=?, body=?, author=?, section=?, published_at=?, content_hash=?, metadata=? WHERE id=?`,
+		a.Title, a.Body, a.Author, a.Section,
+		a.PublishedAt.UTC().Truncate(time.Second).Format(timeLayout), a.ContentHash, meta, id,
+	); err != nil {
+		if isUniqueViolation(err) {
+			return domain.Article{}, &store.EditConflictError{Slug: a.Slug, ContentHash: a.ContentHash}
+		}
+		return domain.Article{}, fmt.Errorf("update article: %w", err)
+	}
+
+	// Replace the topic set so an edit that adds or removes a topic is reflected
+	// exactly, within the same transaction.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM article_topics WHERE article_id = ?`, id); err != nil {
+		return domain.Article{}, fmt.Errorf("clear topics: %w", err)
+	}
+	for _, topic := range a.Topics {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO article_topics (article_id,topic) VALUES (?,?)`, id, topic); err != nil {
+			return domain.Article{}, fmt.Errorf("insert topic: %w", err)
+		}
+	}
+
+	stored, err := getByID(ctx, tx, id)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Article{}, err
+	}
+	return stored, nil
+}
+
+// DeleteArticle soft-deletes the article by stamping a whole-second RFC3339
+// tombstone, so it is hidden from the default Find/Count but kept for audit and
+// restore. Returns store.ErrNotFound for an absent slug; idempotent on an
+// already-deleted row (the tombstone is re-stamped).
+func (s *Store) DeleteArticle(ctx context.Context, slug string) error {
+	now := time.Now().UTC().Truncate(time.Second).Format(timeLayout)
+	res, err := s.db.ExecContext(ctx, `UPDATE articles SET deleted_at = ? WHERE slug = ?`, now, slug)
+	if err != nil {
+		return fmt.Errorf("delete article: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// RestoreArticle clears the tombstone so a soft-deleted article is active again.
+// Returns store.ErrNotFound for an absent slug.
+func (s *Store) RestoreArticle(ctx context.Context, slug string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE articles SET deleted_at = '' WHERE slug = ?`, slug)
+	if err != nil {
+		return fmt.Errorf("restore article: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 // BySlug returns the article with the given slug, or store.ErrNotFound.
 func (s *Store) BySlug(ctx context.Context, slug string) (domain.Article, error) {
 	var id int64
@@ -306,13 +401,18 @@ func buildSelect(f store.Filter, count bool) (string, []any) {
 	if count {
 		b.WriteString("SELECT COUNT(*) FROM articles a")
 	} else {
-		b.WriteString("SELECT a.id,a.slug,a.title,a.body,a.author,a.section,a.published_at,a.content_hash,a.metadata,a.created_at FROM articles a")
+		b.WriteString("SELECT a.id,a.slug,a.title,a.body,a.author,a.section,a.published_at,a.content_hash,a.metadata,a.created_at,a.deleted_at FROM articles a")
 	}
 	if f.Topic != "" {
 		b.WriteString(" JOIN article_topics t ON t.article_id = a.id AND t.topic = ?")
 		args = append(args, f.Topic)
 	}
 	b.WriteString(" WHERE 1=1")
+	// Soft-deleted rows are hidden by default; the admin opts into them. The public
+	// generator passes the zero Filter and so never sees a tombstoned article.
+	if !f.IncludeDeleted {
+		b.WriteString(" AND a.deleted_at = ''")
+	}
 	if f.Section != "" {
 		b.WriteString(" AND a.section = ?")
 		args = append(args, f.Section)
@@ -420,7 +520,7 @@ func likeEscape(s string) string {
 
 func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
 	row := q.QueryRowContext(ctx,
-		`SELECT id,slug,title,body,author,section,published_at,content_hash,metadata,created_at
+		`SELECT id,slug,title,body,author,section,published_at,content_hash,metadata,created_at,deleted_at
 		 FROM articles WHERE id = ?`, id)
 	a, _, err := scanArticle(row)
 	if err != nil {
@@ -438,10 +538,10 @@ func getByID(ctx context.Context, q querier, id int64) (domain.Article, error) {
 
 func scanArticle(sc scanner) (domain.Article, int64, error) {
 	var (
-		id                                                           int64
-		slug, title, body, author, section, pub, hash, meta, created string
+		id                                                                    int64
+		slug, title, body, author, section, pub, hash, meta, created, deleted string
 	)
-	if err := sc.Scan(&id, &slug, &title, &body, &author, &section, &pub, &hash, &meta, &created); err != nil {
+	if err := sc.Scan(&id, &slug, &title, &body, &author, &section, &pub, &hash, &meta, &created, &deleted); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Article{}, 0, store.ErrNotFound
 		}
@@ -469,6 +569,7 @@ func scanArticle(sc scanner) (domain.Article, int64, error) {
 		PublishedAt: pubT,
 		ContentHash: hash,
 		Metadata:    m,
+		Deleted:     deleted != "",
 		CreatedAt:   createdT,
 		Topics:      []string{},
 	}, id, nil

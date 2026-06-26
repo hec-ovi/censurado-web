@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS articles (
   published_at TEXT NOT NULL,
   content_hash TEXT NOT NULL UNIQUE,
   metadata     TEXT NOT NULL DEFAULT '{}',
+  deleted_at   TEXT NOT NULL DEFAULT '',
   created_at   TEXT NOT NULL
 ) STRICT;
 

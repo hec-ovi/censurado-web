@@ -66,6 +66,12 @@ type Filter struct {
 	Order  Order
 	Limit  int // 0 = no limit
 	Offset int
+
+	// IncludeDeleted is an admin-only flag. By default Find and Count EXCLUDE
+	// soft-deleted (tombstoned) articles, so the public generator (which passes the
+	// zero Filter) never renders a removed article. The admin sets this true to see
+	// tombstoned rows, e.g. to restore one.
+	IncludeDeleted bool
 }
 
 // Facet is one distinct filter value and how many articles carry it. It feeds the
@@ -118,6 +124,20 @@ func (e *BatchConflictError) Error() string {
 	return fmt.Sprintf("store: batch item %d reused idempotency key %q for a different article", e.Index, e.IdempotencyKey)
 }
 
+// EditConflictError reports that an UpdateArticle would set a content hash already
+// held by a DIFFERENT article (the content_hash UNIQUE constraint). The edit is
+// rolled back and nothing is written, so the caller can answer with a 409 instead
+// of leaking a raw store error. Editing a row to its own existing content hash is
+// a no-op-safe success and never produces this.
+type EditConflictError struct {
+	Slug        string
+	ContentHash string
+}
+
+func (e *EditConflictError) Error() string {
+	return fmt.Sprintf("store: editing %q would collide with an existing article on content hash %s", e.Slug, e.ContentHash)
+}
+
 // Repository is the article source of truth. Implementations must be safe for a
 // single writer with concurrent readers.
 type Repository interface {
@@ -144,6 +164,23 @@ type Repository interface {
 	// Facets returns the distinct filter values present with their article counts,
 	// for the admin filter UI. Read-only aggregate. Deterministic ordering.
 	Facets(ctx context.Context) (Facets, error)
+	// UpdateArticle mutates the existing article identified by a.Slug in place,
+	// preserving its id, slug, and created_at (the permalink stays stable) while
+	// replacing the mutable fields (title/body/author/section/published_at/
+	// content_hash/metadata) and its full topic set. The caller supplies the
+	// recomputed a.ContentHash; the store does not hash. Returns ErrNotFound when no
+	// row has the slug, and *EditConflictError when the new content hash collides
+	// with a different article. This is the operator edit lane, distinct from the
+	// append-only publish path.
+	UpdateArticle(ctx context.Context, a domain.Article) (domain.Article, error)
+	// DeleteArticle soft-deletes the article (sets a tombstone), so it is hidden
+	// from the default Find/Count but kept for audit and restore. ErrNotFound on an
+	// absent slug; idempotent on an already-deleted row. A later idempotent publish
+	// replay does NOT resurrect a deleted article.
+	DeleteArticle(ctx context.Context, slug string) error
+	// RestoreArticle clears the tombstone so a soft-deleted article is active again.
+	// ErrNotFound on an absent slug.
+	RestoreArticle(ctx context.Context, slug string) error
 	// Close releases resources held by the store.
 	Close() error
 }

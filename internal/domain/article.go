@@ -27,7 +27,12 @@ type Article struct {
 	PublishedAt time.Time      `json:"published_at"`
 	ContentHash string         `json:"content_hash"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
+	// Deleted reports whether the article is soft-deleted (tombstoned in the store).
+	// It is server-derived state, never part of ContentHash (which is over
+	// title/body/author/section only), and is omitted from JSON when false so an
+	// active article serializes exactly as before.
+	Deleted   bool      `json:"deleted,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // PublishInput is what an author agent submits. It mirrors

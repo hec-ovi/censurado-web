@@ -95,3 +95,14 @@ func TestSQLiteTopicStore(t *testing.T) {
 
 	storetest.RunTopicStore(t, repo)
 }
+
+func TestSQLiteArticleMutations(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mutations.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunArticleMutations(t, repo)
+}

@@ -1377,3 +1377,190 @@ func RunTopicStore(t *testing.T, ts store.TopicStore) {
 		}
 	})
 }
+
+// RunArticleMutations executes the article soft-delete + edit conformance suite
+// against repo, which must be empty. Running the identical suite against both
+// SQLite and Postgres proves DeleteArticle/RestoreArticle/UpdateArticle and the
+// critical replay-after-delete invariant behave identically on the two engines.
+// Subtests run sequentially and share the seeded state; it does not call
+// t.Parallel.
+func RunArticleMutations(t *testing.T, repo store.Repository) {
+	ctx := context.Background()
+	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+
+	seed := []domain.Article{
+		mustArticle(t, domain.PublishInput{Title: "Alpha story", Body: "a", Author: "ada", Section: "tech", Topics: []string{"go"}}, base),
+		mustArticle(t, domain.PublishInput{Title: "Bravo story", Body: "b", Author: "bo", Section: "politics", Topics: []string{"election"}}, base.Add(24*time.Hour)),
+	}
+	for _, a := range seed {
+		if _, err := repo.Upsert(ctx, a); err != nil {
+			t.Fatalf("seed upsert %q: %v", a.Slug, err)
+		}
+	}
+
+	t.Run("DeleteArticle tombstones: BySlug still finds it, default Find/Count exclude it, IncludeDeleted includes it", func(t *testing.T) {
+		if err := repo.DeleteArticle(ctx, seed[0].Slug); err != nil {
+			t.Fatalf("DeleteArticle: %v", err)
+		}
+		got, err := repo.BySlug(ctx, seed[0].Slug)
+		if err != nil {
+			t.Fatalf("BySlug(deleted): %v", err)
+		}
+		if !got.Deleted {
+			t.Errorf("BySlug(deleted).Deleted = false, want true (admin must still see it)")
+		}
+		def, err := repo.Find(ctx, store.Filter{})
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		if contains(slugsOf(def), seed[0].Slug) {
+			t.Errorf("deleted article %q still in default Find", seed[0].Slug)
+		}
+		if n, err := repo.Count(ctx, store.Filter{}); err != nil || n != 1 {
+			t.Errorf("Count(default) = %d (err %v), want 1 (deleted excluded)", n, err)
+		}
+		all, err := repo.Find(ctx, store.Filter{IncludeDeleted: true})
+		if err != nil {
+			t.Fatalf("Find(IncludeDeleted): %v", err)
+		}
+		if !contains(slugsOf(all), seed[0].Slug) {
+			t.Errorf("deleted article %q missing from IncludeDeleted Find", seed[0].Slug)
+		}
+		if n, _ := repo.Count(ctx, store.Filter{IncludeDeleted: true}); n != 2 {
+			t.Errorf("Count(IncludeDeleted) = %d, want 2", n)
+		}
+		flagged := false
+		for _, a := range all {
+			if a.Slug == seed[0].Slug {
+				flagged = a.Deleted
+			}
+		}
+		if !flagged {
+			t.Errorf("IncludeDeleted Find did not flag %q Deleted=true", seed[0].Slug)
+		}
+	})
+
+	t.Run("RestoreArticle re-includes it", func(t *testing.T) {
+		if err := repo.RestoreArticle(ctx, seed[0].Slug); err != nil {
+			t.Fatalf("RestoreArticle: %v", err)
+		}
+		def, err := repo.Find(ctx, store.Filter{})
+		if err != nil {
+			t.Fatalf("Find: %v", err)
+		}
+		if !contains(slugsOf(def), seed[0].Slug) {
+			t.Errorf("restored article %q missing from default Find", seed[0].Slug)
+		}
+		got, _ := repo.BySlug(ctx, seed[0].Slug)
+		if got.Deleted {
+			t.Errorf("restored article Deleted=true, want false")
+		}
+	})
+
+	t.Run("DeleteArticle and RestoreArticle on a missing slug return ErrNotFound", func(t *testing.T) {
+		if err := repo.DeleteArticle(ctx, "no-such"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("DeleteArticle(missing) = %v, want ErrNotFound", err)
+		}
+		if err := repo.RestoreArticle(ctx, "no-such"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("RestoreArticle(missing) = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("Replay after delete returns the prior identity and does NOT un-delete (the critical invariant)", func(t *testing.T) {
+		art := mustArticle(t, domain.PublishInput{Title: "Charlie story", Body: "c", Author: "cy", Section: "tech", Topics: []string{"ai"}}, base.Add(48*time.Hour))
+		item := store.UpsertItem{Article: art, IdempotencyKey: "k-charlie", Scopes: []string{"articles:write"}}
+		res, err := repo.UpsertMany(ctx, []store.UpsertItem{item})
+		if err != nil {
+			t.Fatalf("UpsertMany seed: %v", err)
+		}
+		if !res[0].Created {
+			t.Fatalf("seed item Created=false, want true")
+		}
+		if err := repo.DeleteArticle(ctx, art.Slug); err != nil {
+			t.Fatalf("DeleteArticle: %v", err)
+		}
+		// Replay the SAME idempotency key: the publish lane must return the prior
+		// identity (Created=false) and write nothing, so the tombstone stands.
+		replay, err := repo.UpsertMany(ctx, []store.UpsertItem{item})
+		if err != nil {
+			t.Fatalf("UpsertMany replay: %v", err)
+		}
+		if replay[0].Created {
+			t.Errorf("replay Created=true, want false (idempotent)")
+		}
+		got, err := repo.BySlug(ctx, art.Slug)
+		if err != nil {
+			t.Fatalf("BySlug after replay: %v", err)
+		}
+		if !got.Deleted {
+			t.Errorf("replay resurrected the tombstoned article (Deleted=false), want it to stay deleted")
+		}
+		def, _ := repo.Find(ctx, store.Filter{})
+		if contains(slugsOf(def), art.Slug) {
+			t.Errorf("replayed-after-delete article %q reappeared in default Find", art.Slug)
+		}
+	})
+
+	t.Run("UpdateArticle edits in place: id+slug+created_at preserved, content+topics replaced", func(t *testing.T) {
+		before, err := repo.BySlug(ctx, seed[1].Slug)
+		if err != nil {
+			t.Fatalf("BySlug: %v", err)
+		}
+		edited := before
+		edited.Title = "Bravo story (edited)"
+		edited.Body = "b edited"
+		edited.Topics = []string{"election", "results"}
+		edited.ContentHash = domain.ContentHash(edited.Title, edited.Body, edited.Author, edited.Section)
+		got, err := repo.UpdateArticle(ctx, edited)
+		if err != nil {
+			t.Fatalf("UpdateArticle: %v", err)
+		}
+		if got.ID != before.ID || got.Slug != before.Slug {
+			t.Errorf("id/slug changed: %s/%s -> %s/%s (want preserved)", before.ID, before.Slug, got.ID, got.Slug)
+		}
+		if !got.CreatedAt.UTC().Equal(before.CreatedAt.UTC()) {
+			t.Errorf("CreatedAt changed: %v -> %v (want preserved)", before.CreatedAt.UTC(), got.CreatedAt.UTC())
+		}
+		if got.Title != "Bravo story (edited)" || got.ContentHash != edited.ContentHash {
+			t.Errorf("edit not applied: %+v", got)
+		}
+		if !setEqual(got.Topics, []string{"election", "results"}) {
+			t.Errorf("topics = %v, want [election results]", got.Topics)
+		}
+		reread, _ := repo.BySlug(ctx, seed[1].Slug)
+		if reread.ContentHash != edited.ContentHash {
+			t.Errorf("BySlug content hash = %q, want %q", reread.ContentHash, edited.ContentHash)
+		}
+	})
+
+	t.Run("UpdateArticle to a content hash held by another article returns EditConflictError and writes nothing", func(t *testing.T) {
+		a0, _ := repo.BySlug(ctx, seed[0].Slug)
+		a1, _ := repo.BySlug(ctx, seed[1].Slug)
+		clash := a1
+		clash.Title = a0.Title
+		clash.Body = a0.Body
+		clash.Author = a0.Author
+		clash.Section = a0.Section
+		clash.ContentHash = a0.ContentHash // collides with seed[0]
+		_, err := repo.UpdateArticle(ctx, clash)
+		var ce *store.EditConflictError
+		if !errors.As(err, &ce) {
+			t.Fatalf("err = %v, want *store.EditConflictError", err)
+		}
+		if ce.Slug != a1.Slug || ce.ContentHash != a0.ContentHash {
+			t.Errorf("conflict = %+v, want slug=%s hash=%s", ce, a1.Slug, a0.ContentHash)
+		}
+		after, _ := repo.BySlug(ctx, seed[1].Slug)
+		if after.ContentHash == a0.ContentHash {
+			t.Errorf("conflicting edit was applied; want rolled back (content hash unchanged)")
+		}
+	})
+
+	t.Run("UpdateArticle on a missing slug returns ErrNotFound", func(t *testing.T) {
+		ghost := seed[0]
+		ghost.Slug = "no-such-slug"
+		if _, err := repo.UpdateArticle(ctx, ghost); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("UpdateArticle(missing) = %v, want ErrNotFound", err)
+		}
+	})
+}

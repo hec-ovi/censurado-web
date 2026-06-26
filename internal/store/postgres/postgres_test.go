@@ -180,3 +180,22 @@ func TestPostgresTopicStore(t *testing.T) {
 
 	storetest.RunTopicStore(t, repo)
 }
+
+// TestPostgresArticleMutations runs the shared article soft-delete + edit
+// conformance suite against a real Postgres when CENSURADO_TEST_POSTGRES_DSN is
+// set, proving DeleteArticle/RestoreArticle/UpdateArticle and the
+// replay-after-delete invariant behave identically to SQLite.
+func TestPostgresArticleMutations(t *testing.T) {
+	dsn := os.Getenv("CENSURADO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CENSURADO_TEST_POSTGRES_DSN to run the Postgres conformance suite")
+	}
+	repo, err := postgres.Open(dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	resetPostgres(t, dsn)
+
+	storetest.RunArticleMutations(t, repo)
+}

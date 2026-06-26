@@ -276,7 +276,7 @@ func TestReplay_RecoversBatchArchive(t *testing.T) {
 	auth := publish.NewStaticKeyAuth()
 	auth.Add("ak_ed", publish.HashSecret(secret), "editor", publish.ScopeWrite, publish.ScopePublishAny)
 	h := publish.NewHandler(srcRepo, srcRepo, auth, func() time.Time { return base }).WithArchive(arch)
-	srv := publish.NewServerHandler(h, nil, nil)
+	srv := publish.NewServerHandler(h, nil, nil, nil)
 
 	body := `{"articles":[
 		{"title":"Batch A","body":"b","author":"ada","section":"tech","idempotency_key":"ba"},

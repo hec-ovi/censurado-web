@@ -19,7 +19,14 @@ import "net/http"
 // (authenticated upload, rate-limited like a write) and GET /media/{name} (public,
 // immutable read, not rate-limited since it is cacheable and keyless). A nil mediaH
 // leaves media off entirely.
-func NewServerHandler(h *Handler, limiter *RateLimiter, mediaH *MediaHandler) http.Handler {
+//
+// When readH is non-nil, the authenticated JSON read API is mounted: GET /authors,
+// GET /topics, GET /articles, and GET /articles/{slug}. These are method-specific
+// patterns, so GET /articles takes precedence over the method-less /articles write
+// route for GET while POST still reaches the write handler; reads are not rate
+// limited (idempotent, cacheable). A nil readH leaves the read API off, so the
+// write handler keeps answering 405 for a GET /articles.
+func NewServerHandler(h *Handler, limiter *RateLimiter, mediaH *MediaHandler, readH *ReadHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +41,13 @@ func NewServerHandler(h *Handler, limiter *RateLimiter, mediaH *MediaHandler) ht
 	if mediaH != nil {
 		mux.Handle("POST /media", limiter.Wrap(http.HandlerFunc(mediaH.ServeUpload)))
 		mux.HandleFunc("GET /media/{name}", mediaH.ServeFile)
+	}
+
+	if readH != nil {
+		mux.HandleFunc("GET /authors", readH.ServeAuthors)
+		mux.HandleFunc("GET /topics", readH.ServeTopics)
+		mux.HandleFunc("GET /articles", readH.ServeArticles)
+		mux.HandleFunc("GET /articles/{slug}", readH.ServeArticle)
 	}
 
 	return mux

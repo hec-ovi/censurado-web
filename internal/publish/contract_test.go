@@ -34,7 +34,7 @@ func validateAgainst(t *testing.T, sch *jsonschema.Schema, b []byte, what string
 // against the frozen batch contracts.
 func TestBatchContracts_RequestAndResponse(t *testing.T) {
 	h, _ := newHandler(t)
-	srv := publish.NewServerHandler(h, nil, nil)
+	srv := publish.NewServerHandler(h, nil, nil, nil)
 
 	reqBody := batchBody(t, []bItem{
 		{Title: "Contract one", Body: "b1", Author: "ada", Section: "tech", Topics: []string{"go"}, Metadata: map[string]any{"image": "/media/" + hex64() + ".jpg"}, Key: "ck1"},

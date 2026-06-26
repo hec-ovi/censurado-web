@@ -230,8 +230,13 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		return exitConfig
 	}
 
+	// The same *sqlite.Store backs the authenticated JSON read API (GET /authors,
+	// /topics, /articles, /articles/{slug}): it satisfies the Repository plus the
+	// author and topic registries, so a CLI and the brain can list and mirror.
+	readH := publish.NewReadHandler(repo, auth)
+
 	limiter := publish.NewRateLimiter(*f.rate, *f.burst, time.Now)
-	handler := publish.NewServerHandler(h, limiter, mediaH)
+	handler := publish.NewServerHandler(h, limiter, mediaH, readH)
 
 	srv := newServer(*f.addr, handler)
 

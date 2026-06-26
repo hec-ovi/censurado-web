@@ -19,7 +19,7 @@ func frozenServer(t *testing.T, rate float64, burst int) http.Handler {
 	h, _ := newHandler(t)
 	clock := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	limiter := publish.NewRateLimiter(rate, burst, func() time.Time { return clock })
-	return publish.NewServerHandler(h, limiter, nil)
+	return publish.NewServerHandler(h, limiter, nil, nil)
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {

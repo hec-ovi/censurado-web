@@ -41,3 +41,22 @@ CREATE TABLE IF NOT EXISTS submissions (
   scopes          TEXT NOT NULL DEFAULT '',
   created_at      TEXT NOT NULL
 ) STRICT;
+
+-- authors is the operator-owned author registry: the canonical public identity
+-- the site renders and the brain mirrors. handle matches the articles.author
+-- column as a soft string reference (no foreign key, so existing articles are
+-- unaffected). deleted_at is a tombstone ('' = active) so a removed author is
+-- hidden from the default listing but kept for audit and re-activation;
+-- created_at/updated_at/deleted_at are whole-second RFC3339 TEXT, the same
+-- encoding the submissions ledger uses.
+CREATE TABLE IF NOT EXISTS authors (
+  id         INTEGER PRIMARY KEY,
+  handle     TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
+  bio        TEXT NOT NULL DEFAULT '',
+  avatar     TEXT NOT NULL DEFAULT '',
+  metadata   TEXT NOT NULL DEFAULT '{}',
+  deleted_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;

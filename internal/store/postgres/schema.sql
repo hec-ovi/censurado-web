@@ -41,3 +41,20 @@ CREATE TABLE IF NOT EXISTS submissions (
   scopes          TEXT NOT NULL DEFAULT '',
   created_at      TIMESTAMPTZ NOT NULL
 );
+
+-- authors is the operator-owned author registry (see the SQLite schema for the
+-- contract). handle is a soft string reference to articles.author (no FK).
+-- created_at/updated_at/deleted_at are whole-second RFC3339 TEXT (not TIMESTAMPTZ)
+-- for byte-identical parity with the SQLite adapter and so deleted_at can use ''
+-- as the active sentinel.
+CREATE TABLE IF NOT EXISTS authors (
+  id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handle     TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
+  bio        TEXT NOT NULL DEFAULT '',
+  avatar     TEXT NOT NULL DEFAULT '',
+  metadata   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  deleted_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

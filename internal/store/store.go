@@ -184,3 +184,43 @@ type SubmissionLog interface {
 	// then a stable tiebreak), for the admin audit log. Read-only.
 	ListSubmissions(ctx context.Context, f ListSubmissionsFilter) ([]Submission, error)
 }
+
+// Author is a managed author profile: the canonical, operator-owned identity the
+// public site renders and the brain mirrors. Handle is the stable key and matches
+// the articles.author column as a soft string reference (not a foreign key), so
+// existing articles whose author predates this registry are unaffected. Deleted
+// reports whether the author is soft-deleted (tombstoned); a tombstoned author is
+// hidden from the default listing but kept for audit and re-activation.
+type Author struct {
+	ID        string
+	Handle    string
+	Name      string
+	Bio       string
+	Avatar    string
+	Metadata  map[string]any
+	Deleted   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// AuthorStore is the managed-author registry. It is a separate concern from the
+// article Repository (like SubmissionLog) so the article contract stays focused
+// even when one adapter implements both. Writes go through the same single writer
+// as the publish path.
+type AuthorStore interface {
+	// UpsertAuthor creates or updates an author keyed on Handle. On create it sets
+	// CreatedAt and UpdatedAt from the supplied values (defaulting to now when
+	// zero); on an existing handle it updates the mutable fields, advances
+	// UpdatedAt, preserves the stored CreatedAt, and clears any tombstone
+	// (re-activating a previously deleted handle). It returns the stored row.
+	UpsertAuthor(ctx context.Context, a Author) (Author, error)
+	// AuthorByHandle returns the author for the handle, or found=false. A
+	// soft-deleted author is still returned (found=true, Deleted=true).
+	AuthorByHandle(ctx context.Context, handle string) (Author, bool, error)
+	// ListAuthors returns authors ordered by handle ascending in byte order, so
+	// the two adapters agree. Tombstoned authors are excluded unless includeDeleted.
+	ListAuthors(ctx context.Context, includeDeleted bool) ([]Author, error)
+	// DeleteAuthor soft-deletes the author by setting a tombstone. Deleting an
+	// absent handle returns ErrNotFound.
+	DeleteAuthor(ctx context.Context, handle string) error
+}

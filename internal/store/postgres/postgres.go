@@ -635,3 +635,136 @@ func unmarshalMeta(b []byte) (map[string]any, error) {
 	}
 	return m, nil
 }
+
+const authorCols = "id,handle,name,bio,avatar,metadata,deleted_at,created_at,updated_at"
+
+// scanAuthor decodes one authors row. metadata is JSONB (scanned as bytes) and
+// round-trips through the shared marshal/unmarshal helpers; created_at/updated_at/
+// deleted_at are whole-second RFC3339 TEXT (deleted_at "" means active), so Deleted
+// is derived from the tombstone being non-empty. Identical observable result to the
+// SQLite adapter.
+func scanAuthor(sc scanner) (store.Author, error) {
+	var (
+		id                        int64
+		handle, name, bio, avatar string
+		deleted, created, updated string
+		meta                      []byte
+	)
+	if err := sc.Scan(&id, &handle, &name, &bio, &avatar, &meta, &deleted, &created, &updated); err != nil {
+		return store.Author{}, err
+	}
+	m, err := unmarshalMeta(meta)
+	if err != nil {
+		return store.Author{}, err
+	}
+	createdT, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return store.Author{}, fmt.Errorf("parse author created_at: %w", err)
+	}
+	updatedT, err := time.Parse(time.RFC3339, updated)
+	if err != nil {
+		return store.Author{}, fmt.Errorf("parse author updated_at: %w", err)
+	}
+	return store.Author{
+		ID:        strconv.FormatInt(id, 10),
+		Handle:    handle,
+		Name:      name,
+		Bio:       bio,
+		Avatar:    avatar,
+		Metadata:  m,
+		Deleted:   deleted != "",
+		CreatedAt: createdT,
+		UpdatedAt: updatedT,
+	}, nil
+}
+
+// UpsertAuthor creates or updates an author keyed on handle. On create it writes
+// the supplied CreatedAt/UpdatedAt (defaulting to now when zero); on an existing
+// handle it updates the mutable fields, advances updated_at, preserves created_at,
+// and clears the tombstone so a previously deleted handle is re-activated. Behavior
+// is identical to the SQLite adapter (proven by the shared conformance suite).
+func (s *Store) UpsertAuthor(ctx context.Context, a store.Author) (store.Author, error) {
+	meta, err := marshalMeta(a.Metadata)
+	if err != nil {
+		return store.Author{}, err
+	}
+	created := a.CreatedAt
+	if created.IsZero() {
+		created = time.Now()
+	}
+	updated := a.UpdatedAt
+	if updated.IsZero() {
+		updated = created
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO authors (handle,name,bio,avatar,metadata,deleted_at,created_at,updated_at)
+		 VALUES ($1,$2,$3,$4,$5::jsonb,'',$6,$7)
+		 ON CONFLICT (handle) DO UPDATE SET
+		   name=excluded.name, bio=excluded.bio, avatar=excluded.avatar,
+		   metadata=excluded.metadata, deleted_at='', updated_at=excluded.updated_at`,
+		a.Handle, a.Name, a.Bio, a.Avatar, meta,
+		created.UTC().Truncate(time.Second).Format(time.RFC3339),
+		updated.UTC().Truncate(time.Second).Format(time.RFC3339),
+	); err != nil {
+		return store.Author{}, fmt.Errorf("upsert author: %w", err)
+	}
+	got, _, err := s.AuthorByHandle(ctx, a.Handle)
+	if err != nil {
+		return store.Author{}, err
+	}
+	return got, nil
+}
+
+// AuthorByHandle returns the author for the handle, or found=false. A soft-deleted
+// author is still returned (found=true, Deleted=true) so callers can re-activate it.
+func (s *Store) AuthorByHandle(ctx context.Context, handle string) (store.Author, bool, error) {
+	a, err := scanAuthor(s.db.QueryRowContext(ctx,
+		`SELECT `+authorCols+` FROM authors WHERE handle = $1`, handle))
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Author{}, false, nil
+	}
+	if err != nil {
+		return store.Author{}, false, err
+	}
+	return a, true, nil
+}
+
+// ListAuthors returns authors ordered by handle ascending. The tie-break is pinned
+// to COLLATE "C" (raw byte order) so it matches SQLite's default BINARY collation
+// for any handle set. Tombstoned authors are excluded unless includeDeleted.
+func (s *Store) ListAuthors(ctx context.Context, includeDeleted bool) ([]store.Author, error) {
+	q := `SELECT ` + authorCols + ` FROM authors`
+	if !includeDeleted {
+		q += ` WHERE deleted_at = ''`
+	}
+	q += ` ORDER BY handle COLLATE "C" ASC`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Author
+	for rows.Next() {
+		a, err := scanAuthor(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// DeleteAuthor soft-deletes the author by setting a whole-second RFC3339 tombstone.
+// Deleting an absent handle returns store.ErrNotFound.
+func (s *Store) DeleteAuthor(ctx context.Context, handle string) error {
+	now := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE authors SET deleted_at = $1, updated_at = $2 WHERE handle = $3`, now, now, handle)
+	if err != nil {
+		return fmt.Errorf("delete author: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}

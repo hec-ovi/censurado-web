@@ -73,3 +73,14 @@ func TestSQLiteListSubmissions(t *testing.T) {
 
 	storetest.RunListSubmissions(t, repo)
 }
+
+func TestSQLiteAuthorStore(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "authors.db")
+	repo, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	storetest.RunAuthorStore(t, repo)
+}

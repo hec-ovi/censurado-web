@@ -995,3 +995,200 @@ func RunUpsertMany(t *testing.T, repo store.Repository) {
 		}
 	})
 }
+
+func handlesOf(as []store.Author) []string {
+	out := make([]string, len(as))
+	for i, a := range as {
+		out[i] = a.Handle
+	}
+	return out
+}
+
+func contains(ss []string, v string) bool {
+	for _, s := range ss {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+func assertAuthorEqual(t *testing.T, got, want store.Author) {
+	t.Helper()
+	if got.Handle != want.Handle {
+		t.Errorf("Handle = %q, want %q", got.Handle, want.Handle)
+	}
+	if got.Name != want.Name {
+		t.Errorf("Name = %q, want %q", got.Name, want.Name)
+	}
+	if got.Bio != want.Bio {
+		t.Errorf("Bio = %q, want %q", got.Bio, want.Bio)
+	}
+	if got.Avatar != want.Avatar {
+		t.Errorf("Avatar = %q, want %q", got.Avatar, want.Avatar)
+	}
+	if len(got.Metadata) != len(want.Metadata) {
+		t.Errorf("Metadata = %v, want %v", got.Metadata, want.Metadata)
+	}
+	for k, v := range want.Metadata {
+		if got.Metadata[k] != v {
+			t.Errorf("Metadata[%q] = %v, want %v", k, got.Metadata[k], v)
+		}
+	}
+	if !got.CreatedAt.UTC().Equal(want.CreatedAt.UTC().Truncate(time.Second)) {
+		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt.UTC(), want.CreatedAt.UTC().Truncate(time.Second))
+	}
+}
+
+// RunAuthorStore executes the AuthorStore conformance suite against as, which must
+// back an empty authors table. Running the identical suite against both SQLite and
+// Postgres is what proves the registry round-trips every field, orders by handle in
+// byte order (SQLite BINARY default; Postgres COLLATE "C" pin), and tombstones and
+// re-activates identically on the two engines. Subtests run sequentially and share
+// the seeded state; it does not call t.Parallel.
+func RunAuthorStore(t *testing.T, as store.AuthorStore) {
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("AuthorByHandle on a missing handle reports not found", func(t *testing.T) {
+		got, found, err := as.AuthorByHandle(ctx, "ghost")
+		if err != nil {
+			t.Fatalf("AuthorByHandle: %v", err)
+		}
+		if found {
+			t.Errorf("found = true for missing handle, want false")
+		}
+		if got.Handle != "" || got.ID != "" {
+			t.Errorf("got = %+v for missing handle, want zero Author", got)
+		}
+	})
+
+	lara := store.Author{
+		Handle: "lara-arianna", Name: "Lara Arianna", Bio: "Soy Lara.", Avatar: "/a/lara.png",
+		Metadata: map[string]any{"beat": "politics"}, CreatedAt: base, UpdatedAt: base,
+	}
+
+	t.Run("UpsertAuthor creates then AuthorByHandle round-trips every field", func(t *testing.T) {
+		stored, err := as.UpsertAuthor(ctx, lara)
+		if err != nil {
+			t.Fatalf("UpsertAuthor: %v", err)
+		}
+		if stored.ID == "" {
+			t.Errorf("empty ID, want store-assigned")
+		}
+		if stored.Deleted {
+			t.Errorf("Deleted = true on create, want false")
+		}
+		got, found, err := as.AuthorByHandle(ctx, lara.Handle)
+		if err != nil {
+			t.Fatalf("AuthorByHandle: %v", err)
+		}
+		if !found {
+			t.Fatalf("found = false after create, want true")
+		}
+		assertAuthorEqual(t, got, lara)
+	})
+
+	t.Run("UpsertAuthor on an existing handle updates in place (created_at preserved, updated_at advances)", func(t *testing.T) {
+		before, _, _ := as.AuthorByHandle(ctx, lara.Handle)
+		edit := lara
+		edit.Name = "Lara A."
+		edit.Bio = "Bio editada."
+		edit.Metadata = map[string]any{"beat": "politics", "edited": "yes"}
+		edit.UpdatedAt = base.Add(48 * time.Hour)
+		stored, err := as.UpsertAuthor(ctx, edit)
+		if err != nil {
+			t.Fatalf("UpsertAuthor update: %v", err)
+		}
+		if stored.ID != before.ID {
+			t.Errorf("ID changed on update: %s -> %s (want same row)", before.ID, stored.ID)
+		}
+		if stored.Name != "Lara A." || stored.Bio != "Bio editada." {
+			t.Errorf("mutable fields not updated: %+v", stored)
+		}
+		if !stored.CreatedAt.UTC().Equal(base) {
+			t.Errorf("CreatedAt = %v, want preserved %v", stored.CreatedAt.UTC(), base)
+		}
+		if !stored.UpdatedAt.UTC().Equal(base.Add(48 * time.Hour)) {
+			t.Errorf("UpdatedAt = %v, want advanced to %v", stored.UpdatedAt.UTC(), base.Add(48*time.Hour))
+		}
+		all, err := as.ListAuthors(ctx, true)
+		if err != nil {
+			t.Fatalf("ListAuthors: %v", err)
+		}
+		n := 0
+		for _, a := range all {
+			if a.Handle == lara.Handle {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("rows for handle %q = %d, want 1 (update, not a second insert)", lara.Handle, n)
+		}
+	})
+
+	borge := store.Author{Handle: "borge-luis-jorge", Name: "Borge", CreatedAt: base, UpdatedAt: base}
+
+	t.Run("ListAuthors orders by handle ascending (byte order)", func(t *testing.T) {
+		if _, err := as.UpsertAuthor(ctx, borge); err != nil {
+			t.Fatalf("UpsertAuthor: %v", err)
+		}
+		got, err := as.ListAuthors(ctx, false)
+		if err != nil {
+			t.Fatalf("ListAuthors: %v", err)
+		}
+		want := []string{"borge-luis-jorge", "lara-arianna"}
+		if h := handlesOf(got); !equalOrdered(h, want) {
+			t.Errorf("order = %v, want %v", h, want)
+		}
+	})
+
+	t.Run("DeleteAuthor tombstones: excluded by default, included with includeDeleted, re-upsert re-activates", func(t *testing.T) {
+		if err := as.DeleteAuthor(ctx, borge.Handle); err != nil {
+			t.Fatalf("DeleteAuthor: %v", err)
+		}
+		def, err := as.ListAuthors(ctx, false)
+		if err != nil {
+			t.Fatalf("ListAuthors(false): %v", err)
+		}
+		if contains(handlesOf(def), borge.Handle) {
+			t.Errorf("deleted author %q still listed by default", borge.Handle)
+		}
+		all, err := as.ListAuthors(ctx, true)
+		if err != nil {
+			t.Fatalf("ListAuthors(true): %v", err)
+		}
+		if !contains(handlesOf(all), borge.Handle) {
+			t.Errorf("deleted author %q missing from includeDeleted list", borge.Handle)
+		}
+		got, found, err := as.AuthorByHandle(ctx, borge.Handle)
+		if err != nil {
+			t.Fatalf("AuthorByHandle(deleted): %v", err)
+		}
+		if !found || !got.Deleted {
+			t.Errorf("AuthorByHandle(deleted) found=%v Deleted=%v, want true/true", found, got.Deleted)
+		}
+		reborn := borge
+		reborn.UpdatedAt = base.Add(72 * time.Hour)
+		stored, err := as.UpsertAuthor(ctx, reborn)
+		if err != nil {
+			t.Fatalf("re-upsert: %v", err)
+		}
+		if stored.Deleted {
+			t.Errorf("Deleted = true after re-upsert, want re-activated")
+		}
+		def2, err := as.ListAuthors(ctx, false)
+		if err != nil {
+			t.Fatalf("ListAuthors(false) after re-upsert: %v", err)
+		}
+		if !contains(handlesOf(def2), borge.Handle) {
+			t.Errorf("re-activated author %q missing from default list", borge.Handle)
+		}
+	})
+
+	t.Run("DeleteAuthor on a missing handle returns ErrNotFound", func(t *testing.T) {
+		if err := as.DeleteAuthor(ctx, "no-such-author"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("DeleteAuthor(missing) = %v, want ErrNotFound", err)
+		}
+	})
+}

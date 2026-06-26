@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/store"
+	"github.com/hec-ovi/censurado-web-backend/store"
 )
 
 // AxisKind identifies which facet axis a Facet belongs to.

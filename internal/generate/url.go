@@ -5,7 +5,7 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // facetSlug slugifies a facet value for AXIS/URL purposes. ok is false when

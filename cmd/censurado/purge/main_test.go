@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 	"github.com/hec-ovi/censurado-web/internal/generate"
-	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
+	"github.com/hec-ovi/censurado-web-backend/store/sqlite"
 )
 
 func writeManifest(t *testing.T, body string) string {

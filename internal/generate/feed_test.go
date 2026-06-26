@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/content"
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/content"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 func feedArticle(t *testing.T, title, body, author, section string, topics []string, pub time.Time) FeedArticle {

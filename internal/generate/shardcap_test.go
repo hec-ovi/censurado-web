@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 func mkEntry(i int, ts int64, title string) ShardEntry {

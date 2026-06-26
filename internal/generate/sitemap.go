@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // listingsSitemapPath is the child sitemap carrying the Tier-A listing URLs.

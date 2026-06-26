@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
-	"github.com/hec-ovi/censurado-web/internal/store"
-	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
+	"github.com/hec-ovi/censurado-web-backend/domain"
+	"github.com/hec-ovi/censurado-web-backend/store"
+	"github.com/hec-ovi/censurado-web-backend/store/sqlite"
 )
 
 // pin is the frozen build clock used by every test: 2026-06-22T12:00:00Z.

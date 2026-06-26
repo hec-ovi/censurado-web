@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // D3: robots.txt + sitemap index referencing the listings sitemap and per-month

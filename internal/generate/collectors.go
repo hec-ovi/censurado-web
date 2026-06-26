@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/content"
+	"github.com/hec-ovi/censurado-web-backend/content"
 )
 
 // collector produces a slice of the artifact set.

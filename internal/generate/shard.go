@@ -3,7 +3,7 @@ package generate
 import (
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // ShardEntry is the body-free projection of an article for the client-side

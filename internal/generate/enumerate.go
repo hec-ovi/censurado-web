@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
-	"github.com/hec-ovi/censurado-web/internal/store"
+	"github.com/hec-ovi/censurado-web-backend/domain"
+	"github.com/hec-ovi/censurado-web-backend/store"
 )
 
 // ym is a published-month bucket key.

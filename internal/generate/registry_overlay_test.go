@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hec-ovi/censurado-web/internal/store"
+	"github.com/hec-ovi/censurado-web-backend/store"
 )
 
 // upsertAuthor type-asserts the test repo to the AuthorStore registry (the concrete

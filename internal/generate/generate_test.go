@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/content"
-	"github.com/hec-ovi/censurado-web/internal/store"
+	"github.com/hec-ovi/censurado-web-backend/content"
+	"github.com/hec-ovi/censurado-web-backend/store"
 )
 
 // collectAll mirrors Generate's collection phase and returns the artifact set.

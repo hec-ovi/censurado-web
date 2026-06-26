@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
-	"github.com/hec-ovi/censurado-web/internal/media"
+	"github.com/hec-ovi/censurado-web-backend/domain"
+	"github.com/hec-ovi/censurado-web-backend/media"
 )
 
 //go:embed templates/*.tmpl templates/components/*.tmpl

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/store"
+	"github.com/hec-ovi/censurado-web-backend/store"
 )
 
 // Options configures one Generate run. Validate fills defaults in place.

@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
-	"github.com/hec-ovi/censurado-web/internal/store/sqlite"
+	"github.com/hec-ovi/censurado-web/internal/generate"
+	"github.com/hec-ovi/censurado-web/internal/purge"
+	"github.com/hec-ovi/censurado-web-backend/domain"
+	"github.com/hec-ovi/censurado-web-backend/store/sqlite"
 )
 
 func seedDB(t *testing.T) string {
@@ -77,4 +79,36 @@ func TestCmd_Run(t *testing.T) {
 			t.Errorf("code = %d, want 1", code)
 		}
 	})
+}
+
+// TestRegenOnce covers the -watch worker's single pass: the first pass writes the
+// site and reports a (dry-run) purge; a second pass over the unchanged corpus is a
+// silent no-op, which is what makes polling cheap.
+func TestRegenOnce(t *testing.T) {
+	repo, err := sqlite.Open(seedDB(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer repo.Close()
+	out := t.TempDir()
+	opts := generate.Options{OutDir: out, BaseURL: "https://news.example", PageSize: 20, SiteName: "Censurado"}
+
+	var stdout bytes.Buffer
+	if err := regenOnce(context.Background(), repo, opts, purge.DryRunPurger{}, &stdout); err != nil {
+		t.Fatalf("regenOnce first pass: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "latest", "index.html")); err != nil {
+		t.Errorf("site not written: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "regenerated:") {
+		t.Errorf("expected a regenerated summary, got %q", stdout.String())
+	}
+
+	stdout.Reset()
+	if err := regenOnce(context.Background(), repo, opts, purge.DryRunPurger{}, &stdout); err != nil {
+		t.Fatalf("regenOnce idempotent pass: %v", err)
+	}
+	if stdout.String() != "" {
+		t.Errorf("unchanged corpus should produce no output, got %q", stdout.String())
+	}
 }

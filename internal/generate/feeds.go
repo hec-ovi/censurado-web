@@ -5,7 +5,7 @@ import (
 	"encoding/xml"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // FeedArticle pairs an article with its already-rendered body HTML (reused from

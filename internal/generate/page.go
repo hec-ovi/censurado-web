@@ -3,7 +3,7 @@ package generate
 import (
 	"sort"
 
-	"github.com/hec-ovi/censurado-web/internal/domain"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // Page is one Tier-A listing page. Sealed full pages have Number 1.. and hold

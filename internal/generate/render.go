@@ -297,10 +297,10 @@ var aboutManifesto = []string{
 }
 
 // aboutAuthorOrder is the editorial precedence of the Nosotros roster: the lead
-// political voice first, then the opinion/markets and literary bylines, with the
-// AI persona last. Author slugs not listed fall in afterwards in deterministic
+// political voice first, then the markets and AI bylines, with the literary
+// author last. Author slugs not listed fall in afterwards in deterministic
 // slug order, so a new persona still appears (just not ahead of the leads).
-var aboutAuthorOrder = []string{"lara-arianna", "giuliano-diario", "borge-luis-jorges", "glorieta-sadeta", "vector-omni"}
+var aboutAuthorOrder = []string{"lara-arianna", "giuliano-diario", "borge-luis-jorges", "vector-omni", "glorieta-sadeta"}
 
 // orderedAuthorSlugs returns the author slugs present in the index, the curated
 // aboutAuthorOrder first, then any remaining slugs in slug order.

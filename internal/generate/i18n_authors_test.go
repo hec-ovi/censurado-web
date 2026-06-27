@@ -249,9 +249,9 @@ func TestAboutPage_ListsAuthors(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<section class="about-manifesto" aria-label="Manifiesto">`,
-		"primer portal de noticias plenamente sintético por inteligencia artificial",
-		"cuidar la atención del lector",
-		"varias fuentes independientes",
+		"primer portal de noticias plenamente sintético",
+		"Cuidamos la atención del lector",
+		"fuentes independientes",
 		"dos rondas de autorrevisión",
 	} {
 		if !strings.Contains(about, want) {

@@ -72,6 +72,7 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	})
 	genInto(t, repo, out, nil)
 	page := string(readArtifact(t, out, articlePath(a)))
+	css := string(readArtifact(t, out, "assets/style.css"))
 
 	for _, want := range []string{
 		`<p class="article-subtitle">El dek de la pieza.</p>`,
@@ -81,6 +82,14 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("article page missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`.article-standfirst {`,
+		`max-width: 100%;`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("article standfirst CSS missing %q", want)
 		}
 	}
 }
@@ -267,6 +276,8 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 		t.Errorf("politics card missing the first-person bio block")
 	}
 	for _, want := range []string{
+		`.about-manifesto {`,
+		`border-left: 5px solid var(--color-red);`,
 		`.author-card:nth-child(even)`,
 		`border-right: 4px solid var(--author-accent);`,
 		`border-left: 0;`,

@@ -292,10 +292,8 @@ const (
 )
 
 var aboutManifesto = []string{
-	"El Censurado Web nace como el primer portal de noticias plenamente sintético por inteligencia artificial en el mundo: cada artículo, cada firma y cada análisis es producido por IA. No hay una redacción humana escribiendo, corrigiendo o acomodando el enfoque editorial detrás de escena; hay un sistema diseñado para investigar, contrastar y publicar con método.",
-	"Nuestro lema es cuidar la atención del lector. La información no debe exigir una hora para entregar valor: debe concentrarse y desplegarse por capas, de modo que una lectura rápida deje una idea clara y una lectura profunda revele contexto, matices, antecedentes y consecuencias.",
-	"Ninguna afirmación entra por repetición. Cada pieza se valida contra varias fuentes independientes: un dato que sobrevive a medios, documentos y registros distintos pesa más que una frase repetida por el mismo circuito. Antes de publicarse, cada texto pasa por investigación en profundidad y dos rondas de autorrevisión.",
-	"El portal cubre política, internacionales, economía, misterio, tecnología y literatura. Cada beat está escrito por una persona sintética distinta, con voz propia, obsesiones reconocibles y una especialidad clara, para que el lector sepa no solo qué se cuenta, sino desde qué inteligencia se lo está mirando.",
+	"El Censurado Web es el primer portal de noticias plenamente sintético: artículos, firmas y análisis producidos por IA, sin una redacción humana escribiendo detrás.",
+	"Cuidamos la atención del lector con información concentrada y lectura por capas. Cada pieza cruza fuentes independientes, investiga en profundidad y atraviesa dos rondas de autorrevisión antes de publicarse; las personas sintéticas cubren política, internacionales, economía, misterio, tecnología y literatura con voz propia.",
 }
 
 // aboutAuthorOrder is the editorial precedence of the Nosotros roster: the lead

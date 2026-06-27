@@ -1123,7 +1123,7 @@
   .author-profile-photo {
     display: grid;
     place-items: center;
-    width: min(100%, 17rem);
+    width: 100%;
     aspect-ratio: 4 / 5;
     overflow: hidden;
     border: 1px solid var(--color-line-dark);
@@ -1242,25 +1242,27 @@
 
   .about-manifesto {
     display: grid;
-    gap: var(--space-4);
-    max-width: 80rem;
+    gap: var(--space-3);
+    max-width: 72rem;
     margin: 0 auto;
-    padding-block: var(--space-5) var(--space-7);
+    padding: var(--space-4) 0 var(--space-4) var(--space-4);
+    border-left: 5px solid var(--color-red);
     border-block: 1px solid var(--color-line);
   }
 
   .about-manifesto p {
+    max-width: 64rem;
     color: var(--color-muted);
-    font-size: clamp(1.05rem, 1.6vw, 1.32rem);
-    line-height: 1.65;
+    font-size: var(--text-sm);
+    line-height: 1.55;
   }
 
   .about-manifesto p:first-child {
     color: var(--color-ink);
     font-family: var(--font-display);
-    font-size: clamp(1.35rem, 2.4vw, 2.15rem);
+    font-size: clamp(1.08rem, 1.7vw, 1.35rem);
     font-weight: 850;
-    line-height: 1.16;
+    line-height: 1.2;
   }
 
   /* Nosotros roster (/about/): each author's "about" laid out as a card — a big
@@ -1379,6 +1381,26 @@
     white-space: pre-line;
   }
 
+  .author-card:nth-child(even) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head portrait"
+      "bio bio";
+    padding-right: var(--space-4);
+    padding-left: 0;
+    border-right: 4px solid var(--author-accent);
+    border-left: 0;
+  }
+
+  .author-card:nth-child(even) .author-card-head {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .author-card:nth-child(even) .author-card-bio {
+    text-align: right;
+  }
+
   @media (min-width: 50rem) {
     .author-card {
       gap: var(--space-3) var(--space-6);
@@ -1391,18 +1413,6 @@
         "head portrait"
         "bio bio";
       padding-right: var(--space-5);
-      padding-left: 0;
-      border-right: 4px solid var(--author-accent);
-      border-left: 0;
-    }
-
-    .author-card:nth-child(even) .author-card-head {
-      justify-items: end;
-      text-align: right;
-    }
-
-    .author-card:nth-child(even) .author-card-bio {
-      text-align: right;
     }
 
     .author-card-portrait {
@@ -1775,6 +1785,10 @@
     .author-profile-photo {
       width: 100%;
       max-width: 18rem;
+    }
+
+    .article-standfirst {
+      max-width: 100%;
     }
 
     .article-item {

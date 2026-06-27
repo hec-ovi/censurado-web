@@ -37,12 +37,13 @@ var templateFuncs = template.FuncMap{
 // listed here falls back to the stored, Title-cased label (Facet.labelOr). This
 // applies ONLY to section-axis facets, never to author or topic labels.
 var sectionLabelsES = map[string]string{
-	"tech":      "Tecnología",
-	"world":     "Mundo",
-	"politics":  "Política",
-	"economics": "Economía",
-	"economy":   "Economía",
-	"crypto":    "Cripto",
+	"tech":       "Tecnología",
+	"world":      "Mundo",
+	"politics":   "Política",
+	"economics":  "Economía",
+	"economy":    "Economía",
+	"crypto":     "Cripto",
+	"literatura": "Literatura",
 }
 
 // sectionDisplayLabel resolves a section facet's reader-facing label: the Spanish
@@ -266,11 +267,13 @@ type aboutView struct {
 }
 
 type authorCardView struct {
-	Name    string
-	URL     string
-	Avatar  string
-	Initial string
-	Bio     string
+	Name        string
+	URL         string
+	Avatar      string
+	Initial     string
+	Bio         string
+	SectionSlug string // the author's beat slug, for the theme color (data-section)
+	Beat        string // Spanish beat label shown beside the name
 }
 
 // aboutHeading and aboutIntro are the Spanish title and lede of the /about/ page.
@@ -284,7 +287,7 @@ const (
 // political voice first, then the opinion/markets and literary bylines, with the
 // AI persona last. Author slugs not listed fall in afterwards in deterministic
 // slug order, so a new persona still appears (just not ahead of the leads).
-var aboutAuthorOrder = []string{"lara-arianna", "borge-luis-jorge", "glorieta-sadeta", "vector-omni"}
+var aboutAuthorOrder = []string{"lara-arianna", "giuliano-diario", "borge-luis-jorges", "glorieta-sadeta", "vector-omni"}
 
 // orderedAuthorSlugs returns the author slugs present in the index, the curated
 // aboutAuthorOrder first, then any remaining slugs in slug order.
@@ -320,6 +323,10 @@ func authorCards(env *buildEnv) []authorCardView {
 			card.Name = idx.authorLabel[slug]
 		}
 		card.Initial = authorInitial(card.Name)
+		if sec := idx.authorSection[slug]; sec != "" {
+			card.SectionSlug = sec
+			card.Beat = sectionDisplayLabel(Facet{Kind: AxisSection, Value: sec})
+		}
 		if raw := idx.authorAvatar[slug]; raw != "" {
 			card.Avatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}

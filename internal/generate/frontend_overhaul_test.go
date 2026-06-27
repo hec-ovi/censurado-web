@@ -179,13 +179,13 @@ func TestNav_NoDuplicateLabel(t *testing.T) {
 }
 
 // The About page is titled "Autores" and lists authors in the curated editorial
-// order (lara-arianna ahead of borge-luis-jorge), not alphabetically.
+// order (lara-arianna ahead of borge-luis-jorges), not alphabetically.
 func TestAutores_RenameAndOrder(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	// Insert borge first so neither insertion nor alphabetical order would put
 	// lara first by accident; only the curated order does.
-	seed(t, repo, seedSpec{Title: "Mercados", Author: "borge-luis-jorge", Section: "economics", Published: date(2026, 6, 1)})
+	seed(t, repo, seedSpec{Title: "Mercados", Author: "borge-luis-jorges", Section: "economics", Published: date(2026, 6, 1)})
 	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara-arianna", Section: "politics", Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
@@ -194,11 +194,75 @@ func TestAutores_RenameAndOrder(t *testing.T) {
 		t.Errorf("about page is not titled 'Autores'")
 	}
 	lara := strings.Index(about, `href="/author/lara-arianna/"`)
-	borge := strings.Index(about, `href="/author/borge-luis-jorge/"`)
+	borge := strings.Index(about, `href="/author/borge-luis-jorges/"`)
 	if lara < 0 || borge < 0 {
 		t.Fatalf("about page missing an author card (lara=%d borge=%d)", lara, borge)
 	}
 	if lara > borge {
-		t.Errorf("curated order broken: lara-arianna should precede borge-luis-jorge")
+		t.Errorf("curated order broken: lara-arianna should precede borge-luis-jorges")
+	}
+}
+
+// Each Autores card carries its author's beat: data-section on the <li> (for the
+// theme color) and the Spanish beat label beside the name. The portrait is the
+// rectangular treatment (no circular author-card-text wrapper), and the bio sits
+// in its own full-width block.
+func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{
+		Title: "Reforma", Author: "lara-arianna", Section: "politics",
+		Published: date(2026, 6, 2),
+		Metadata: map[string]any{
+			"author_name":   "Lara Arianna",
+			"author_bio":    "Soy Lara Arianna. Persigo al poder por donde no quiere ser visto.",
+			"author_avatar": "/media/lara.png",
+		},
+	})
+	seed(t, repo, seedSpec{
+		Title: "Paper", Author: "vector-omni", Section: "tech",
+		Published: date(2026, 6, 1),
+		Metadata:  map[string]any{"author_name": "Vector Omni", "author_avatar": "/media/vector.png"},
+	})
+	// Glorieta publishes under the "literatura" section, which must map to the
+	// Spanish label "Literatura" (capitalized) rather than the raw lowercase slug.
+	seed(t, repo, seedSpec{
+		Title: "Cuento", Author: "glorieta-sadeta", Section: "literatura",
+		Published: date(2026, 5, 31),
+		Metadata:  map[string]any{"author_name": "Glorieta Sadeta", "author_avatar": "/media/glorieta.png"},
+	})
+	genInto(t, repo, out, nil)
+	about := string(readArtifact(t, out, "about/index.html"))
+
+	// data-section themes the card by beat.
+	if !strings.Contains(about, `<li class="author-card" data-section="politics">`) {
+		t.Errorf("politics author card missing data-section=politics:\n%s", about)
+	}
+	if !strings.Contains(about, `<li class="author-card" data-section="tech">`) {
+		t.Errorf("tech author card missing data-section=tech")
+	}
+	if !strings.Contains(about, `<li class="author-card" data-section="literatura">`) {
+		t.Errorf("literatura author card missing data-section=literatura")
+	}
+	// The Spanish beat label renders beside the name.
+	if !strings.Contains(about, `<p class="author-card-beat">Política</p>`) {
+		t.Errorf("politics card missing Spanish beat label 'Política'")
+	}
+	if !strings.Contains(about, `<p class="author-card-beat">Tecnología</p>`) {
+		t.Errorf("tech card missing Spanish beat label 'Tecnología'")
+	}
+	if !strings.Contains(about, `<p class="author-card-beat">Literatura</p>`) {
+		t.Errorf("literatura card missing capitalized Spanish beat label 'Literatura'")
+	}
+	// The redesigned card replaces the old author-card-text wrapper with a head
+	// block; the bio is its own full-width sibling.
+	if strings.Contains(about, `class="author-card-text"`) {
+		t.Errorf("old author-card-text wrapper should be gone after the redesign")
+	}
+	if !strings.Contains(about, `<div class="author-card-head">`) {
+		t.Errorf("redesigned card missing author-card-head block")
+	}
+	if !strings.Contains(about, `<p class="author-card-bio">Soy Lara Arianna.`) {
+		t.Errorf("politics card missing the first-person bio block")
 	}
 }

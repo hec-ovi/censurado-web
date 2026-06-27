@@ -38,6 +38,9 @@ type Index struct {
 	authorBio    map[string]string
 	authorName   map[string]string
 	authorAvatar map[string]string
+	// authorSection is the author's beat: the section slug of their first
+	// (earliest-inserted) article, used to theme the Autores roster card.
+	authorSection map[string]string
 }
 
 func newIndex(n int) *Index {
@@ -53,9 +56,10 @@ func newIndex(n int) *Index {
 		sectionLabel: map[string]string{},
 		authorLabel:  map[string]string{},
 		topicLabel:   map[string]string{},
-		authorBio:    map[string]string{},
-		authorName:   map[string]string{},
-		authorAvatar: map[string]string{},
+		authorBio:     map[string]string{},
+		authorName:    map[string]string{},
+		authorAvatar:  map[string]string{},
+		authorSection: map[string]string{},
 	}
 }
 
@@ -107,6 +111,9 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 			}
 			if avatar := firstMetadataString(a.Metadata, "author_avatar"); avatar != "" {
 				recordLabel(idx.authorAvatar, aSlug, avatar)
+			}
+			if sOK {
+				recordLabel(idx.authorSection, aSlug, sSlug)
 			}
 		}
 		idx.months[m] = append(idx.months[m], i)

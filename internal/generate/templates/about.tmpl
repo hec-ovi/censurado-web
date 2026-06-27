@@ -8,7 +8,7 @@
 {{- if .Authors}}
 <ul class="author-cards">
 {{- range .Authors}}
-<li class="author-card">
+<li class="author-card" data-section="{{.SectionSlug}}">
 <a class="author-card-portrait" href="{{.URL}}" aria-hidden="true" tabindex="-1">
 {{- if .Avatar}}
 <img class="author-card-avatar" src="{{.Avatar}}" alt="" loading="lazy" decoding="async">
@@ -16,12 +16,15 @@
 <span class="author-card-initial">{{.Initial}}</span>
 {{- end}}
 </a>
-<div class="author-card-text">
+<div class="author-card-head">
 <a class="author-card-name" href="{{.URL}}">{{.Name}}</a>
+{{- if .Beat}}
+<p class="author-card-beat">{{.Beat}}</p>
+{{- end}}
+</div>
 {{- if .Bio}}
 <p class="author-card-bio">{{.Bio}}</p>
 {{- end}}
-</div>
 </li>
 {{- end}}
 </ul>

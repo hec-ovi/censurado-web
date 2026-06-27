@@ -8,6 +8,7 @@ import (
 	"html"
 	"html/template"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -108,9 +109,11 @@ type pageView struct {
 	Months    []monthLink
 	Manifest  template.HTML
 	// Author bio block, populated only on a single-author listing page.
-	AuthorName   string
-	AuthorBio    string
-	AuthorAvatar string
+	AuthorName    string
+	AuthorBio     string
+	AuthorAvatar  string
+	AuthorInitial string
+	AuthorTopics  []topicLink
 }
 
 type itemView struct {
@@ -224,8 +227,8 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 	for _, a := range pg.Articles {
 		view.Items = append(view.Items, itemViewOf(a))
 	}
-	view.Rail = railItems(view.Items, 5)
-	if isAuthorScope(sc) {
+	authorLanding := isAuthorScope(sc) && pg.Landing
+	if authorLanding {
 		slug := sc.Section.Value
 		view.AuthorName = env.plan.Index.authorName[slug]
 		if view.AuthorName == "" {
@@ -234,9 +237,14 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			view.AuthorName = sc.Section.labelOr()
 		}
 		view.AuthorBio = env.plan.Index.authorBio[slug]
+		view.AuthorInitial = authorInitial(view.AuthorName)
+		view.AuthorTopics = authorTopicLinks(env.plan.Index, slug)
 		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
 			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}
+		view.Items = authorLatestItems(env.plan.Index, sc, 10)
+	} else {
+		view.Rail = railItems(view.Items, 5)
 	}
 	if pg.Landing {
 		view.Manifest = manifest
@@ -262,7 +270,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 type aboutView struct {
 	headData
 	Heading string
-	Intro   string
+	Intro   []string
 	Authors []authorCardView
 }
 
@@ -276,14 +284,21 @@ type authorCardView struct {
 	Beat        string // Spanish beat label shown beside the name
 }
 
-// aboutHeading and aboutIntro are the Spanish title and lede of the /about/ page.
-// aboutHeading also labels the nav link to /about/ (navLinksForArticles).
+// aboutHeading and aboutManifesto are the Spanish title and manifesto of the
+// /about/ page. The URL stays /about/.
 const (
-	aboutHeading = "Autores"
-	aboutIntro   = "Las firmas que escriben en El Censurado Web, en primera persona."
+	aboutHeading     = "Nosotros"
+	aboutDescription = "El primer portal de noticias plenamente sintético por IA: investigación, validación cruzada y voces especializadas sin una redacción humana tradicional."
 )
 
-// aboutAuthorOrder is the editorial precedence of the Autores roster: the lead
+var aboutManifesto = []string{
+	"El Censurado Web nace como el primer portal de noticias plenamente sintético por inteligencia artificial en el mundo: cada artículo, cada firma y cada análisis es producido por IA. No hay una redacción humana escribiendo, corrigiendo o acomodando el enfoque editorial detrás de escena; hay un sistema diseñado para investigar, contrastar y publicar con método.",
+	"Nuestro lema es cuidar la atención del lector. La información no debe exigir una hora para entregar valor: debe concentrarse y desplegarse por capas, de modo que una lectura rápida deje una idea clara y una lectura profunda revele contexto, matices, antecedentes y consecuencias.",
+	"Ninguna afirmación entra por repetición. Cada pieza se valida contra varias fuentes independientes: un dato que sobrevive a medios, documentos y registros distintos pesa más que una frase repetida por el mismo circuito. Antes de publicarse, cada texto pasa por investigación en profundidad y dos rondas de autorrevisión.",
+	"El portal cubre política, internacionales, economía, misterio, tecnología y literatura. Cada beat está escrito por una persona sintética distinta, con voz propia, obsesiones reconocibles y una especialidad clara, para que el lector sepa no solo qué se cuenta, sino desde qué inteligencia se lo está mirando.",
+}
+
+// aboutAuthorOrder is the editorial precedence of the Nosotros roster: the lead
 // political voice first, then the opinion/markets and literary bylines, with the
 // AI persona last. Author slugs not listed fall in afterwards in deterministic
 // slug order, so a new persona still appears (just not ahead of the leads).
@@ -338,15 +353,15 @@ func authorCards(env *buildEnv) []authorCardView {
 // renderAbout renders the /about/ page listing every author.
 func renderAbout(env *buildEnv) ([]byte, error) {
 	canonical := absolute(env.siteBase, "/about/")
-	ld, err := collectionJSONLD(aboutHeading, canonical, aboutIntro)
+	ld, err := collectionJSONLD(aboutHeading, canonical, aboutDescription)
 	if err != nil {
 		return nil, err
 	}
 	view := aboutView{
 		headData: headData{
-			Title:       aboutHeading + " | " + env.siteName,
+			Title:       aboutHeading,
 			Canonical:   canonical,
-			Description: aboutIntro,
+			Description: aboutDescription,
 			SiteName:    env.siteName,
 			OGType:      "website",
 			TwitterCard: "summary",
@@ -354,7 +369,7 @@ func renderAbout(env *buildEnv) ([]byte, error) {
 			NavLinks:    navLinksForArticles(env.plan.Index.All),
 		},
 		Heading: aboutHeading,
-		Intro:   aboutIntro,
+		Intro:   aboutManifesto,
 		Authors: authorCards(env),
 	}
 	var buf bytes.Buffer
@@ -447,69 +462,28 @@ func itemViewOf(a domain.Article) itemView {
 	}
 }
 
-func navLinksForArticles(arts []domain.Article) []navLink {
-	links := []navLink{
+// navLinksForArticles returns the fixed, curated top menu. The argument is
+// ignored: the menu is identical on every page (landing, article, section,
+// About), which removes the previous reshuffle bug, where the entries and their
+// order were derived from the current page's articles and so changed as the
+// reader clicked around. Section items point at their facet pages; "Misterio y
+// conspiración" points at the topic facet the markets/conspiracy pieces carry.
+// The menu is intentionally fixed, so a category stays in the bar even on a page
+// that does not feature it.
+func navLinksForArticles(_ []domain.Article) []navLink {
+	return []navLink{
 		{Label: "Lo último", URL: "/latest/"},
-		{Label: aboutHeading, URL: "/about/"},
+		{Label: "Nosotros", URL: "/about/"},
+		{Label: "Política", URL: facetURL("section", "politics")},
+		{Label: "Internacionales", URL: facetURL("section", "world")},
+		{Label: "Misterio y conspiración", URL: facetURL("topic", "misterio")},
+		{Label: "Tecnología", URL: facetURL("section", "tech")},
+		{Label: "Literatura", URL: facetURL("section", "literatura")},
 	}
-	seen := map[string]struct{}{"/latest/": {}, "/about/": {}}
-	if s, ok := facetSlug("Lo último"); ok {
-		seen["label:"+s] = struct{}{}
-	}
-	if s, ok := facetSlug(aboutHeading); ok {
-		seen["label:"+s] = struct{}{}
-	}
-	for _, a := range arts {
-		if len(links) >= 7 {
-			break
-		}
-		if slug, ok := facetSlug(a.Section); ok {
-			label := sectionDisplayLabel(Facet{Kind: AxisSection, Value: slug, Label: a.Section})
-			addNavLink(&links, seen, label, facetURL("section", a.Section))
-		}
-	}
-	for _, a := range arts {
-		if len(links) >= 7 {
-			break
-		}
-		for _, topic := range a.Topics {
-			if len(links) >= 7 {
-				break
-			}
-			if slug, ok := facetSlug(topic); ok {
-				addNavLink(&links, seen, slug, facetURL("topic", topic))
-			}
-		}
-	}
-	return links
 }
 
 func navLinksForArticle(a domain.Article) []navLink {
 	return navLinksForArticles([]domain.Article{a})
-}
-
-func addNavLink(links *[]navLink, seen map[string]struct{}, label, href string) {
-	if href == "" {
-		return
-	}
-	if _, ok := seen[href]; ok {
-		return
-	}
-	// Also dedupe by display label (accent- and case-folded via facetSlug), so a
-	// section and a topic that read the same in the menu (e.g. the section
-	// "Política" and the topics "politica" / "política") do not both appear.
-	var lkey string
-	if s, ok := facetSlug(label); ok {
-		lkey = "label:" + s
-		if _, ok := seen[lkey]; ok {
-			return
-		}
-	}
-	seen[href] = struct{}{}
-	if lkey != "" {
-		seen[lkey] = struct{}{}
-	}
-	*links = append(*links, navLink{Label: label, URL: href})
 }
 
 func railItems(items []itemView, n int) []itemView {
@@ -546,6 +520,45 @@ func itemViewsOf(arts []domain.Article, n int) []itemView {
 	out := make([]itemView, 0, n)
 	for _, a := range arts[:n] {
 		out = append(out, itemViewOf(a))
+	}
+	return out
+}
+
+func authorLatestItems(idx *Index, sc Scope, n int) []itemView {
+	arts := idx.articlesAt(idx.scopeIndices(sc))
+	sortDisplay(arts)
+	return itemViewsOf(arts, n)
+}
+
+func authorTopicLinks(idx *Index, authorSlug string) []topicLink {
+	counts := map[string]int{}
+	for _, i := range idx.authors[authorSlug] {
+		seen := map[string]struct{}{}
+		for _, raw := range idx.All[i].Topics {
+			slug, ok := facetSlug(raw)
+			if !ok {
+				continue
+			}
+			if _, dup := seen[slug]; dup {
+				continue
+			}
+			seen[slug] = struct{}{}
+			counts[slug]++
+		}
+	}
+	slugs := make([]string, 0, len(counts))
+	for slug := range counts {
+		slugs = append(slugs, slug)
+	}
+	sort.Slice(slugs, func(i, j int) bool {
+		if counts[slugs[i]] != counts[slugs[j]] {
+			return counts[slugs[i]] > counts[slugs[j]]
+		}
+		return slugs[i] < slugs[j]
+	})
+	out := make([]topicLink, 0, len(slugs))
+	for _, slug := range slugs {
+		out = append(out, topicLink{Label: slug, URL: pageURL("topic/"+slug, 0)})
 	}
 	return out
 }

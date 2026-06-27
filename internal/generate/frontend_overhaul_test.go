@@ -7,7 +7,7 @@ import (
 
 // The frontend overhaul: authored subtitle/description, always-visible author
 // signatures, no image placeholder, a clickable "Lo más leído" rail, an
-// article-page rail + "Relacionados", and the "Autores" roster. These tests pin
+// article-page rail + "Relacionados", and the "Nosotros" roster. These tests pin
 // the new markup and the byte-stability guarantee the article rail/related rely
 // on.
 
@@ -178,7 +178,7 @@ func TestNav_NoDuplicateLabel(t *testing.T) {
 	}
 }
 
-// The About page is titled "Autores" and lists authors in the curated editorial
+// The About page is titled "Nosotros" and lists authors in the curated editorial
 // order (lara-arianna ahead of borge-luis-jorges), not alphabetically.
 func TestAutores_RenameAndOrder(t *testing.T) {
 	repo := newStore(t)
@@ -190,8 +190,8 @@ func TestAutores_RenameAndOrder(t *testing.T) {
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
 
-	if !strings.Contains(about, `<h1 class="listing-heading">Autores</h1>`) {
-		t.Errorf("about page is not titled 'Autores'")
+	if !strings.Contains(about, `<h1 class="listing-heading">Nosotros</h1>`) {
+		t.Errorf("about page is not titled 'Nosotros'")
 	}
 	lara := strings.Index(about, `href="/author/lara-arianna/"`)
 	borge := strings.Index(about, `href="/author/borge-luis-jorges/"`)
@@ -203,10 +203,10 @@ func TestAutores_RenameAndOrder(t *testing.T) {
 	}
 }
 
-// Each Autores card carries its author's beat: data-section on the <li> (for the
+// Each Nosotros card carries its author's beat: data-section on the <li> (for the
 // theme color) and the Spanish beat label beside the name. The portrait is the
 // rectangular treatment (no circular author-card-text wrapper), and the bio sits
-// in its own full-width block.
+// in its own full-width block. Desktop cards alternate portrait/rule alignment.
 func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
@@ -233,6 +233,7 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	})
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
+	css := string(readArtifact(t, out, "assets/style.css"))
 
 	// data-section themes the card by beat.
 	if !strings.Contains(about, `<li class="author-card" data-section="politics">`) {
@@ -264,5 +265,16 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	}
 	if !strings.Contains(about, `<p class="author-card-bio">Soy Lara Arianna.`) {
 		t.Errorf("politics card missing the first-person bio block")
+	}
+	for _, want := range []string{
+		`.author-card:nth-child(even)`,
+		`border-right: 4px solid var(--author-accent);`,
+		`border-left: 0;`,
+		`.author-card-bio {`,
+		`width: 100%;`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("author card CSS missing %q", want)
+		}
 	}
 }

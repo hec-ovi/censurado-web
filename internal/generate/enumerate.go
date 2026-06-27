@@ -39,23 +39,23 @@ type Index struct {
 	authorName   map[string]string
 	authorAvatar map[string]string
 	// authorSection is the author's beat: the section slug of their first
-	// (earliest-inserted) article, used to theme the Autores roster card.
+	// (earliest-inserted) article, used to theme the Nosotros roster card.
 	authorSection map[string]string
 }
 
 func newIndex(n int) *Index {
 	return &Index{
-		All:          make([]domain.Article, 0, n),
-		sections:     map[string][]int{},
-		authors:      map[string][]int{},
-		topics:       map[string][]int{},
-		months:       map[ym][]int{},
-		secAuthors:   map[string]map[string]struct{}{},
-		secTopics:    map[string]map[string]struct{}{},
-		secMonths:    map[string]map[ym]struct{}{},
-		sectionLabel: map[string]string{},
-		authorLabel:  map[string]string{},
-		topicLabel:   map[string]string{},
+		All:           make([]domain.Article, 0, n),
+		sections:      map[string][]int{},
+		authors:       map[string][]int{},
+		topics:        map[string][]int{},
+		months:        map[ym][]int{},
+		secAuthors:    map[string]map[string]struct{}{},
+		secTopics:     map[string]map[string]struct{}{},
+		secMonths:     map[string]map[ym]struct{}{},
+		sectionLabel:  map[string]string{},
+		authorLabel:   map[string]string{},
+		topicLabel:    map[string]string{},
 		authorBio:     map[string]string{},
 		authorName:    map[string]string{},
 		authorAvatar:  map[string]string{},

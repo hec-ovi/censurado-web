@@ -7,23 +7,50 @@
 {{- end}}
 {{define "content"}}
 {{- if .AuthorName}}
-<section class="author-bio" data-author-bio>
+<section class="author-profile" data-author-profile>
+<div class="author-profile-photo">
 {{- if .AuthorAvatar}}
-<img class="author-bio-avatar" src="{{.AuthorAvatar}}" alt="" loading="lazy" decoding="async">
+<img src="{{.AuthorAvatar}}" alt="" loading="lazy" decoding="async">
+{{- else}}
+<span class="author-profile-initial" aria-hidden="true">{{.AuthorInitial}}</span>
 {{- end}}
-<h2 class="author-bio-name">{{.AuthorName}}</h2>
+</div>
+<div class="author-profile-main">
+<p class="author-profile-kicker">Perfil</p>
+<h1 class="author-profile-name">{{.AuthorName}}</h1>
+{{- if .AuthorTopics}}
+<nav class="author-profile-topics" aria-label="Temas que cubre">
+<p class="author-profile-label">Temas</p>
+<ul>
+{{- range .AuthorTopics}}
+<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{- end}}
+</ul>
+</nav>
+{{- end}}
 {{- if .AuthorBio}}
-<p class="author-bio-text">{{.AuthorBio}}</p>
-{{- end}}
+<section class="author-profile-about" aria-label="Sobre {{.AuthorName}}">
+<p class="author-profile-label">Sobre</p>
+<p>{{.AuthorBio}}</p>
 </section>
 {{- end}}
+</div>
+</section>
+{{- else}}
 <header class="listing-hero">
 <p class="eyebrow">Portada</p>
 <h1 class="listing-heading">{{.Heading}}</h1>
 <p class="listing-summary">{{.Description}}</p>
 </header>
-<section class="portal-front" data-facets aria-label="Portada">
-<ol class="article-list" data-articles>
+{{- end}}
+<section class="portal-front{{if .AuthorName}} author-portal{{end}}" data-facets aria-label="{{if .AuthorName}}Contenido generado{{else}}Portada{{end}}">
+{{- if .AuthorName}}
+<header class="author-content-head">
+<p class="eyebrow">Contenido generado</p>
+<h2>Últimas publicaciones</h2>
+</header>
+{{- end}}
+<ol class="article-list{{if .AuthorName}} author-grid{{end}}" data-articles>
 {{- range .Items}}
 <li class="article-item" data-author="{{.AuthorSlug}}" data-author-avatar="{{.AuthorAvatar}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
 {{template "article_card" .}}

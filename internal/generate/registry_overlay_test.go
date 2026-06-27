@@ -36,7 +36,7 @@ func upsertTopic(t *testing.T, repo store.Repository, tp store.Topic) {
 
 // TestRegistryOverlay_AuthorTablePrefersOverMetadata proves the operator-managed
 // authors table wins over the per-article metadata for the public profile (name, bio,
-// avatar) on both the single-author page and the Autores roster, while an author with
+// avatar) on both the single-author page and the Nosotros roster, while an author with
 // NO table row keeps falling back to its metadata. This is the prefer-table-else-
 // metadata contract.
 func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
@@ -79,7 +79,7 @@ func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
 	// Heading and bio block come from the registry (these use the index maps the
 	// overlay rewrites). The positive heading assertion proves the name is the
 	// registry value, not the metadata one.
-	if !strings.Contains(page, `<h1 class="listing-heading">Lara Arianna del Registro</h1>`) {
+	if !strings.Contains(page, `<h1 class="author-profile-name">Lara Arianna del Registro</h1>`) {
 		t.Errorf("author page heading is not the registry name")
 	}
 	if !strings.Contains(page, "Bio nueva del registro de autores.") {

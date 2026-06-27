@@ -32,7 +32,7 @@ func TestSpanishUI_PresentationLayer(t *testing.T) {
 	}
 
 	// Chrome strings.
-	for _, want := range []string{"Portada", "Lo más leído", "Menú", "Sistema", "Claro", "Oscuro", "Aviso editorial", "Autores"} {
+	for _, want := range []string{"Portada", "Lo más leído", "Menú", "Sistema", "Claro", "Oscuro", "Aviso editorial", "Nosotros"} {
 		if !strings.Contains(listing, want) {
 			t.Errorf("listing missing translated chrome string %q", want)
 		}
@@ -124,16 +124,20 @@ func TestAuthorPage_NameAndBioFromMetadata(t *testing.T) {
 	}
 	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
 
-	// The page heading is the display name, not the raw slug.
-	if !strings.Contains(page, `<h1 class="listing-heading">Lara Arianna</h1>`) {
-		t.Errorf("author page heading is not the display name 'Lara Arianna'")
+	// The profile heading is the display name, not the raw slug.
+	if !strings.Contains(page, `<h1 class="author-profile-name">Lara Arianna</h1>`) {
+		t.Errorf("author profile heading is not the display name 'Lara Arianna'")
 	}
-	// The bio block renders the name and bio text.
-	if !strings.Contains(page, `data-author-bio`) {
-		t.Errorf("author page missing the bio block")
+	// The profile block renders the name, bio text, and avoids the old duplicate
+	// listing hero.
+	if !strings.Contains(page, `data-author-profile`) {
+		t.Errorf("author page missing the profile block")
 	}
 	if !strings.Contains(page, "Lara cubre política tecnológica desde Madrid.") {
 		t.Errorf("author page missing the bio text")
+	}
+	if strings.Contains(page, `<p class="eyebrow">Portada</p>`) {
+		t.Errorf("author page should not repeat the normal listing hero")
 	}
 	// Canonical URL keeps the English-derived slug.
 	if !strings.Contains(page, `href="https://news.example/author/lara-arianna/"`) {
@@ -153,6 +157,59 @@ func TestAuthorPage_NameAndBioFromMetadata(t *testing.T) {
 	}
 	if !strings.Contains(article, `href="/author/lara-arianna/"`) {
 		t.Errorf("article author link does not point at /author/lara-arianna/")
+	}
+}
+
+func TestAuthorPage_ProfileContentLatestTen(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	articles := make([]string, 0, 12)
+	for i := 0; i < 12; i++ {
+		title := "Lara pieza " + string(rune('A'+i))
+		a := seed(t, repo, seedSpec{
+			Title:     title,
+			Author:    "lara-arianna",
+			Section:   "politics",
+			Topics:    []string{"poder", "ia"},
+			Published: date(2026, 6, i+1),
+			Metadata: map[string]any{
+				"author_name":   "Lara Arianna",
+				"author_bio":    "Persigo al poder donde no quiere ser visto.",
+				"author_avatar": "/media/lara.png",
+			},
+		})
+		articles = append(articles, articleURL(a))
+	}
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
+
+	for _, want := range []string{
+		`<section class="author-profile" data-author-profile>`,
+		`<div class="author-profile-photo">`,
+		`<nav class="author-profile-topics" aria-label="Temas que cubre">`,
+		`<p class="eyebrow">Contenido generado</p>`,
+		`<ol class="article-list author-grid" data-articles>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("author profile page missing %q", want)
+		}
+	}
+	if strings.Contains(page, `class="ranked-rail"`) {
+		t.Errorf("author profile should not render the generic ranked rail")
+	}
+	listed := permalinksIn([]byte(page))
+	if len(listed) != 10 {
+		t.Fatalf("author profile listed %d articles, want latest 10", len(listed))
+	}
+	wantLatest := articles[2:]
+	for i := range wantLatest {
+		want := wantLatest[len(wantLatest)-1-i]
+		if listed[i] != want {
+			t.Fatalf("listed[%d] = %q, want %q", i, listed[i], want)
+		}
+	}
+	if strings.Contains(page, articles[0]) || strings.Contains(page, articles[1]) {
+		t.Errorf("author profile leaked articles older than the latest 10")
 	}
 }
 
@@ -184,8 +241,22 @@ func TestAboutPage_ListsAuthors(t *testing.T) {
 	}
 	about := string(readArtifact(t, out, "about/index.html"))
 
-	if !strings.Contains(about, `<h1 class="listing-heading">Autores</h1>`) {
-		t.Errorf("about page title is not 'Autores'")
+	if !strings.Contains(about, `<h1 class="listing-heading">Nosotros</h1>`) {
+		t.Errorf("about page title is not 'Nosotros'")
+	}
+	if !strings.Contains(about, `<title>Nosotros</title>`) {
+		t.Errorf("about document title does not exactly match 'Nosotros'")
+	}
+	for _, want := range []string{
+		`<section class="about-manifesto" aria-label="Manifiesto">`,
+		"primer portal de noticias plenamente sintético por inteligencia artificial",
+		"cuidar la atención del lector",
+		"varias fuentes independientes",
+		"dos rondas de autorrevisión",
+	} {
+		if !strings.Contains(about, want) {
+			t.Errorf("about manifesto missing %q", want)
+		}
 	}
 	// Author with metadata: display name, bio, and link to the author page.
 	if !strings.Contains(about, "Lara Arianna") {

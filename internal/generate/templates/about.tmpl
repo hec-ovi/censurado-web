@@ -1,10 +1,13 @@
 {{define "content"}}
 <header class="listing-hero">
-<p class="eyebrow">El Censurado Web</p>
 <h1 class="listing-heading">{{.Heading}}</h1>
-<p class="listing-summary">{{.Intro}}</p>
 </header>
-<section class="about-authors" aria-label="Autores">
+<section class="about-manifesto" aria-label="Manifiesto">
+{{- range .Intro}}
+<p>{{.}}</p>
+{{- end}}
+</section>
+<section class="about-authors" aria-label="Personas">
 {{- if .Authors}}
 <ul class="author-cards">
 {{- range .Authors}}

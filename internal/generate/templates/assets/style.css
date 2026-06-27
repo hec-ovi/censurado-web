@@ -664,17 +664,6 @@
     line-height: 0.86;
   }
 
-  /* On a /author/<slug> page the heading is the author's name: keep it on one
-     line (a fluid size that shrinks to fit instead of wrapping "Borge Luis
-     Jorge" onto two lines). The author-bio block only renders on author pages,
-     so this never touches section / Autores / landing headings. */
-  [data-author-bio] ~ .listing-hero .listing-heading {
-    max-width: none;
-    white-space: nowrap;
-    font-size: clamp(1.75rem, 6vw, 3.4rem);
-    line-height: 1.05;
-  }
-
   .listing-summary {
     max-width: 42rem;
     color: var(--color-muted);
@@ -1084,11 +1073,8 @@
     color: var(--color-red);
   }
 
-  /* Unified avatar: one circular treatment used in every context (card
-     signature, article footer, author hero, About roster). The wrapper
-     <span class="author-avatar"> holds either an <img> or an initial; the
-     standalone <img class="author-bio-avatar"|"author-card-avatar"> portraits
-     get the same circle + cover crop directly. --avatar-size scales per use. */
+  /* Compact byline/avatar treatment used in cards and article signatures. The
+     author profile and about roster use larger rectangular portraits below. */
   .author-avatar {
     --avatar-size: 1.7rem;
     display: inline-grid;
@@ -1113,7 +1099,6 @@
     object-fit: cover;
   }
 
-  .author-bio-avatar,
   .author-card-avatar {
     width: var(--avatar-size, 4.5rem);
     height: var(--avatar-size, 4.5rem);
@@ -1124,45 +1109,167 @@
     background: var(--color-page);
   }
 
-  /* /author/<slug> hero bio block: portrait + name, with the first-person bio
-     below (newlines preserved so multi-paragraph bios read as paragraphs). */
-  .author-bio {
+  /* /author/<slug> profile: portfolio-style, with a rectangular portrait, large
+     name, topic chips, and the author bio in one focused block. */
+  .author-profile {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--space-2) var(--space-4);
-    align-items: center;
-    max-width: 52rem;
-    margin: 0 auto var(--space-6);
-    padding-bottom: var(--space-5);
-    border-bottom: 1px solid var(--color-line);
+    gap: var(--space-5);
+    margin-bottom: var(--space-7);
+    padding-block: var(--space-5) var(--space-6);
+    border-block: 1px solid var(--color-line);
+    color: var(--color-ink);
   }
 
-  .author-bio-avatar {
-    --avatar-size: 4.5rem;
+  .author-profile-photo {
+    display: grid;
+    place-items: center;
+    width: min(100%, 17rem);
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border: 1px solid var(--color-line-dark);
+    background: transparent;
   }
 
-  .author-bio-name {
+  .author-profile-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .author-profile-initial {
     font-family: var(--font-display);
-    font-size: var(--text-xl);
-    font-weight: 900;
-    line-height: 1.05;
+    font-size: clamp(4rem, 18vw, 8rem);
+    font-weight: 950;
+    line-height: 1;
   }
 
-  .author-bio-text {
-    grid-column: 1 / -1;
+  .author-profile-main {
+    display: grid;
+    align-content: start;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .author-profile-kicker,
+  .author-profile-label {
+    color: var(--color-muted);
+    font-size: var(--text-xs);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+
+  .author-profile-name {
+    max-width: 13ch;
+    font-family: var(--font-display);
+    font-size: clamp(2.25rem, 8vw, 5.25rem);
+    font-weight: 950;
+    line-height: 0.92;
+  }
+
+  .author-profile-topics {
+    display: grid;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-line);
+  }
+
+  .author-profile-topics ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    list-style: none;
+  }
+
+  .author-profile-topics a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    border-bottom: 2px solid var(--color-line-dark);
+    color: var(--color-ink);
+    font-size: var(--text-xs);
+    font-weight: 850;
+    line-height: 1;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+
+  .author-profile-topics a:hover,
+  .author-profile-topics a:focus-visible {
+    border-color: var(--color-red);
+    color: var(--color-red);
+  }
+
+  .author-profile-about {
+    display: grid;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-line);
     color: var(--color-muted);
     font-size: var(--text-md);
     line-height: 1.6;
+  }
+
+  .author-profile-about p:last-child {
     white-space: pre-line;
   }
 
-  /* Autores roster (/about/): each author's "about" laid out as a card — a big
+  .author-content-head {
+    display: grid;
+    gap: var(--space-1);
+    border-top: 4px solid var(--color-ink);
+    padding-top: var(--space-3);
+  }
+
+  .author-content-head h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 930;
+    line-height: 1.04;
+  }
+
+  .author-portal {
+    grid-template-columns: 1fr;
+  }
+
+  .author-portal .article-list,
+  .author-portal .author-content-head,
+  .author-portal .pager,
+  .author-portal .months {
+    grid-column: 1 / -1;
+  }
+
+  .about-manifesto {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 80rem;
+    margin: 0 auto;
+    padding-block: var(--space-5) var(--space-7);
+    border-block: 1px solid var(--color-line);
+  }
+
+  .about-manifesto p {
+    color: var(--color-muted);
+    font-size: clamp(1.05rem, 1.6vw, 1.32rem);
+    line-height: 1.65;
+  }
+
+  .about-manifesto p:first-child {
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 2.4vw, 2.15rem);
+    font-weight: 850;
+    line-height: 1.16;
+  }
+
+  /* Nosotros roster (/about/): each author's "about" laid out as a card — a big
      rectangular portrait with a theme-color rule, the name + beat beside it, and
      the first-person bio spanning the full width below both. The accent color is
      keyed to the author's section/beat (data-section), so every byline carries its
      own identity. */
   .about-authors {
-    margin-top: var(--space-6);
+    margin-top: var(--space-7);
   }
 
   .author-cards {
@@ -1264,7 +1371,7 @@
 
   .author-card-bio {
     grid-area: bio;
-    max-width: 70ch;
+    width: 100%;
     margin-top: var(--space-2);
     color: var(--color-muted);
     font-size: var(--text-md);
@@ -1276,6 +1383,26 @@
     .author-card {
       gap: var(--space-3) var(--space-6);
       padding-left: var(--space-5);
+    }
+
+    .author-card:nth-child(even) {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "head portrait"
+        "bio bio";
+      padding-right: var(--space-5);
+      padding-left: 0;
+      border-right: 4px solid var(--author-accent);
+      border-left: 0;
+    }
+
+    .author-card:nth-child(even) .author-card-head {
+      justify-items: end;
+      text-align: right;
+    }
+
+    .author-card:nth-child(even) .author-card-bio {
+      text-align: right;
     }
 
     .author-card-portrait {
@@ -1640,6 +1767,16 @@
   }
 
   @media (min-width: 42rem) {
+    .author-profile {
+      grid-template-columns: minmax(12rem, 0.36fr) minmax(0, 1fr);
+      align-items: start;
+    }
+
+    .author-profile-photo {
+      width: 100%;
+      max-width: 18rem;
+    }
+
     .article-item {
       grid-column: span 6;
     }
@@ -1662,6 +1799,26 @@
 
     .article-item:first-child .card-title {
       font-size: var(--text-2xl);
+    }
+
+    .author-grid .article-item,
+    .author-grid .article-item:first-child {
+      grid-column: span 6;
+    }
+
+    .author-grid .article-item:first-child .card-has-media {
+      display: flex;
+      grid-template-columns: none;
+      gap: var(--space-3);
+    }
+
+    .author-grid .article-item:first-child .card-has-media .card-media {
+      height: auto;
+      min-height: 0;
+    }
+
+    .author-grid .article-item:first-child .card-title {
+      font-size: var(--text-xl);
     }
   }
 
@@ -1698,6 +1855,20 @@
 
     .article-item:nth-child(2),
     .article-item:nth-child(3) {
+      grid-column: span 6;
+    }
+
+    .author-portal {
+      grid-template-columns: 1fr;
+    }
+
+    .author-portal .article-list {
+      grid-column: 1 / -1;
+    }
+
+    .author-grid .article-item:first-child,
+    .author-grid .article-item:nth-child(2),
+    .author-grid .article-item:nth-child(3) {
       grid-column: span 6;
     }
   }

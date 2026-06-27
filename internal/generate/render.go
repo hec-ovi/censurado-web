@@ -244,7 +244,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		}
 		view.Items = authorLatestItems(env.plan.Index, sc, 10)
 	} else {
-		view.Rail = railItems(view.Items, 5)
+		view.Rail = railItems(view.Items, 10)
 	}
 	if pg.Landing {
 		view.Manifest = manifest

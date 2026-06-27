@@ -51,9 +51,9 @@
 </header>
 {{- end}}
 <ol class="article-list{{if .AuthorName}} author-grid{{end}}" data-articles>
-{{- range .Items}}
-<li class="article-item" data-author="{{.AuthorSlug}}" data-author-avatar="{{.AuthorAvatar}}" data-section="{{.SectionSlug}}" data-topics="{{.TopicsAttr}}" data-month="{{.MonthSlug}}">
-{{template "article_card" .}}
+{{- range $i, $it := .Items}}
+<li class="article-item" data-author="{{$it.AuthorSlug}}" data-author-avatar="{{$it.AuthorAvatar}}" data-section="{{$it.SectionSlug}}" data-topics="{{$it.TopicsAttr}}" data-month="{{$it.MonthSlug}}">
+{{if and (eq $i 0) (not $.AuthorName)}}{{template "lead_card" $it}}{{else}}{{template "article_card" $it}}{{end}}
 </li>
 {{- end}}
 </ol>

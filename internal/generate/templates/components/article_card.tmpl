@@ -38,3 +38,32 @@
 </div>
 </article>
 {{end}}
+
+{{/* lead_card is the full-width lead on a non-author listing: title and dek run
+     full width up top, the image floats left, and the summary wraps beside it and
+     continues full width below. No .card-body wrapper, so the float lives in the
+     card's own block flow. Same hooks as article_card (.card-link, data-author). */}}
+{{define "lead_card"}}
+<article class="card lead-card{{if eq .Thumb.Kind "image"}} card-has-media{{else}} card-textonly{{end}}">
+<div class="card-kicker">
+<a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a>
+<time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
+</div>
+<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
+{{- if .Subtitle}}
+<p class="card-subtitle">{{.Subtitle}}</p>
+{{- end}}
+{{- if eq .Thumb.Kind "image"}}
+<figure class="card-media">
+<img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
+</figure>
+{{- end}}
+{{- if .Description}}
+<p class="card-description">{{.Description}}</p>
+{{- end}}
+<div class="card-meta">
+{{template "author_avatar" .}}
+<p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
+</div>
+</article>
+{{end}}

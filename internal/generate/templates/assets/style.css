@@ -943,24 +943,21 @@
     min-width: 0;
   }
 
+  /* The dek: bold on every card (image cards included), so it reads as a subtitle
+     consistently and never blends into the description. */
   .card-subtitle {
-    color: var(--color-muted);
+    color: var(--color-ink);
     font-size: var(--text-sm);
+    font-weight: 650;
     line-height: 1.45;
   }
 
-  /* Every card shows the description so it fills next to (or below) the image;
-     it is line-clamped with an ellipsis so it never outgrows the card. The lead
-     story has a taller image, so it gets more lines. */
+  /* Every card shows the FULL description, never trimmed; the masonry columns
+     absorb the varying card heights. */
   .card-description {
     color: var(--color-muted);
     font-size: var(--text-sm);
     line-height: 1.55;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
-    line-clamp: 4;
-    overflow: hidden;
   }
 
   .article-item:first-child .card-description {
@@ -999,22 +996,18 @@
   /* Portada titles are always a single full-width line; a too-long title is
      clipped with an ellipsis rather than wrapping. Titles are kept short at the
      source (the authored title is a <=5-word synthesis). */
+  /* Titles wrap across as many lines as they need, never truncated. */
   .card-title {
     font-family: var(--font-display);
     font-size: var(--text-xl);
     font-weight: 930;
     line-height: 1.08;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .card-link {
     display: block;
-    overflow: hidden;
     color: inherit;
     text-decoration: none;
-    text-overflow: ellipsis;
   }
 
   .card-link {
@@ -1799,20 +1792,32 @@
       grid-column: 1 / -1;
     }
 
-    .article-item:first-child .card-has-media {
-      display: grid;
-      grid-template-columns: minmax(16rem, 1.05fr) minmax(0, 1fr);
-      align-items: stretch;
-      gap: var(--space-5);
+    /* The full-width lead is a feature card: kicker and centered title and dek run
+       full width up top; the image then floats left and the summary wraps beside it
+       and continues full width once it passes the bottom of the image. display:block
+       (not the card's flex) so the float wrap works. */
+    .card.lead-card {
+      display: block;
     }
-
-    .article-item:first-child .card-has-media .card-media {
-      height: 100%;
-      min-height: 18rem;
+    .lead-card .card-kicker,
+    .lead-card .card-title {
+      text-align: center;
     }
-
-    .article-item:first-child .card-title {
+    .lead-card .card-kicker {
+      justify-content: center;
+    }
+    .lead-card .card-title {
       font-size: var(--text-2xl);
+    }
+    .lead-card .card-media {
+      float: left;
+      width: 46%;
+      margin: var(--space-1) var(--space-5) var(--space-3) 0;
+      height: auto;
+      min-height: 0;
+    }
+    .lead-card .card-meta {
+      clear: both;
     }
 
     .author-grid .article-item,
@@ -1904,6 +1909,30 @@
        and transition only, not <video> playback, so disable the video directly. */
     .masthead-video {
       display: none;
+    }
+  }
+
+  /* Desktop: the card lists (the latest grid and the author page's "Contenido
+     generado" grid, both .article-list) flow as two independent masonry columns
+     instead of aligned grid rows, so a short text-only card never leaves an empty
+     gap beside a tall image card. The main list keeps its full-width lead via
+     column-span; the author grid (.author-grid) has no lead. Mobile, a single
+     column, is unaffected. */
+  @media (min-width: 42rem) {
+    .article-list {
+      display: block;
+      columns: 2;
+      column-gap: var(--gutter);
+    }
+    .article-list > .article-item {
+      break-inside: avoid;
+      margin-bottom: var(--space-6);
+    }
+    .article-list:not(.author-grid) > .article-item:first-child {
+      column-span: all;
+    }
+    .article-list .card {
+      min-height: 0;
     }
   }
 }

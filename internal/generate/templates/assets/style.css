@@ -601,6 +601,8 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.12em;
+    color: var(--color-ink);
+    text-decoration: none;
   }
 
   .footer-wordmark .brand-word-censurado {

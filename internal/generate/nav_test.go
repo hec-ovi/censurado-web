@@ -50,6 +50,31 @@ func TestNav_FixedCuratedMenu(t *testing.T) {
 	}
 }
 
+// The masthead and footer wordmarks are links back to the portada (/latest/),
+// so clicking "El Censurado Web" anywhere returns to the main page.
+func TestNav_BrandLinksToPortada(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara", Section: "politics", Published: date(2026, 6, 2)})
+	genInto(t, repo, out, nil)
+
+	// check an inner article page too, not just the landing, since the chrome
+	// is shared and the brand must link home from everywhere.
+	for _, name := range []string{"latest/index.html", "about/index.html"} {
+		htmlStr := string(readArtifact(t, out, name))
+		if !strings.Contains(htmlStr, `<a class="site-name brand-wordmark" href="/latest/"`) {
+			t.Errorf("%s: header wordmark is not a link to /latest/", name)
+		}
+		if !strings.Contains(htmlStr, `<a class="footer-wordmark brand-wordmark" href="/latest/"`) {
+			t.Errorf("%s: footer wordmark is not a link to /latest/", name)
+		}
+		// the old non-clickable markup must be gone
+		if strings.Contains(htmlStr, `<div class="site-name brand-wordmark"`) {
+			t.Errorf("%s: header wordmark is still a non-clickable div", name)
+		}
+	}
+}
+
 // With no saved theme preference, a phone-width viewport boots in light mode.
 func TestNav_MobileDefaultsLight(t *testing.T) {
 	repo := newStore(t)

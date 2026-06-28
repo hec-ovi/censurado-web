@@ -6,7 +6,7 @@ pages, JSON shards for client-side filtering, feeds, sitemaps, and a CDN purge
 manifest. The public reading path is fully static, so nothing here runs when a reader
 loads the site; the generator runs at build time and a CDN serves the output.
 
-Three repos make up the system:
+The system is four repos:
 
 - **censurado-web** (this): the generator + the public frontend (templates, CSS, JS).
 - **censurado-web-backend**: the publish API, the sqlite store (source of truth for
@@ -14,6 +14,8 @@ Three repos make up the system:
   imports its public `domain`, `store`, `content`, and `media` libraries.
 - **censurado-web-brain**: the agentic newsroom that writes articles and publishes
   them to the backend.
+- **censurado-web-harness**: one Docker Compose that runs all of the above together
+  (plus a local LLM and ComfyUI), and carries the CLI publishing skill.
 
 ## How it works
 

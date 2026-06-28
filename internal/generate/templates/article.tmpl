@@ -20,10 +20,12 @@
 <div class="body article-body">
 {{.BodyHTML}}
 </div>
-<p class="article-date"><time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandatees .PublishedAt}}</time></p>
 <footer class="article-sign">
+<time class="article-date" datetime="{{rfc3339 .PublishedAt}}">{{humandatees .PublishedAt}}</time>
+<span class="article-sign-author">
 {{template "author_avatar" .}}
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
+</span>
 </footer>
 </div>
 <aside class="article-rail author-more" data-author-more="{{.AuthorSlug}}" data-self="{{.Canonical}}" aria-label="Más de este autor">

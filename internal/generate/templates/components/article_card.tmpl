@@ -50,13 +50,10 @@
 <time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 </div>
 <h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
+<div class="lead-card-body">
+<div class="lead-card-text">
 {{- if .Subtitle}}
 <p class="card-subtitle">{{.Subtitle}}</p>
-{{- end}}
-{{- if eq .Thumb.Kind "image"}}
-<figure class="card-media">
-<img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
-</figure>
 {{- end}}
 {{- if .Description}}
 <p class="card-description">{{.Description}}</p>
@@ -64,6 +61,13 @@
 <div class="card-meta">
 {{template "author_avatar" .}}
 <p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
+</div>
+</div>
+{{- if eq .Thumb.Kind "image"}}
+<figure class="card-media">
+<img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
+</figure>
+{{- end}}
 </div>
 </article>
 {{end}}

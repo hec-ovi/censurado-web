@@ -20,7 +20,9 @@
 // shipped bytes are unit tested against DOM fragments, and also
 // auto-initializes on the real page.
 
-const FACET_TYPES = ["author", "section", "topic", "month"];
+// "topic" is intentionally absent: the Tema filter bar is removed from the
+// listings (topics live on the author profile's own Temas nav instead).
+const FACET_TYPES = ["author", "section", "month"];
 const FACET_LABEL = { author: "Autor", section: "Sección", topic: "Tema", month: "Mes" };
 
 // absURL resolves a root-relative URL against the document base. Browsers do
@@ -185,6 +187,15 @@ function articleItemFromEntry(e, helpers) {
     const sub = el("p", { class: "card-subtitle" });
     sub.textContent = e.subtitle;
     body.appendChild(sub);
+  }
+
+  // The standfirst/summary. Present on every card to match the server markup;
+  // desktop CSS hides it on image cards and turns it into the fill-to-row clamp on
+  // text cards (see initCardFill). Mobile shows it in full.
+  if (e.description) {
+    const desc = el("p", { class: "card-description" });
+    desc.textContent = e.description;
+    body.appendChild(desc);
   }
 
   const meta = el("div", { class: "card-meta" });
@@ -748,8 +759,8 @@ class LiveRefresh {
       this.banner.addEventListener("click", () => this.applyPending());
       this.list.parentNode.insertBefore(this.banner, this.list);
     }
-    const n = entries.length;
-    this.banner.textContent = n + (n === 1 ? " historia nueva" : " historias nuevas");
+    // A plain call to action, no count: the reader taps to pull in whatever is new.
+    this.banner.textContent = "Actualizar nuevos artículos";
     this.banner.removeAttribute("hidden");
   }
 
@@ -876,7 +887,7 @@ class InfiniteScroll {
     this.fetcher = typeof fetcher === "function" ? fetcher.bind(this.win) : null;
     this.batchSize = Math.max(1, Number(options.batchSize || 6));
     this.delayMs = options.delayMs == null ? 500 : Number(options.delayMs); // brief "Cargando" beat
-    this.stepMs = options.stepMs == null ? 160 : Number(options.stepMs); // stagger between revealed cards
+    this.stepMs = options.stepMs == null ? 0 : Number(options.stepMs); // 0 = reveal the batch at once (no top-to-bottom "feed" flicker)
     this.setTimer = options.setTimeout || this.win.setTimeout.bind(this.win);
     this.wait = options.wait || ((ms) => new Promise((r) => this.setTimer(r, ms)));
     this.observeFn = typeof options.observe === "function" ? options.observe : null;
@@ -1494,6 +1505,62 @@ function arrowButton(doc, glyph, label) {
   return b;
 }
 
+// initCardFill equalizes the desktop listing cards within a row. The grid already
+// stretches every card to the row's tallest; image cards drop their summary in CSS
+// (the image carries the height), and here each TEXT card's summary is grown to
+// fill its leftover height and clamped with an ellipsis when there is more text
+// than fits. It is desktop-only (the 42rem grid breakpoint, below which cards stack
+// one per row and keep their full summary) and re-runs on resize and whenever a
+// list's card set changes (facet filter, infinite-scroll append, live refresh).
+export function initCardFill(root = document) {
+  const scope = root || document;
+  const win = typeof window !== "undefined" ? window : null;
+  const desktop = () =>
+    !win || typeof win.matchMedia !== "function" || win.matchMedia("(min-width: 42rem)").matches;
+
+  const fillCard = (desc) => {
+    // Reset to the natural (un-clamped) box so the measure is honest.
+    desc.style.removeProperty("display");
+    desc.style.removeProperty("-webkit-box-orient");
+    desc.style.removeProperty("-webkit-line-clamp");
+    if (!desktop()) return; // mobile keeps the full summary
+    const avail = desc.clientHeight; // flex:1 already gave it the row's leftover height
+    const lh = win ? parseFloat(win.getComputedStyle(desc).lineHeight) : 0;
+    if (!avail || !lh) return; // no layout (e.g. jsdom): leave the full summary
+    const lines = Math.max(1, Math.floor(avail / lh));
+    desc.style.display = "-webkit-box";
+    desc.style.webkitBoxOrient = "vertical";
+    desc.style.webkitLineClamp = String(lines);
+  };
+
+  const fillAll = () => {
+    scope
+      .querySelectorAll(".article-list .article-item:not(:first-child) .card-textonly .card-description")
+      .forEach(fillCard);
+  };
+  const schedule = () => {
+    if (win && win.requestAnimationFrame) win.requestAnimationFrame(fillAll);
+    else fillAll();
+  };
+
+  schedule();
+  if (win && win.addEventListener) {
+    let t;
+    win.addEventListener("resize", () => {
+      if (t) win.clearTimeout(t);
+      t = win.setTimeout(fillAll, 150);
+    });
+  }
+  // childList-only (never subtree/attributes), so our own style writes above do not
+  // re-trigger it; a re-render or appended batch does.
+  if (typeof MutationObserver === "function") {
+    scope.querySelectorAll(".article-list").forEach((list) => {
+      new MutationObserver(schedule).observe(list, { childList: true });
+    });
+  }
+  return { fill: fillAll };
+}
+
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
@@ -1502,6 +1569,7 @@ if (typeof document !== "undefined") {
     initTheme(document);
     initTopicScroller(document);
     initAuthorMore(document);
+    initCardFill(document);
     initRefine(document)
       .then(() => initTopicScroller(document))
       .finally(() => {

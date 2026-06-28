@@ -99,7 +99,7 @@
     --radius-sm: 0;
     --radius-md: 0;
     --measure: 70ch;
-    --site-max: 1250px;
+    --site-max: 1440px;
     --gutter: 1rem;
 
     --motion-fast: 140ms;
@@ -767,6 +767,15 @@
 
   .facet-group[data-facet-group="topic"] .scroll-row {
     flex: 1 1 auto;
+  }
+
+  /* The portada/listing facet panel only ever surfaced the "Tema" filter (author,
+     section and month groups are hidden); with topics removed it has no visible
+     controls, so the whole panel is hidden to avoid leaving an empty band above the
+     article list. Filtering still works through the nav and the section/author/topic
+     permalinks. */
+  .facet-panel {
+    display: none;
   }
 
   .scroll-row .topics,
@@ -1652,10 +1661,18 @@
   .article-sign {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: var(--space-3);
     padding-top: var(--space-4);
     border-top: 2px solid var(--color-ink);
+  }
+
+  /* The date sits at the left end of the signature line; the portrait + name at the
+     right end. */
+  .article-sign-author {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   .article-sign .author-avatar {
@@ -1713,6 +1730,17 @@
     padding-top: var(--space-4);
   }
 
+  /* Related cards never run long: the summary is cut to a few lines with an
+     ellipsis, so the row stays tidy instead of one card overflowing far past the
+     others. */
+  .related-item .card-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+    overflow: hidden;
+  }
+
   /* "Más de este autor" rail on a permalink: the author's other pieces, aligned
      to the right against the margin. */
   .author-more {
@@ -1760,8 +1788,13 @@
   }
 
   @media (min-width: 72rem) {
+    /* The prose column hugs the left of the page and the "más de este autor" rail
+       hugs the right; the whitespace falls between them (the normal article +
+       sidebar shape), so neither edge carries a lopsided gutter. The main column
+       is flexible (1fr) but the body inside it stays capped at the reading measure
+       and flush-left. */
     .article-shell {
-      grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.3fr);
+      grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
       align-items: start;
       column-gap: var(--space-7);
     }
@@ -1769,6 +1802,16 @@
     .article-rail {
       position: sticky;
       top: var(--space-4);
+    }
+
+    /* Flush-left prose that fills toward the rail. The extra specificity
+       (.article-main .article-body) beats the base centering rule that follows it in
+       source order. max-width is widened well past the base measure so the prose runs
+       out to meet the rail instead of leaving a wide empty band, but it is still
+       capped so an ultra-wide monitor does not stretch a line past readability. */
+    .article-main .article-body {
+      margin-inline: 0;
+      max-width: 64rem;
     }
   }
 
@@ -1914,6 +1957,10 @@
     font-family: var(--font-body);
     font-size: var(--text-base);
     line-height: 1.62;
+    /* Justified prose; the document is lang="es" so auto-hyphenation breaks long
+       Spanish words and keeps the inter-word spacing even instead of ragged. */
+    text-align: justify;
+    hyphens: auto;
   }
 
   .article-body > * + * {
@@ -1971,8 +2018,6 @@
   /* The published date: a small, right-aligned stamp just above the signature
      (full article only; the portada cards rely on the day separators instead). */
   .article-date {
-    text-align: right;
-    margin-bottom: var(--space-2);
     color: var(--color-muted);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
@@ -2048,32 +2093,49 @@
       grid-column: 1 / -1;
     }
 
-    /* The full-width lead is a feature card: kicker and centered title and dek run
-       full width up top; the image then floats left and the summary wraps beside it
-       and continues full width once it passes the bottom of the image. display:block
-       (not the card's flex) so the float wrap works. */
+    /* Desktop card heights (the requested fix; mobile keeps the natural stacked
+       cards, and the lead card and Related cards are untouched). Grid rows already
+       stretch every card to the row's tallest, so the work is per card type:
+         - image cards drop the summary (the image carries the height), so they stop
+           running "ridiculously" tall next to the text cards;
+         - text cards turn the summary into a fill that grows to take the leftover
+           height; initCardFill then clamps it with an ellipsis when it would
+           overflow the row. */
+    .article-item:not(:first-child) .card-has-media .card-description {
+      display: none;
+    }
+    .article-item:not(:first-child) .card-textonly .card-description {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* The full-width lead is a feature card: the kicker and title run full width up
+       top; below them a two-column body puts the text on the LEFT (the dek, then the
+       summary, then the signature) and the image on the RIGHT. */
     .card.lead-card {
       display: block;
     }
-    .lead-card .card-kicker,
-    .lead-card .card-title {
-      text-align: center;
-    }
     .lead-card .card-kicker {
-      justify-content: center;
+      justify-content: flex-start;
     }
     .lead-card .card-title {
       font-size: var(--text-2xl);
     }
-    .lead-card .card-media {
-      float: left;
-      width: 46%;
-      margin: var(--space-1) var(--space-5) var(--space-3) 0;
+    .lead-card-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr);
+      gap: var(--space-5);
+      align-items: start;
+      margin-top: var(--space-3);
+    }
+    .lead-card.card-textonly .lead-card-body {
+      grid-template-columns: 1fr;
+    }
+    .lead-card-body .card-media {
+      margin: 0;
       height: auto;
       min-height: 0;
-    }
-    .lead-card .card-meta {
-      clear: both;
     }
 
     .author-grid .article-item,

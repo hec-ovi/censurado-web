@@ -98,9 +98,13 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 func TestListingRail_Clickable(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
+	// Seed more than one page so the landing's "Lo más leído" rail has below-the-fold
+	// articles to show (the rail is now drawn from articles NOT on the page's grid).
 	seed(t, repo, seedSpec{Title: "Uno", Author: "ada", Section: "tech", Published: date(2026, 6, 1)})
 	seed(t, repo, seedSpec{Title: "Dos", Author: "ada", Section: "tech", Published: date(2026, 6, 2)})
-	genInto(t, repo, out, nil)
+	seed(t, repo, seedSpec{Title: "Tres", Author: "ada", Section: "tech", Published: date(2026, 6, 3)})
+	seed(t, repo, seedSpec{Title: "Cuatro", Author: "ada", Section: "tech", Published: date(2026, 6, 4)})
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
 	listing := string(readArtifact(t, out, "latest/index.html"))
 
 	if strings.Contains(listing, `<div class="ranked-link">`) {
@@ -108,6 +112,10 @@ func TestListingRail_Clickable(t *testing.T) {
 	}
 	if !strings.Contains(listing, `<a class="ranked-link" href="/a/`) {
 		t.Errorf("rail items are not links to permalinks")
+	}
+	// The rail's Spanish heading renders when the rail is populated.
+	if !strings.Contains(listing, "Lo más leído") {
+		t.Errorf("rail heading 'Lo más leído' missing")
 	}
 }
 

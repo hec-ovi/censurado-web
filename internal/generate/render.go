@@ -250,8 +250,14 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}
 		view.Items = authorLatestItems(env.plan.Index, sc, env.pageSize)
-	} else {
-		view.Rail = railItems(view.Items, 10)
+	} else if pg.Landing {
+		// "Lo más leído" lives only on the scope landing (the front page and the
+		// section/topic fronts), drawn from the articles BELOW this page's fold so
+		// it never repeats the grid the reader is already looking at. Sealed
+		// deep-pagination pages omit it on purpose: a live "below page" rail there
+		// would break the append-only byte-stability of older pages under a
+		// backdated insert.
+		view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, 10)
 	}
 	// Group the listing by published day with full-width separators (every scope,
 	// server-rendered). Runs after the author override and the rail copy so it
@@ -437,7 +443,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		view.HeroImage = media.view.Src
 		view.HeroAlt = media.view.Alt
 	}
-	view.AuthorMore = articleAuthorMore(env.plan.Index, a, 6)
+	view.AuthorMore = articleAuthorMore(env.plan.Index, a, 4)
 	view.Related = articleRelated(env.plan.Index, a, 4)
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
@@ -524,13 +530,33 @@ func markDaySeparators(items []itemView) {
 	}
 }
 
-func railItems(items []itemView, n int) []itemView {
-	if n > len(items) {
-		n = len(items)
+// railBelowPage builds the "Lo más leído" rail from the scope's articles that are
+// strictly OLDER than this page's oldest item, newest-first, capped at n. Bounding
+// the rail below the page's window does two things: it never repeats the grid the
+// reader is already looking at (the requested fix), and it stays byte-stable,
+// because a later (newer) publish lands ABOVE the window and so can never enter a
+// sealed page's rail.
+func railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []itemView {
+	if len(pageArts) == 0 {
+		return nil
 	}
-	out := make([]itemView, n)
-	copy(out, items[:n])
-	return out
+	// The page's oldest article (last in display order) is the upper bound: only
+	// strictly-older articles may enter the rail.
+	oldest := pageArts[0]
+	for _, a := range pageArts[1:] {
+		if displayLess(oldest, a) { // oldest is newer than a, so a is older
+			oldest = a
+		}
+	}
+	scopeArts := idx.articlesAt(idx.scopeIndices(sc))
+	sortDisplay(scopeArts)
+	below := make([]domain.Article, 0, len(scopeArts))
+	for _, a := range scopeArts {
+		if displayLess(oldest, a) { // a is strictly older than the page's oldest
+			below = append(below, a)
+		}
+	}
+	return itemViewsOf(below, n)
 }
 
 // articlesUpToSelf returns every article that is NOT newer than self (older or

@@ -9,18 +9,19 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (12 fields); id is unexported and never
+// The JSON field set is frozen (13 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
-// listing (ties by id). Subtitle, Image and Avatar carry the authored dek, hero
-// URL and byline avatar so client-rebuilt cards (facet filter, live refresh,
-// infinite scroll) match the server cards even for an author absent from the
-// page's first batch; all are always present (possibly "") to keep the
-// exact-key-set invariant.
+// listing (ties by id). Subtitle, Description, Image and Avatar carry the authored
+// dek, standfirst, hero URL and byline avatar so client-rebuilt cards (facet
+// filter, live refresh, infinite scroll) match the server cards even for an author
+// absent from the page's first batch; all are always present (possibly "") to keep
+// the exact-key-set invariant.
 type ShardEntry struct {
 	Slug        string   `json:"slug"`
 	URL         string   `json:"url"`
 	Title       string   `json:"title"`
 	Subtitle    string   `json:"subtitle"`
+	Description string   `json:"description"`
 	Image       string   `json:"image"`
 	Author      string   `json:"author"`
 	AuthorLabel string   `json:"author_label"`
@@ -63,6 +64,7 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 		URL:         articleURL(a),
 		Title:       a.Title,
 		Subtitle:    firstMetadataString(a.Metadata, "subtitle"),
+		Description: firstMetadataString(a.Metadata, "description"),
 		Image:       metadataMediaSrc("", a.Metadata, "image"),
 		Author:      auth,
 		AuthorLabel: authorDisplayLabel(a),

@@ -7,12 +7,13 @@
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["slug", "url", "title", "subtitle", "image", "author", "author_label", "avatar", "section", "topics", "published_at", "ts"],
+    "required": ["slug", "url", "title", "subtitle", "description", "image", "author", "author_label", "avatar", "section", "topics", "published_at", "ts"],
     "properties": {
       "slug":         { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
       "url":          { "type": "string", "pattern": "^/a/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/$" },
       "title":        { "type": "string", "minLength": 1 },
       "subtitle":     { "type": "string" },
+      "description":  { "type": "string" },
       "image":        { "type": "string" },
       "author":       { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
       "author_label": { "type": "string", "minLength": 1 },

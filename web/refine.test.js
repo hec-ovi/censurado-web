@@ -360,7 +360,7 @@ describe("Censurado refiner", () => {
     await liveRefresh.checkNow();
 
     expect(fetchMock.mock.calls[1][1].headers["If-None-Match"]).toBe('"v1"');
-    const banner = within(container).getByRole("button", { name: "1 historia nueva" });
+    const banner = within(container).getByRole("button", { name: "Actualizar nuevos artículos" });
     expect(banner).not.toBeNull();
 
     const user = userEvent.setup();

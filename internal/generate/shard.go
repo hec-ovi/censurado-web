@@ -9,11 +9,13 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (11 fields); id is unexported and never
+// The JSON field set is frozen (12 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
-// listing (ties by id). Subtitle and Image carry the authored dek and hero URL
-// so client-rebuilt cards (facet filter + live refresh) match the server cards;
-// both are always present (possibly "") to keep the exact-key-set invariant.
+// listing (ties by id). Subtitle, Image and Avatar carry the authored dek, hero
+// URL and byline avatar so client-rebuilt cards (facet filter, live refresh,
+// infinite scroll) match the server cards even for an author absent from the
+// page's first batch; all are always present (possibly "") to keep the
+// exact-key-set invariant.
 type ShardEntry struct {
 	Slug        string   `json:"slug"`
 	URL         string   `json:"url"`
@@ -22,6 +24,7 @@ type ShardEntry struct {
 	Image       string   `json:"image"`
 	Author      string   `json:"author"`
 	AuthorLabel string   `json:"author_label"`
+	Avatar      string   `json:"avatar"`
 	Section     string   `json:"section"`
 	Topics      []string `json:"topics"`
 	PublishedAt string   `json:"published_at"`
@@ -63,6 +66,7 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 		Image:       metadataMediaSrc("", a.Metadata, "image"),
 		Author:      auth,
 		AuthorLabel: authorDisplayLabel(a),
+		Avatar:      metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
 		Section:     sec,
 		Topics:      topics,
 		PublishedAt: a.PublishedAt.UTC().Format(time.RFC3339),

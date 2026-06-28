@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hec-ovi/censurado-web-backend/content"
+	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
 // collector produces a slice of the artifact set.
@@ -93,15 +93,23 @@ func collectors() []collector {
 // hash (identical hashes share a body).
 func renderBodiesOnce(p *Plan) (map[string]string, error) {
 	out := map[string]string{}
+	// Resolve inline {{relacionado:slug}} markers against the whole corpus; the
+	// first article for a slug wins (backend slugs are unique, so this is exact).
+	bySlug := make(map[string]domain.Article, len(p.Index.All))
+	for _, a := range p.Index.All {
+		if _, ok := bySlug[a.Slug]; !ok {
+			bySlug[a.Slug] = a
+		}
+	}
 	for _, a := range p.Index.All {
 		if _, ok := out[a.ContentHash]; ok {
 			continue
 		}
-		html, err := content.RenderMarkdown(a.Body)
+		rendered, err := renderBodyWithMarkers(a.Body, bySlug, a)
 		if err != nil {
 			return nil, err
 		}
-		out[a.ContentHash] = html
+		out[a.ContentHash] = rendered
 	}
 	return out, nil
 }

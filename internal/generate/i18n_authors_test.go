@@ -160,7 +160,7 @@ func TestAuthorPage_NameAndBioFromMetadata(t *testing.T) {
 	}
 }
 
-func TestAuthorPage_ProfileContentLatestTen(t *testing.T) {
+func TestAuthorPage_ProfileContentLatestPageSize(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	articles := make([]string, 0, 12)
@@ -180,7 +180,10 @@ func TestAuthorPage_ProfileContentLatestTen(t *testing.T) {
 		})
 		articles = append(articles, articleURL(a))
 	}
-	genInto(t, repo, out, nil)
+	// The author landing shows the latest PageSize pieces (then infinite-scrolls the
+	// rest), so the initial batch matches every other scope. PageSize 6 exercises
+	// Feature 7 on author profiles too.
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 6 })
 	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
 
 	for _, want := range []string{
@@ -198,18 +201,18 @@ func TestAuthorPage_ProfileContentLatestTen(t *testing.T) {
 		t.Errorf("author profile should not render the generic ranked rail")
 	}
 	listed := permalinksIn([]byte(page))
-	if len(listed) != 10 {
-		t.Fatalf("author profile listed %d articles, want latest 10", len(listed))
+	if len(listed) != 6 {
+		t.Fatalf("author profile listed %d articles, want latest 6 (PageSize)", len(listed))
 	}
-	wantLatest := articles[2:]
+	wantLatest := articles[6:] // the six newest, June 7..12
 	for i := range wantLatest {
-		want := wantLatest[len(wantLatest)-1-i]
+		want := wantLatest[len(wantLatest)-1-i] // newest first
 		if listed[i] != want {
 			t.Fatalf("listed[%d] = %q, want %q", i, listed[i], want)
 		}
 	}
-	if strings.Contains(page, articles[0]) || strings.Contains(page, articles[1]) {
-		t.Errorf("author profile leaked articles older than the latest 10")
+	if strings.Contains(page, articles[0]) || strings.Contains(page, articles[5]) {
+		t.Errorf("author profile leaked articles older than the latest 6")
 	}
 }
 

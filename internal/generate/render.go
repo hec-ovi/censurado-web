@@ -28,8 +28,9 @@ var templateFS embed.FS
 var assetFS embed.FS
 
 var templateFuncs = template.FuncMap{
-	"rfc3339":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"humandate": func(t time.Time) string { return t.UTC().Format("2006-01-02") },
+	"rfc3339":     func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+	"humandate":   func(t time.Time) string { return t.UTC().Format("2006-01-02") },
+	"humandatees": dayLabelES, // "28 de junio de 2026", matching the day separators
 }
 
 // sectionLabelsES maps a section slug (the English URL slug discovered from
@@ -134,6 +135,12 @@ type itemView struct {
 	MonthSlug     string // YYYY-MM publication month (data-month)
 	PublishedAt   time.Time
 	Thumb         mediaView
+	// DaySeparator is the Spanish day label ("27 de junio de 2026") shown as a
+	// full-width separator ABOVE this item, set only on the first item of a new
+	// published day and never on the first item overall (so the newest day carries
+	// no separator). Empty otherwise. Server-rendered so the date grouping shows on
+	// every scope with JS off; the client continues it on infinite-scroll appends.
+	DaySeparator string
 }
 
 type topicLink struct{ Label, URL string }
@@ -242,10 +249,14 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
 			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}
-		view.Items = authorLatestItems(env.plan.Index, sc, 10)
+		view.Items = authorLatestItems(env.plan.Index, sc, env.pageSize)
 	} else {
 		view.Rail = railItems(view.Items, 10)
 	}
+	// Group the listing by published day with full-width separators (every scope,
+	// server-rendered). Runs after the author override and the rail copy so it
+	// marks exactly the items that render in the list.
+	markDaySeparators(view.Items)
 	if pg.Landing {
 		view.Manifest = manifest
 		view.Pager = pagerFor(env.plan.Index, sc, env.pageSize, pg.Number)
@@ -482,6 +493,35 @@ func navLinksForArticles(_ []domain.Article) []navLink {
 
 func navLinksForArticle(a domain.Article) []navLink {
 	return navLinksForArticles([]domain.Article{a})
+}
+
+// monthsES are the Spanish month names, matching the client's formatDayES so a
+// server-rendered day separator and a scroll-appended one read identically.
+var monthsES = []string{
+	"enero", "febrero", "marzo", "abril", "mayo", "junio",
+	"julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+}
+
+// dayLabelES formats a published instant as "D de mes de YYYY" in UTC, the same
+// day bucket the client derives from the card's RFC3339 datetime attribute.
+func dayLabelES(t time.Time) string {
+	u := t.UTC()
+	return fmt.Sprintf("%d de %s de %d", u.Day(), monthsES[int(u.Month())-1], u.Year())
+}
+
+// markDaySeparators sets DaySeparator on the first item of each new published day
+// in a display-ordered (newest-first) item slice, skipping the first item so the
+// newest day carries no separator. Pure function of the slice, so a sealed page
+// stays byte-stable. It mutates in place (itemView elements are addressable).
+func markDaySeparators(items []itemView) {
+	lastDay := ""
+	for i := range items {
+		day := items[i].PublishedAt.UTC().Format("2006-01-02")
+		if i > 0 && lastDay != "" && day != lastDay {
+			items[i].DaySeparator = dayLabelES(items[i].PublishedAt)
+		}
+		lastDay = day
+	}
 }
 
 func railItems(items []itemView, n int) []itemView {

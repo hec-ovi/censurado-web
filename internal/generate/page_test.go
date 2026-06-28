@@ -94,3 +94,42 @@ func TestRelPrevNextChain(t *testing.T) {
 		t.Errorf("rem==0 landing canonical = %q, want /latest/page/3/", l0.Canonical)
 	}
 }
+
+// On an exact page boundary (rem==0) the landing must not be empty: /latest/
+// mirrors the NEWEST sealed page (page/full), not page/1, so the portada keeps
+// showing the latest articles instead of going blank.
+func TestPagination_BoundaryLandingMirrorsNewest(t *testing.T) {
+	_, pages := buildLatestPages(t, 4, 2) // full=2, rem=0
+	p2 := pages[1]                        // newest sealed page
+	landing := pages[len(pages)-1]
+	if !landing.Landing || landing.Number != 0 {
+		t.Fatalf("last page is not the landing")
+	}
+	if landing.Canonical != "/latest/page/2/" {
+		t.Errorf("landing canonical = %q, want /latest/page/2/", landing.Canonical)
+	}
+	if len(landing.Articles) != len(p2.Articles) || len(landing.Articles) != 2 {
+		t.Fatalf("landing has %d articles, want 2 (mirror of newest sealed page)", len(landing.Articles))
+	}
+	for i := range p2.Articles {
+		if landing.Articles[i].ID != p2.Articles[i].ID {
+			t.Errorf("landing[%d]=%q, want newest-page article %q", i, landing.Articles[i].ID, p2.Articles[i].ID)
+		}
+	}
+}
+
+// End-to-end: the rendered /latest/index.html on a page boundary contains
+// article permalinks (the homepage is never blank when the article count is an
+// exact multiple of the page size).
+func TestPagination_BoundaryPortadaNotBlank(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	for d := 1; d <= 4; d++ {
+		seed(t, repo, seedSpec{Title: "Art " + string(rune('A'+d)), Author: "ada", Section: "tech", Published: date(2026, 6, d)})
+	}
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 }) // N=4, P=2 -> rem==0
+	got := permalinksIn(readArtifact(t, out, "latest/index.html"))
+	if len(got) != 2 {
+		t.Errorf("/latest/ at a page boundary shows %d articles, want 2 (must not be blank)", len(got))
+	}
+}

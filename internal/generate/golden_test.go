@@ -136,7 +136,7 @@ func TestGolden_ShardCaps(t *testing.T) {
 // --- (c) ---------------------------------------------------------------------
 
 var frozenShardKeys = []string{
-	"slug", "url", "title", "subtitle", "image", "author", "author_label", "section", "topics", "published_at", "ts",
+	"slug", "url", "title", "subtitle", "image", "author", "author_label", "avatar", "section", "topics", "published_at", "ts",
 }
 
 func TestGolden_ShardFieldSetMatchesSchema(t *testing.T) {
@@ -153,7 +153,7 @@ func TestGolden_ShardFieldSetMatchesSchema(t *testing.T) {
 		t.Fatalf("compile shard schema: %v", err)
 	}
 
-	// Every emitted shard file validates and uses exactly the 11 frozen keys.
+	// Every emitted shard file validates and uses exactly the 12 frozen keys.
 	for _, p := range shardFiles(t, out) {
 		b := readArtifact(t, out, p)
 		validateJSON(t, sch, b, p)

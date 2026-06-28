@@ -189,7 +189,9 @@ function articleItemFromEntry(e, helpers) {
 
   const meta = el("div", { class: "card-meta" });
   const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
-  const avatarSrc = avatarFor(e.author);
+  // Prefer the avatar carried by the shard entry (works for any author, even one
+  // absent from the page's first batch); fall back to the DOM-derived map.
+  const avatarSrc = e.avatar || avatarFor(e.author);
   if (avatarSrc) {
     const img = el("img", { src: avatarSrc, alt: "", loading: "lazy", decoding: "async" });
     avatar.appendChild(img);
@@ -482,6 +484,7 @@ class Refiner {
 
   clearFilter(push) {
     this.list.innerHTML = this.originalListHTML; // restore exact server view
+    this.list.removeAttribute("data-filtered"); // let infinite scroll resume
     this.setPressed(null);
     this.activeFacet = null;
     this.showClear(false);
@@ -494,6 +497,7 @@ class Refiner {
     const frag = document.createDocumentFragment();
     for (const e of entries) frag.appendChild(this.entryToItem(e));
     this.list.replaceChildren(frag);
+    this.list.setAttribute("data-filtered", ""); // pause infinite scroll
   }
 
   // entryToItem rebuilds the frozen .article-item/.card structure (so the CSS
@@ -511,6 +515,7 @@ class Refiner {
     li.textContent =
       'Ningún artículo coincide con ' + FACET_LABEL[type] + ' "' + this.labelFor(type, value, value) + '".';
     this.list.replaceChildren(li);
+    this.list.setAttribute("data-filtered", ""); // pause infinite scroll
   }
 
   chipFor(type, value) {
@@ -822,6 +827,321 @@ class LiveRefresh {
   }
 }
 
+// ---- infinite scroll (Tier-B) ---------------------------------------------
+// Progressive enhancement of a listing LANDING: with JS off the static page
+// shows its first batch plus a real <nav class="pager"> to older pages. With JS
+// on, this hides the pager and, as the reader nears the bottom, fetches the next
+// batch of older entries from the same per-month shards the refiner already uses,
+// shows a brief "Cargando" beat (for personality), then appends them, inserting a
+// full-width day separator whenever the date rolls back to a previous day. It
+// dedupes by permalink so it never double-renders a card the server (or
+// live-refresh) already placed, and it pauses while a facet filter owns the list.
+// Only landings (inline #cnz-manifest) are enhanced; sealed pages keep their
+// static pager.
+
+const MONTHS_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+// formatDayES turns a "YYYY-MM-DD" prefix into "D de mes de YYYY" WITHOUT parsing
+// a Date, so it is timezone-stable and identical under the test runtime.
+function formatDayES(isoDayStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDayStr || "");
+  if (!m) return isoDayStr || "";
+  const month = MONTHS_ES[parseInt(m[2], 10) - 1] || "";
+  return parseInt(m[3], 10) + " de " + month + " de " + m[1];
+}
+
+function isoDay(s) {
+  return (s || "").slice(0, 10);
+}
+
+// cardDay reads the "YYYY-MM-DD" of an existing .article-item from its
+// <time class="published" datetime="..."> (server and client cards both carry it).
+function cardDay(li) {
+  const t = li.querySelector("time.published");
+  const dt = (t && (t.getAttribute("datetime") || t.textContent)) || "";
+  return isoDay(dt);
+}
+
+class InfiniteScroll {
+  constructor(root, list, manifest, options) {
+    this.root = root;
+    this.list = list;
+    this.manifest = manifest;
+    this.doc = options.document || list.ownerDocument || document;
+    this.win = this.doc.defaultView || window;
+    const fetcher = options.fetch || this.win.fetch || globalThis.fetch;
+    this.fetcher = typeof fetcher === "function" ? fetcher.bind(this.win) : null;
+    this.batchSize = Math.max(1, Number(options.batchSize || 6));
+    this.delayMs = options.delayMs == null ? 500 : Number(options.delayMs); // brief "Cargando" beat
+    this.stepMs = options.stepMs == null ? 160 : Number(options.stepMs); // stagger between revealed cards
+    this.setTimer = options.setTimeout || this.win.setTimeout.bind(this.win);
+    this.wait = options.wait || ((ms) => new Promise((r) => this.setTimer(r, ms)));
+    this.observeFn = typeof options.observe === "function" ? options.observe : null;
+    this.entries = null;
+    this.entriesLoaded = false;
+    this.loading = false;
+    this.done = false;
+    this.maps = { author: {}, section: {} };
+    this.tail = null;
+    this.loader = null;
+    this.sentinel = null;
+    this.observer = null;
+  }
+
+  // init enhances only when there is genuinely more to load AND a scroll trigger
+  // is available; otherwise it returns null and leaves the static pager fallback.
+  async init() {
+    if (!this.fetcher) return null;
+    if (this.list.hasAttribute("data-infinite-init")) return null;
+    const total = Number(this.manifest && this.manifest.total) || 0;
+    const shown = this.list.querySelectorAll(".article-item").length;
+    if (total <= shown) return null;
+    const canObserve =
+      this.observeFn || this.win.IntersectionObserver || globalThis.IntersectionObserver;
+    if (!canObserve) return null; // no scroll trigger: keep the static pager
+
+    this.list.setAttribute("data-infinite-init", "");
+    this.buildLabelMaps();
+    this.decorateInitial();
+    this.buildTail();
+    this.armObserver();
+    this.removePager();
+    return this;
+  }
+
+  // decorateInitial inserts day separators among the server-rendered cards, so a
+  // date rollover already visible on first paint reads the same as one reached by
+  // scrolling. The server now renders these separators on every scope, so this is
+  // idempotent: it only inserts one where the date rolls back AND no separator is
+  // already sitting before the card (a no-JS / older-cache page, or the test DOM).
+  // Runs after the refiner has captured its clean base view, so a facet clear
+  // restores the plain server list (separators re-appear on reload).
+  decorateInitial() {
+    let lastDay = "";
+    for (const li of [...this.list.querySelectorAll(".article-item")]) {
+      const day = cardDay(li);
+      if (lastDay && day && day !== lastDay) {
+        const prev = li.previousElementSibling;
+        const hasSep = prev && prev.classList && prev.classList.contains("day-separator");
+        if (!hasSep) this.list.insertBefore(this.daySeparator(day), li);
+      }
+      lastDay = day;
+    }
+  }
+
+  // buildLabelMaps records, per author/section, the display label, the pre-built
+  // href, and the avatar from the server-rendered cards, so appended cards reuse
+  // the exact same byline/section link the server emits.
+  buildLabelMaps() {
+    for (const li of this.list.querySelectorAll(".article-item")) {
+      const a = li.dataset.author;
+      const s = li.dataset.section;
+      const avatar = li.dataset.authorAvatar || "";
+      const authorLink = li.querySelector(".author-link");
+      const sectionLink = li.querySelector(".section-link");
+      if (a && authorLink && !(a in this.maps.author)) {
+        this.maps.author[a] = {
+          label: authorLink.textContent.trim(),
+          url: authorLink.getAttribute("href"),
+          avatar,
+        };
+      }
+      if (s && sectionLink && !(s in this.maps.section)) {
+        this.maps.section[s] = {
+          label: sectionLink.textContent.trim(),
+          url: sectionLink.getAttribute("href"),
+        };
+      }
+    }
+  }
+
+  helpers() {
+    const maps = this.maps;
+    return {
+      labelFor: (type, slug, fallback) =>
+        (maps[type] && maps[type][slug] && maps[type][slug].label) || fallback || slug,
+      facetURL: (type, slug) => {
+        const m = maps[type] && maps[type][slug];
+        if (m && m.url) return m.url;
+        return fallbackFacetURL(type, slug);
+      },
+      avatarFor: (slug) => (maps.author[slug] && maps.author[slug].avatar) || "",
+    };
+  }
+
+  buildTail() {
+    this.tail = el("div", { class: "infinite-tail", "data-infinite-tail": "" });
+    this.loader = el("div", {
+      class: "infinite-loader",
+      role: "status",
+      "aria-live": "polite",
+      hidden: "",
+    });
+    const spinner = el("span", { class: "infinite-spinner", "aria-hidden": "true" });
+    const loaderLabel = el("span", { class: "infinite-loader-label" });
+    loaderLabel.textContent = "Cargando";
+    this.loader.append(spinner, loaderLabel);
+    this.sentinel = el("div", {
+      class: "infinite-sentinel",
+      "data-infinite-sentinel": "",
+      "aria-hidden": "true",
+    });
+    this.tail.append(this.loader, this.sentinel);
+    // Live INSIDE the article list, as its last child: this keeps the loader in
+    // the content column (centered under the articles) and out of the portal grid
+    // entirely, so it can never disturb the "Lo más leído" rail in column 2. New
+    // cards are inserted before it.
+    this.list.appendChild(this.tail);
+  }
+
+  armObserver() {
+    if (this.observeFn) {
+      this.observeFn(this.sentinel, () => this.loadMore());
+      return;
+    }
+    const IO = this.win.IntersectionObserver || globalThis.IntersectionObserver;
+    if (!IO) return;
+    this.observer = new IO(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            this.loadMore();
+            break;
+          }
+        }
+      },
+      { root: null, rootMargin: "600px 0px", threshold: 0 }
+    );
+    this.observer.observe(this.sentinel);
+  }
+
+  // removePager deletes the page-number nav entirely: infinite scroll is the
+  // sole pagination when JS is on (the `hidden` attribute alone does not hide it,
+  // since `.pager { display: flex }` outranks it). The static pages still exist
+  // for crawlers and no-JS, reachable via the sitemap and <head> rel=prev/next.
+  removePager() {
+    const pager = this.root.querySelector("[data-pager]");
+    if (pager) pager.remove();
+  }
+
+  shownKeys() {
+    const keys = new Set();
+    for (const link of this.list.querySelectorAll(".article-item .card-link[href]")) {
+      keys.add(normalizedPath(link.getAttribute("href")));
+    }
+    return keys;
+  }
+
+  hasMore() {
+    if (!this.entries) return true;
+    const shown = this.shownKeys();
+    return this.entries.some((e) => e && e.url && !shown.has(normalizedPath(e.url)));
+  }
+
+  nextBatch() {
+    const shown = this.shownKeys();
+    const out = [];
+    for (const e of this.entries) {
+      if (out.length >= this.batchSize) break;
+      const key = e && e.url ? normalizedPath(e.url) : null;
+      if (!key || shown.has(key)) continue;
+      out.push(e);
+    }
+    return out;
+  }
+
+  // loadMore appends the next batch of not-yet-shown entries with a visible
+  // loading beat and day separators. No-op while a filter owns the list, while a
+  // batch is in flight, or once the stream is exhausted.
+  async loadMore() {
+    if (this.loading || this.done) return;
+    if (this.list.hasAttribute("data-filtered")) return;
+    if (this.entriesLoaded && !this.hasMore()) {
+      this.finish();
+      return;
+    }
+    this.loading = true;
+    this.showLoader(true);
+    try {
+      if (!this.entriesLoaded) {
+        try {
+          this.entries = await loadScopeEntries(this.manifest);
+          this.entriesLoaded = true;
+        } catch {
+          return; // a later scroll may retry; keep the static content intact
+        }
+      }
+      const next = this.nextBatch();
+      if (next.length === 0) {
+        this.finish();
+        return;
+      }
+      await this.wait(this.delayMs);
+      this.showLoader(false); // brief beat over: reveal the batch gradually
+      await this.appendBatch(next);
+      if (!this.hasMore()) this.finish();
+    } finally {
+      this.showLoader(false);
+      this.loading = false;
+    }
+  }
+
+  // appendBatch reveals one card at a time (a short step between each) so the list
+  // grows gradually instead of jumping by a whole batch; each card and day
+  // separator fades in via .cnz-enter.
+  async appendBatch(entries) {
+    const h = this.helpers();
+    let lastDay = this.lastCardDay();
+    for (const e of entries) {
+      const day = isoDay(e.published_at);
+      if (day && day !== lastDay) {
+        const sep = this.daySeparator(day);
+        sep.classList.add("cnz-enter");
+        this.list.insertBefore(sep, this.tail);
+        lastDay = day;
+      }
+      const card = articleItemFromEntry(e, h);
+      card.classList.add("cnz-enter");
+      this.list.insertBefore(card, this.tail);
+      await this.wait(this.stepMs);
+    }
+  }
+
+  lastCardDay() {
+    const items = this.list.querySelectorAll(".article-item");
+    return items.length ? cardDay(items[items.length - 1]) : "";
+  }
+
+  daySeparator(day) {
+    const li = el("li", { class: "day-separator", role: "separator", "aria-label": formatDayES(day) });
+    const span = el("span", { class: "day-separator-label" });
+    span.textContent = formatDayES(day);
+    li.appendChild(span);
+    return li;
+  }
+
+  showLoader(on) {
+    if (!this.loader) return;
+    if (on) this.loader.removeAttribute("hidden");
+    else this.loader.setAttribute("hidden", "");
+  }
+
+  finish() {
+    this.done = true;
+    this.showLoader(false);
+    if (this.observer && this.observer.disconnect) this.observer.disconnect();
+    if (this.sentinel) this.sentinel.setAttribute("hidden", "");
+  }
+
+  destroy() {
+    if (this.observer && this.observer.disconnect) this.observer.disconnect();
+    if (this.tail) this.tail.remove();
+  }
+}
+
 function initTheme(root = document) {
   const controls = root.querySelectorAll("[data-theme-choice]");
   if (!controls.length) return;
@@ -923,6 +1243,19 @@ export async function initLiveRefresh(root = document, options = {}) {
   if (!list) return null;
   const live = new LiveRefresh(scope, list, options);
   return live.init();
+}
+
+// initInfiniteScroll enhances a listing LANDING (inline #cnz-manifest) with
+// observer-driven "load more" over the scope's shards. Returns the controller,
+// or null on a non-listing / sealed page / when everything already fits.
+export async function initInfiniteScroll(root = document, options = {}) {
+  const scope = root || document;
+  const list = scope.querySelector("[data-articles]");
+  if (!list) return null;
+  const manifest = readInlineManifest(scope);
+  if (!manifest || !manifest.scope) return null; // landings only
+  const infinite = new InfiniteScroll(scope, list, manifest, options);
+  return infinite.init();
 }
 
 // initMasthead cycles the background videos behind the wordmark with a crossfade,
@@ -1172,6 +1505,7 @@ if (typeof document !== "undefined") {
     initRefine(document)
       .then(() => initTopicScroller(document))
       .finally(() => {
+        initInfiniteScroll(document);
         initLiveRefresh(document);
       });
   };

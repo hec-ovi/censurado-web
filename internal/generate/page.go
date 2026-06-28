@@ -57,22 +57,30 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 		pages = append(pages, pg)
 	}
 
-	arts := idx.articlesAt(indices[full*P : n])
-	sortDisplay(arts)
+	// The landing (Number 0) holds the newest insertion remainder. On an exact
+	// page boundary (rem==0) that remainder is empty, which would render /latest/
+	// blank; instead the landing mirrors the newest sealed page (its canonical
+	// already points there), so the portada is never empty. Sealed pages are not
+	// touched, so their byte-stability holds.
+	landIdx := indices[full*P : n]
 	landing := Page{
 		Scope:     s,
 		Number:    0,
 		Landing:   true,
-		Articles:  arts,
 		Canonical: s.PageURL(0),
 	}
 	if n%P == 0 && full >= 1 {
-		// rem==0 seam: the landing mirrors sealed page full; point canonical at it.
+		landIdx = indices[(full-1)*P : full*P]
 		landing.Canonical = s.PageURL(full)
-	}
-	if full >= 1 {
+		if full >= 2 {
+			landing.Prev = s.PageURL(full - 1)
+		}
+	} else if full >= 1 {
 		landing.Prev = s.PageURL(full)
 	}
+	arts := idx.articlesAt(landIdx)
+	sortDisplay(arts)
+	landing.Articles = arts
 	pages = append(pages, landing)
 	return pages
 }

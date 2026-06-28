@@ -491,7 +491,7 @@ func navLinksForArticles(_ []domain.Article) []navLink {
 		{Label: "Nosotros", URL: "/about/"},
 		{Label: "Política", URL: facetURL("section", "politics")},
 		{Label: "Internacionales", URL: facetURL("section", "world")},
-		{Label: "Misterio y conspiración", URL: facetURL("topic", "misterio")},
+		{Label: "Misterio y conspiración", URL: facetURL("topic", "misterio y conspiración")},
 		{Label: "Tecnología", URL: facetURL("section", "tech")},
 		{Label: "Literatura", URL: facetURL("section", "literatura")},
 	}

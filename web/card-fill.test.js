@@ -36,7 +36,7 @@ const TEXT = {
   slug: "texto-z", url: "/a/texto-z-11111111/", title: "Texto Z",
   subtitle: "Dek texto", description: "El resumen del texto que llena la tarjeta.",
   image: "", author: "zeta", author_label: "zeta", avatar: "", section: "tech",
-  topics: [], published_at: "2026-06-08T09:00:00Z", ts: 1780909200,
+  topics: [], published_at: "2026-06-08T09:00:00Z", ts: 1780909200, cts: 1780909200,
 };
 const IMG = {
   slug: "imagen-z", url: "/a/imagen-z-22222222/", title: "Imagen Z",
@@ -91,11 +91,10 @@ describe("card summary (.card-description) + fill", () => {
     expect(textCard.querySelector("figure.card-media")).toBeNull();
     expect(imgCard.querySelector("figure.card-media")).toBeTruthy();
 
-    // The rebuilt card carries the compact Argentina-local signature stamp (UTC-3),
-    // placed in the signature before the byline: TEXT publishes 2026-06-08T09:00Z =
-    // 06:00 in Argentina.
+    // The rebuilt card carries the AR-local signature stamp (UTC-3) from the entry's
+    // created time (cts), placed before the byline: cts 2026-06-08T09:00Z = 06:00 AR.
     const stamp = textCard.querySelector(".card-meta .card-sign-date");
-    expect(stamp.textContent).toBe("06:00AM 08/06/26");
+    expect(stamp.textContent).toBe("8 de junio de 2026, 06:00AM");
     const meta = textCard.querySelector(".card-meta");
     expect([...meta.children].indexOf(stamp)).toBeLessThan(
       [...meta.children].indexOf(meta.querySelector(".byline"))

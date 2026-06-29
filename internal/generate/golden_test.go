@@ -136,7 +136,7 @@ func TestGolden_ShardCaps(t *testing.T) {
 // --- (c) ---------------------------------------------------------------------
 
 var frozenShardKeys = []string{
-	"slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts",
+	"slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts", "cts",
 }
 
 func TestGolden_ShardFieldSetMatchesSchema(t *testing.T) {
@@ -181,6 +181,9 @@ func TestGolden_ShardFieldSetMatchesSchema(t *testing.T) {
 	}
 	if se.TS != a.PublishedAt.UTC().Truncate(time.Second).Unix() {
 		t.Errorf("ts = %d, want %d", se.TS, a.PublishedAt.Unix())
+	}
+	if se.CreatedTS != a.CreatedAt.UTC().Truncate(time.Second).Unix() {
+		t.Errorf("cts = %d, want %d", se.CreatedTS, a.CreatedAt.UTC().Truncate(time.Second).Unix())
 	}
 
 	// Non-ASCII fallback: section/author become ContentHash[:12], still valid.

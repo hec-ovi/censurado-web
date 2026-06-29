@@ -36,7 +36,7 @@
 <p class="card-description">{{.Description}}</p>
 {{- end}}
 <div class="card-meta">
-<time class="card-sign-date" datetime="{{rfc3339 .PublishedAt}}">{{compactstamp .PublishedAt}}</time>
+<time class="card-sign-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
 {{template "author_avatar" .}}
 <p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
 </div>
@@ -65,7 +65,7 @@
 <p class="card-description">{{.Description}}</p>
 {{- end}}
 <div class="card-meta">
-<time class="card-sign-date" datetime="{{rfc3339 .PublishedAt}}">{{compactstamp .PublishedAt}}</time>
+<time class="card-sign-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
 {{template "author_avatar" .}}
 <p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
 </div>

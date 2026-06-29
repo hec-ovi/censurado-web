@@ -36,12 +36,10 @@ var templateFuncs = template.FuncMap{
 	"rfc3339":     func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"humandate":   func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 	"humandatees": dayLabelES, // "28 de junio de 2026", matching the day separators
-	// compactstamp is the per-card signature timestamp in Argentina local time,
-	// e.g. "02:23PM 23/05/26" (time AM/PM, then day/month/2-digit year).
-	"compactstamp": func(t time.Time) string { return t.In(argentinaZone).Format("03:04PM 02/01/06") },
-	// compacttime is just the AR local clock time, "08:30PM", appended to the
-	// article page's long Spanish date so the article view shows the time too.
-	"compacttime": func(t time.Time) string { return t.In(argentinaZone).Format("03:04PM") },
+	// humanstampar is the displayed signature stamp in Argentina local time:
+	// "29 de junio de 2026, 08:30PM" (long Spanish date, then AM/PM time). Used on
+	// cards and the article view, fed by CreatedAt (the real, unspoofable insert time).
+	"humanstampar": humanstampar,
 }
 
 // sectionLabelsES maps a section slug (the English URL slug discovered from
@@ -146,6 +144,7 @@ type itemView struct {
 	TopicsAttr    string // space-joined topic slugs (data-topics)
 	MonthSlug     string // YYYY-MM publication month (data-month)
 	PublishedAt   time.Time
+	CreatedAt     time.Time // real insert time (backend-stamped, unspoofable); drives the displayed stamp
 	Thumb         mediaView
 	// DaySeparator is the Spanish day label ("27 de junio de 2026") shown as a
 	// full-width separator ABOVE this item, set only on the first item of a new
@@ -184,6 +183,7 @@ type articleView struct {
 	SectionURL    string
 	Topics        []topicLink
 	PublishedAt   time.Time
+	CreatedAt     time.Time // real insert time (backend-stamped, unspoofable); drives the displayed stamp
 	BodyHTML      template.HTML
 	Media         mediaView  // optional lead media: image, video, or YouTube
 	HeroImage     string     // compatibility alias for optional hero <img> src
@@ -449,6 +449,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		SectionURL:    facetURL("section", a.Section),
 		Topics:        topicLinksOf(a),
 		PublishedAt:   a.PublishedAt,
+		CreatedAt:     a.CreatedAt,
 		BodyHTML:      template.HTML(bodyHTML),
 		Media:         media.view,
 	}
@@ -486,6 +487,7 @@ func itemViewOf(a domain.Article) itemView {
 		TopicsAttr:    strings.Join(se.Topics, " "),
 		MonthSlug:     monthKey(a.PublishedAt.Year(), int(a.PublishedAt.Month())),
 		PublishedAt:   a.PublishedAt,
+		CreatedAt:     a.CreatedAt,
 		Thumb:         thumbForArticle(a),
 	}
 }
@@ -526,6 +528,13 @@ var monthsES = []string{
 func dayLabelES(t time.Time) string {
 	u := t.UTC()
 	return fmt.Sprintf("%d de %s de %d", u.Day(), monthsES[int(u.Month())-1], u.Year())
+}
+
+// humanstampar is the displayed signature stamp in Argentina local time (UTC-3,
+// no DST): "29 de junio de 2026, 08:30PM" (long Spanish date, then AM/PM time).
+func humanstampar(t time.Time) string {
+	lt := t.In(argentinaZone)
+	return fmt.Sprintf("%d de %s de %d, %s", lt.Day(), monthsES[int(lt.Month())-1], lt.Year(), lt.Format("03:04PM"))
 }
 
 // markDaySeparators sets DaySeparator on the first item of each new published day

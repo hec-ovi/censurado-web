@@ -57,20 +57,21 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	}
 }
 
-// The card signature carries a compact Argentina-local timestamp (time AM/PM then
-// day/month/2-digit-year), rendered before the author signature: DATE then SIGNATURE.
-func TestCard_SignatureCompactStamp(t *testing.T) {
+// The card signature carries the AR-local stamp (long Spanish date, then AM/PM
+// time) fed by CreatedAt, rendered before the author signature: DATE then SIGNATURE.
+func TestCard_SignatureStamp(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
 		Title: "Con fecha", Author: "lara-arianna", Section: "politics",
-		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 in Argentina (UTC-3)
+		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC),
+		Created:   time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 AR -> the displayed stamp
 		Metadata:  map[string]any{"author_name": "Lara Arianna"},
 	})
 	genInto(t, repo, out, nil)
 	listing := string(readArtifact(t, out, "latest/index.html"))
 
-	want := `<time class="card-sign-date" datetime="2026-05-23T20:23:00Z">05:23PM 23/05/26</time>`
+	want := `<time class="card-sign-date" datetime="2026-05-23T20:23:00Z">23 de mayo de 2026, 05:23PM</time>`
 	if !strings.Contains(listing, want) {
 		t.Errorf("card signature stamp missing or wrong; want %q", want)
 	}
@@ -87,7 +88,8 @@ func TestArticlePage_DateHasTime(t *testing.T) {
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
 		Title: "Con hora", Author: "lara-arianna", Section: "politics", Body: "Cuerpo del artículo.",
-		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 in Argentina (UTC-3)
+		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC),
+		Created:   time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 AR -> shown in the footer
 		Metadata:  map[string]any{"author_name": "Lara Arianna"},
 	})
 	genInto(t, repo, out, nil)

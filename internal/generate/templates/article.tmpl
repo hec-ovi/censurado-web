@@ -21,7 +21,7 @@
 {{.BodyHTML}}
 </div>
 <footer class="article-sign">
-<time class="article-date" datetime="{{rfc3339 .PublishedAt}}">{{humandatees .PublishedAt}}, {{compacttime .PublishedAt}}</time>
+<time class="article-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
 <span class="article-sign-author">
 {{template "author_avatar" .}}
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>

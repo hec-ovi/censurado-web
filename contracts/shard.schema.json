@@ -7,7 +7,7 @@
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts"],
+    "required": ["slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts", "cts"],
     "properties": {
       "slug":         { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
       "url":          { "type": "string", "pattern": "^/a/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/$" },
@@ -22,7 +22,8 @@
       "section":      { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
       "topics":       { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } },
       "published_at": { "type": "string", "format": "date-time" },
-      "ts":           { "type": "integer" }
+      "ts":           { "type": "integer" },
+      "cts":          { "type": "integer" }
     }
   }
 }

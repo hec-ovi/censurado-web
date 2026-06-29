@@ -135,19 +135,20 @@ function fallbackFacetURL(type, slug) {
   return null;
 }
 
-// compactStamp renders a shard entry's publish time as the per-card signature
-// stamp in Argentina local time (UTC-3, no DST): "02:23PM 23/05/26". It mirrors
-// the server's compactstamp template func so server-rendered and client-rebuilt
-// cards are identical.
-function compactStamp(entry) {
-  const sec = entry.ts || (entry.published_at ? Math.floor(Date.parse(entry.published_at) / 1000) : NaN);
+// longStampES renders a shard entry's CreatedAt (the real insert time, "cts") as
+// the per-card signature stamp in Argentina local time (UTC-3, no DST): "29 de
+// junio de 2026, 08:30PM" (long Spanish date, then AM/PM time). It mirrors the
+// server's humanstampar so server-rendered and client-rebuilt cards are identical.
+function longStampES(entry) {
+  const sec = entry.cts || entry.ts || (entry.published_at ? Math.floor(Date.parse(entry.published_at) / 1000) : NaN);
   if (!isFinite(sec)) return "";
   const d = new Date((sec - 3 * 3600) * 1000); // shift to UTC-3, then read UTC fields
   let h = d.getUTCHours();
   const ampm = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
   const p2 = (n) => String(n).padStart(2, "0");
-  return `${p2(h)}:${p2(d.getUTCMinutes())}${ampm} ${p2(d.getUTCDate())}/${p2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(-2)}`;
+  const month = MONTHS_ES[d.getUTCMonth()] || "";
+  return `${d.getUTCDate()} de ${month} de ${d.getUTCFullYear()}, ${p2(h)}:${p2(d.getUTCMinutes())}${ampm}`;
 }
 
 // articleItemFromEntry rebuilds the server card structure from a body-free shard
@@ -245,8 +246,12 @@ function articleItemFromEntry(e, helpers) {
   authorLink.textContent = labelFor("author", e.author, e.author_label);
   byline.appendChild(authorLink);
 
-  const signDate = el("time", { class: "card-sign-date", datetime: e.published_at });
-  signDate.textContent = compactStamp(e);
+  const stampSec = e.cts || e.ts;
+  const signDate = el("time", {
+    class: "card-sign-date",
+    datetime: stampSec ? new Date(stampSec * 1000).toISOString() : (e.published_at || ""),
+  });
+  signDate.textContent = longStampES(e);
   meta.append(signDate, avatar, byline);
   body.appendChild(meta);
 

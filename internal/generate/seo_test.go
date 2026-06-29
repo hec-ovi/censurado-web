@@ -238,3 +238,39 @@ func TestSEO_MediaYouTubeAndVideo(t *testing.T) {
 		t.Errorf("og:video = %q, want %q", got, vid)
 	}
 }
+
+// An article emits a <meta name="keywords"> built from its topics plus any
+// article-specific metadata.keywords, de-duplicated case-insensitively.
+func TestSEO_Keywords(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title:     "Pieza con etiquetas",
+		Body:      "Cuerpo con palabras suficientes para derivar una descripción razonable.",
+		Author:    "lara-arianna",
+		Section:   "politics",
+		Topics:    []string{"elecciones", "fraude"},
+		Published: date(2026, 6, 7),
+		Metadata: map[string]any{
+			"keywords": []any{"voto exterior", "elecciones"}, // "elecciones" duplicates a topic
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	kw := metaContent(t, page, "name", "keywords")
+	for _, want := range []string{"elecciones", "fraude", "voto exterior"} {
+		if !strings.Contains(kw, want) {
+			t.Errorf("keywords meta %q missing %q", kw, want)
+		}
+	}
+	if strings.Count(kw, "elecciones") != 1 {
+		t.Errorf("expected de-duplicated keywords, got %q", kw)
+	}
+
+	// A listing page carries no keywords meta (the tag is article-only).
+	home := string(readArtifact(t, out, "latest/index.html"))
+	if strings.Contains(home, `name="keywords"`) {
+		t.Errorf("listing page should not emit a keywords meta")
+	}
+}

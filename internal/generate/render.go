@@ -87,6 +87,7 @@ type headData struct {
 	Title       string        // <title> and og:title/twitter:title
 	Canonical   string        // absolute self URL; also og:url
 	Description string        // <meta name=description>, og/twitter description
+	Keywords    string        // <meta name=keywords>, "" when none (articles only)
 	SiteName    string        // og:site_name, masthead
 	OGType      string        // "article" on permalinks, "website" on listings
 	OGImage     string        // absolute image URL, "" when none
@@ -417,6 +418,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			Title:       a.Title,
 			Canonical:   canonical,
 			Description: metaDescription(bodyHTML),
+			Keywords:    keywordsFor(a),
 			SiteName:    env.siteName,
 			OGType:      "article",
 			OGImage:     ogImage,
@@ -941,6 +943,43 @@ func topicLinksOf(a domain.Article) []topicLink {
 		out = append(out, topicLink{Label: slug, URL: pageURL("topic/"+slug, 0)})
 	}
 	return out
+}
+
+// keywordsFor builds the comma-separated <meta name="keywords"> value for one
+// article from its topics plus any article-specific metadata.keywords list,
+// de-duplicated case-insensitively and order-preserving. Returns "" when empty so
+// the meta tag is omitted. Topics contribute their normalized facet slug (the same
+// form shown as a topic link), never the raw accented/capitalized stored string, so
+// the page never leaks an unnormalized topic label; article-specific keywords from
+// metadata are emitted verbatim.
+func keywordsFor(a domain.Article) string {
+	seen := map[string]struct{}{}
+	var kw []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		key := strings.ToLower(s)
+		if _, dup := seen[key]; dup {
+			return
+		}
+		seen[key] = struct{}{}
+		kw = append(kw, s)
+	}
+	for _, t := range a.Topics {
+		if slug, ok := facetSlug(t); ok {
+			add(slug)
+		}
+	}
+	if raw, ok := a.Metadata["keywords"].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				add(s)
+			}
+		}
+	}
+	return strings.Join(kw, ", ")
 }
 
 // facetURL returns a single-facet scope URL, or "" when the value slugifies to

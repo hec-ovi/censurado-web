@@ -136,3 +136,130 @@ func TestBodyMarker_RelatedByteStable(t *testing.T) {
 		t.Errorf("permalink with a related card changed bytes after a newer publish")
 	}
 }
+
+// {{tweet:id}} renders an X-style card from a snapshot in metadata.tweets[], so the
+// quote is preserved even if the original post is later deleted.
+func TestBodyMarker_Tweet(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Cita de X", Author: "lara-arianna", Section: "politics",
+		Body:      "Antes.\n\n{{tweet:1234567890}}\n\nDespués.",
+		Published: date(2026, 6, 12),
+		Metadata: map[string]any{
+			"tweets": []any{
+				map[string]any{
+					"id":         "1234567890",
+					"name":       "Persona Pública",
+					"handle":     "personapublica",
+					"text":       "Una declaración <importante> sobre el tema.",
+					"url":        "https://x.com/personapublica/status/1234567890",
+					"avatar":     "https://pbs.twimg.com/profile_images/abc.jpg",
+					"created_at": "12 jun 2026",
+				},
+			},
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	if strings.Contains(page, "{{tweet:") {
+		t.Fatalf("literal tweet marker survived:\n%s", page)
+	}
+	for _, want := range []string{
+		`class="tweet-card"`,
+		`Persona Pública`,
+		`@personapublica`,
+		`https://x.com/personapublica/status/1234567890`,
+		`Ver en X`,
+		`12 jun 2026`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("tweet card missing %q\n%s", want, page)
+		}
+	}
+	// The captured text is HTML-escaped (no raw markup from the snapshot survives).
+	if strings.Contains(page, "<importante>") {
+		t.Errorf("tweet text not escaped:\n%s", page)
+	}
+	if !strings.Contains(page, "&lt;importante&gt;") {
+		t.Errorf("expected escaped tweet text in:\n%s", page)
+	}
+	if !strings.Contains(page, "Antes.") || !strings.Contains(page, "Después.") {
+		t.Errorf("surrounding prose lost")
+	}
+}
+
+// An erased tweet keeps the captured text and adds the "publicación eliminada" note
+// plus the retained original link.
+func TestBodyMarker_TweetErased(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Cita eliminada", Author: "lara-arianna", Section: "politics",
+		Body:      "Texto.\n\n{{tweet:999}}\n\nFin.",
+		Published: date(2026, 6, 12),
+		Metadata: map[string]any{
+			"tweets": []any{
+				map[string]any{
+					"id":     "999",
+					"name":   "Cuenta Borrada",
+					"handle": "borrada",
+					"text":   "Lo dije y lo sostengo.",
+					"url":    "https://x.com/borrada/status/999",
+					"erased": true,
+				},
+			},
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	for _, want := range []string{
+		`class="tweet-card-erased"`,
+		`Publicación eliminada en X`,
+		`Lo dije y lo sostengo.`, // the captured text is retained
+		`Ver enlace original`,
+		`https://x.com/borrada/status/999`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("erased tweet card missing %q\n%s", want, page)
+		}
+	}
+}
+
+// {{video:id}} whose id is recorded unavailable in metadata.media_checks renders the
+// "este video fue eliminado" placeholder (with the original link), never an iframe.
+func TestBodyMarker_VideoRemoved(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Video caído", Author: "vector-omni", Section: "tech",
+		Body:      "Mira esto.\n\n{{video:dQw4w9WgXcQ}}\n\nYa no está.",
+		Published: date(2026, 6, 12),
+		Metadata: map[string]any{
+			"media_checks": map[string]any{
+				"dQw4w9WgXcQ": map[string]any{"available": false},
+			},
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	if strings.Contains(page, "{{video:") {
+		t.Fatalf("literal video marker survived")
+	}
+	if strings.Contains(page, "youtube-nocookie.com/embed/") {
+		t.Errorf("removed video should not render an iframe embed\n%s", page)
+	}
+	for _, want := range []string{
+		`class="embed-removed"`,
+		`Este video fue eliminado de YouTube.`,
+		`https://www.youtube.com/watch?v=dQw4w9WgXcQ`,
+		`Ver enlace original`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("removed-video placeholder missing %q\n%s", want, page)
+		}
+	}
+}

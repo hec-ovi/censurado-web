@@ -80,6 +80,27 @@ func TestCard_SignatureCompactStamp(t *testing.T) {
 	}
 }
 
+// The article view's date carries the AR clock time too (long Spanish date, then
+// the AM/PM time), so the article page shows the time like the cards do.
+func TestArticlePage_DateHasTime(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Con hora", Author: "lara-arianna", Section: "politics", Body: "Cuerpo del artículo.",
+		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 in Argentina (UTC-3)
+		Metadata:  map[string]any{"author_name": "Lara Arianna"},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	if !strings.Contains(page, `class="article-date"`) {
+		t.Fatalf("article page missing the article-date element")
+	}
+	if !strings.Contains(page, "05:23PM") {
+		t.Errorf("article date should include the AR clock time 05:23PM")
+	}
+}
+
 // The article page renders the authored subtitle + standfirst and the signed
 // footer (circled portrait + name).
 func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {

@@ -1777,11 +1777,19 @@
     text-transform: uppercase;
   }
 
+  /* Relacionados: one column on mobile, two on desktop. (Was an auto-fill grid
+     that packed up to four narrow columns and shrank the card text too far.) */
   .related-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    grid-template-columns: 1fr;
     gap: var(--space-5);
     list-style: none;
+  }
+
+  @media (min-width: 42rem) {
+    .related-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   .related-item {
@@ -2455,7 +2463,11 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       column-gap: var(--gutter);
       row-gap: var(--space-6);
-      align-items: start;
+      /* stretch (not start): cards in a row share the row's height, so each card
+         fills its cell and the signature row (margin-top:auto) sits on a common
+         bottom line. Alignment never affects grid placement, so this stays
+         append-stable, no reshuffle. */
+      align-items: stretch;
     }
     .article-list > .article-item {
       grid-column: auto;
@@ -2464,8 +2476,9 @@
     .article-list:not(.author-grid) > .article-item:first-child {
       grid-column: 1 / -1;
     }
+    /* Fill the stretched cell so the bottom-pinned signature aligns across the row. */
     .article-list .card {
-      min-height: 0;
+      min-height: 100%;
     }
   }
 }

@@ -39,6 +39,9 @@ var templateFuncs = template.FuncMap{
 	// compactstamp is the per-card signature timestamp in Argentina local time,
 	// e.g. "02:23PM 23/05/26" (time AM/PM, then day/month/2-digit year).
 	"compactstamp": func(t time.Time) string { return t.In(argentinaZone).Format("03:04PM 02/01/06") },
+	// compacttime is just the AR local clock time, "08:30PM", appended to the
+	// article page's long Spanish date so the article view shows the time too.
+	"compacttime": func(t time.Time) string { return t.In(argentinaZone).Format("03:04PM") },
 }
 
 // sectionLabelsES maps a section slug (the English URL slug discovered from

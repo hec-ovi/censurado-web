@@ -1735,7 +1735,7 @@
   }
 
   /* Article permalink layout: the piece + a "Relacionados" grid in the main
-     column, with "Lo más leído" as a lateral rail on wide screens (stacked
+     column, with "Recomendado" as a lateral rail on wide screens (stacked
      below on narrow). */
   .article-shell {
     display: grid;
@@ -2426,23 +2426,30 @@
   }
 
   /* Desktop: the card lists (the latest grid and the author page's "Contenido
-     generado" grid, both .article-list) flow as two independent masonry columns
-     instead of aligned grid rows, so a short text-only card never leaves an empty
-     gap beside a tall image card. The main list keeps its full-width lead via
-     column-span; the author grid (.author-grid) has no lead. Mobile, a single
-     column, is unaffected. */
+     generado" grid, both .article-list) lay out as a fixed two-column, row-major
+     CSS grid. Each card occupies the next cell in source order, so a card
+     appended by infinite scroll always lands in a new cell below the painted
+     ones and never displaces them. The earlier `columns: 2` multi-column
+     balanced the two columns by height and re-flowed already-visible cards on
+     every append (the visible "reshuffle"); a grid cannot do that. The trade is
+     that a short text card can leave a gap beside a tall media card in the same
+     row; stability is deliberately preferred. The main list keeps its full-width
+     lead (first child spans both columns); the author grid (.author-grid) has no
+     lead. Mobile, a single column, is unaffected. */
   @media (min-width: 42rem) {
     .article-list {
-      display: block;
-      columns: 2;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       column-gap: var(--gutter);
+      row-gap: var(--space-6);
+      align-items: start;
     }
     .article-list > .article-item {
-      break-inside: avoid;
-      margin-bottom: var(--space-6);
+      grid-column: auto;
+      margin-bottom: 0;
     }
     .article-list:not(.author-grid) > .article-item:first-child {
-      column-span: all;
+      grid-column: 1 / -1;
     }
     .article-list .card {
       min-height: 0;

@@ -90,6 +90,16 @@ describe("card summary (.card-description) + fill", () => {
     // Only the image card has a figure.
     expect(textCard.querySelector("figure.card-media")).toBeNull();
     expect(imgCard.querySelector("figure.card-media")).toBeTruthy();
+
+    // The rebuilt card carries the compact Argentina-local signature stamp (UTC-3),
+    // placed in the signature before the byline: TEXT publishes 2026-06-08T09:00Z =
+    // 06:00 in Argentina.
+    const stamp = textCard.querySelector(".card-meta .card-sign-date");
+    expect(stamp.textContent).toBe("06:00AM 08/06/26");
+    const meta = textCard.querySelector(".card-meta");
+    expect([...meta.children].indexOf(stamp)).toBeLessThan(
+      [...meta.children].indexOf(meta.querySelector(".byline"))
+    );
   });
 
   test("initCardFill returns a fill API and no-ops safely without layout (jsdom)", () => {

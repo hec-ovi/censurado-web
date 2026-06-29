@@ -135,6 +135,21 @@ function fallbackFacetURL(type, slug) {
   return null;
 }
 
+// compactStamp renders a shard entry's publish time as the per-card signature
+// stamp in Argentina local time (UTC-3, no DST): "02:23PM 23/05/26". It mirrors
+// the server's compactstamp template func so server-rendered and client-rebuilt
+// cards are identical.
+function compactStamp(entry) {
+  const sec = entry.ts || (entry.published_at ? Math.floor(Date.parse(entry.published_at) / 1000) : NaN);
+  if (!isFinite(sec)) return "";
+  const d = new Date((sec - 3 * 3600) * 1000); // shift to UTC-3, then read UTC fields
+  let h = d.getUTCHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  const p2 = (n) => String(n).padStart(2, "0");
+  return `${p2(h)}:${p2(d.getUTCMinutes())}${ampm} ${p2(d.getUTCDate())}/${p2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(-2)}`;
+}
+
 // articleItemFromEntry rebuilds the server card structure from a body-free shard
 // entry: optional hero <figure> only when the entry carries an image (no
 // placeholder box), a .card-body wrapping kicker/title/subtitle/signature, and
@@ -229,7 +244,10 @@ function articleItemFromEntry(e, helpers) {
   });
   authorLink.textContent = labelFor("author", e.author, e.author_label);
   byline.appendChild(authorLink);
-  meta.append(avatar, byline);
+
+  const signDate = el("time", { class: "card-sign-date", datetime: e.published_at });
+  signDate.textContent = compactStamp(e);
+  meta.append(signDate, avatar, byline);
   body.appendChild(meta);
 
   card.appendChild(body);

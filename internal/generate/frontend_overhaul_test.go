@@ -3,6 +3,7 @@ package generate
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The frontend overhaul: authored subtitle/description, always-visible author
@@ -53,6 +54,29 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	}
 	if !strings.Contains(listing, "card card-has-media") || !strings.Contains(listing, `<figure class="card-media">`) {
 		t.Errorf("image card missing card-has-media figure")
+	}
+}
+
+// The card signature carries a compact Argentina-local timestamp (time AM/PM then
+// day/month/2-digit-year), rendered before the author signature: DATE then SIGNATURE.
+func TestCard_SignatureCompactStamp(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{
+		Title: "Con fecha", Author: "lara-arianna", Section: "politics",
+		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 in Argentina (UTC-3)
+		Metadata:  map[string]any{"author_name": "Lara Arianna"},
+	})
+	genInto(t, repo, out, nil)
+	listing := string(readArtifact(t, out, "latest/index.html"))
+
+	want := `<time class="card-sign-date" datetime="2026-05-23T20:23:00Z">05:23PM 23/05/26</time>`
+	if !strings.Contains(listing, want) {
+		t.Errorf("card signature stamp missing or wrong; want %q", want)
+	}
+	// The stamp renders before the byline (date then signature) within the card.
+	if d, b := strings.Index(listing, `card-sign-date`), strings.Index(listing, `class="byline"`); d < 0 || b < 0 || d > b {
+		t.Errorf("stamp should precede the byline: stampIdx=%d bylineIdx=%d", d, b)
 	}
 }
 

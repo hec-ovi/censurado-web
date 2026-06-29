@@ -1220,6 +1220,19 @@
     display: none;
   }
 
+  /* The visible per-card signature stamp: Argentina-local "02:23PM 23/05/26",
+     pushed to the left of the signature row (margin-right:auto) so the row reads
+     date then author. Tiny, muted, monospaced; never wraps. */
+  .card-sign-date {
+    margin-right: auto;
+    color: var(--color-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.01em;
+    line-height: 1.45;
+    white-space: nowrap;
+  }
+
   .author-link,
   .section-link {
     color: var(--color-ink);

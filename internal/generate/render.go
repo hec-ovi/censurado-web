@@ -27,10 +27,18 @@ var templateFS embed.FS
 //go:embed templates/assets/style.css templates/assets/app.js templates/assets/favicon.svg templates/assets/video1.mp4 templates/assets/video2.mp4 templates/assets/video3.mp4 templates/assets/video4.mp4
 var assetFS embed.FS
 
+// argentinaZone is the portal's local timezone (UTC-3, no DST since 2009). The
+// per-card signature stamp renders the publish instant in this zone so readers
+// see local time; the machine datetime attr and the day separators stay UTC.
+var argentinaZone = time.FixedZone("ART", -3*60*60)
+
 var templateFuncs = template.FuncMap{
 	"rfc3339":     func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"humandate":   func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 	"humandatees": dayLabelES, // "28 de junio de 2026", matching the day separators
+	// compactstamp is the per-card signature timestamp in Argentina local time,
+	// e.g. "02:23PM 23/05/26" (time AM/PM, then day/month/2-digit year).
+	"compactstamp": func(t time.Time) string { return t.In(argentinaZone).Format("03:04PM 02/01/06") },
 }
 
 // sectionLabelsES maps a section slug (the English URL slug discovered from

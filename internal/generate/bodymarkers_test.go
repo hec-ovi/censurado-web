@@ -228,6 +228,61 @@ func TestBodyMarker_TweetErased(t *testing.T) {
 	}
 }
 
+// A tweet snapshot carrying public metrics renders the X-style date, the view count,
+// the verified seal, and the reply/retweet/like/bookmark stat row.
+func TestBodyMarker_TweetMetrics(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Cita con métricas", Author: "vector-omni", Section: "tech",
+		Body:      "Antes.\n\n{{tweet:2071122673367941477}}\n\nDespués.",
+		Published: date(2026, 6, 28),
+		Metadata: map[string]any{
+			"tweets": []any{
+				map[string]any{
+					"id":                "2071122673367941477",
+					"name":              "Xiaoyin Qu",
+					"handle":            "quxiaoyin",
+					"text":              "with Chinese open source models starting to dominate",
+					"url":               "https://x.com/quxiaoyin/status/2071122673367941477",
+					"avatar":            "https://pbs.twimg.com/profile_images/abc_200x200.jpg",
+					"created_timestamp": float64(1782629099),
+					"verified":          true,
+					"replies":           float64(17),
+					"retweets":          float64(13),
+					"likes":             float64(269),
+					"views":             float64(22003),
+					"bookmarks":         float64(31),
+				},
+			},
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	for _, want := range []string{
+		`class="tweet-card-avatar"`,
+		`class="tweet-card-badge"`,        // verified seal
+		`class="tweet-card-meta"`,
+		`3:44 AM · Jun 28, 2026`,          // X-style date, Argentina time (UTC-3)
+		`class="tweet-card-views"`,
+		`<strong>22K</strong> Views`,      // abbreviated view count
+		`class="tweet-card-stats"`,
+		`>17<`, // replies
+		`>13<`, // retweets
+		`>269<`, // likes (under 1000, not abbreviated)
+		`>31<`, // bookmarks
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("tweet metrics card missing %q\n%s", want, page)
+		}
+	}
+	// The old terminal-style monospace link class is gone.
+	if strings.Contains(page, `class="tweet-card-link"`) {
+		t.Errorf("legacy tweet-card-link class still present:\n%s", page)
+	}
+}
+
 // {{video:id}} whose id is recorded unavailable in metadata.media_checks renders the
 // "este video fue eliminado" placeholder (with the original link), never an iframe.
 func TestBodyMarker_VideoRemoved(t *testing.T) {

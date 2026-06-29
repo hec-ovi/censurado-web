@@ -1952,26 +1952,31 @@
   }
 
   /* Tweet card ({{tweet:id}}): an X-style snapshot rendered from metadata.tweets[]
-     so the quote survives the original post being deleted. */
+     so the quote survives the original post being deleted. Left-aligned and sized
+     to match the real X post embed (small avatar, name + handle, meta, stat row). */
   .tweet-card {
     margin-block: var(--space-5);
+    margin-inline: 0;
     padding: var(--space-4);
     border: 1px solid var(--color-line);
-    border-radius: 12px;
-    max-width: var(--measure);
-    margin-inline: auto;
+    border-radius: 16px;
+    max-width: 32rem;
   }
 
   .tweet-card-head {
     display: grid;
     grid-template-columns: auto 1fr auto;
-    align-items: center;
+    align-items: start;
     gap: var(--space-3);
   }
 
-  .tweet-card-avatar {
-    width: 2.75rem;
-    height: 2.75rem;
+  /* The compound selector beats `.article-body img`, which would otherwise stretch the
+     avatar to the body-image width. 48px circle = the real X embed avatar. */
+  .tweet-card .tweet-card-avatar {
+    width: 3rem;
+    height: 3rem;
+    min-width: 3rem;
+    margin: 0;
     border-radius: 50%;
     object-fit: cover;
     background: var(--color-line);
@@ -1981,12 +1986,26 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    line-height: 1.2;
+    line-height: 1.25;
   }
 
   .tweet-card-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
     font-family: var(--font-display);
+    font-weight: 700;
     font-size: var(--text-base, 1rem);
+    color: var(--color-ink);
+  }
+
+  /* Scoped under `.tweet-card` so a stray `.article-body svg/img` rule can never
+     balloon the inline badge/stat icons (the bug that made them fill the column). */
+  .tweet-card .tweet-card-badge {
+    width: 1.05em;
+    height: 1.05em;
+    flex: none;
+    fill: #1d9bf0;
   }
 
   .tweet-card-handle {
@@ -1995,35 +2014,67 @@
   }
 
   .tweet-card-brand {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
+    color: var(--color-ink);
+    align-self: start;
   }
 
   .tweet-card-text {
     margin-top: var(--space-3);
-    font-size: var(--text-lg, 1.05rem);
-    line-height: 1.45;
+    font-size: var(--text-base, 1rem);
+    line-height: 1.5;
     white-space: pre-wrap;
   }
 
   .tweet-card-erased {
-    margin-top: var(--space-2, 0.5rem);
+    margin-top: var(--space-3);
     font-size: var(--text-sm, 0.85rem);
     color: var(--color-red);
   }
 
-  .tweet-card-link {
-    display: inline-block;
+  .tweet-card-meta {
     margin-top: var(--space-3);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    letter-spacing: 0.04em;
+    font-size: var(--text-sm, 0.9rem);
+    color: var(--color-muted);
+  }
+
+  .tweet-card-date {
     color: var(--color-muted);
     text-decoration: none;
   }
 
-  .tweet-card-link:hover,
-  .tweet-card-link:focus-visible {
-    color: var(--color-red);
+  .tweet-card-date:hover,
+  .tweet-card-date:focus-visible {
+    text-decoration: underline;
+  }
+
+  .tweet-card-views strong {
+    color: var(--color-ink);
+    font-weight: 700;
+  }
+
+  .tweet-card-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-line);
+    font-size: var(--text-sm, 0.9rem);
+    color: var(--color-muted);
+  }
+
+  .tweet-card-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .tweet-card .tweet-card-ico {
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+    fill: currentColor;
   }
 
   /* Removed-video placeholder ({{video:id}} whose id is recorded unavailable in

@@ -285,9 +285,10 @@ func TestGolden_ClientOrderParity_MultiMonth(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 
-	// Insertion order = published DESC so a sealed page straddles May/June and
-	// the full HTML stream is globally newest-first. PageSize=4: page/1 holds 4
-	// (June,June,June,May), the landing holds 2 (May,May).
+	// Pages paginate by publication date (Created is scrambled to prove insert order is
+	// ignored). PageSize=4: the landing holds the newest 2 (both June) and page/1 the
+	// older 4 (one June, three May), so the reading order landing -> page/1 is globally
+	// newest-first and matches the per-month shards.
 	specs := []struct {
 		pub time.Time
 	}{
@@ -307,9 +308,10 @@ func TestGolden_ClientOrderParity_MultiMonth(t *testing.T) {
 	}
 	genInto(t, repo, out, func(o *Options) { o.PageSize = 4 })
 
+	// Reading order is newest-first: the landing (newest published) then the older page.
 	var stream []string
-	stream = append(stream, permalinksIn(readArtifact(t, out, "section/straddle/page/1/index.html"))...)
 	stream = append(stream, permalinksIn(readArtifact(t, out, "section/straddle/index.html"))...)
+	stream = append(stream, permalinksIn(readArtifact(t, out, "section/straddle/page/1/index.html"))...)
 
 	for _, mm := range []struct {
 		file  string

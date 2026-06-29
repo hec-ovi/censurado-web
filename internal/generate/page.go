@@ -6,8 +6,8 @@ import (
 	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
-// Page is one Tier-A listing page. Sealed full pages have Number 1.. and hold
-// exactly P articles; the landing remainder has Number 0 and is mutable.
+// Page is one Tier-A listing page. Full pages have Number 1.. (page 1 the oldest) and
+// hold exactly P articles; the landing (Number 0) holds the newest-published remainder.
 type Page struct {
 	Scope     Scope
 	Number    int
@@ -28,11 +28,22 @@ func displayLess(a, b domain.Article) bool {
 	return idLess(b.ID, a.ID) // larger id first
 }
 
-// chunkPages seals boundaries on insertion order and renders each page in
-// display order. indices is insertion-ordered; n=len, full=n/P, rem=n%P. Sealed
-// page k holds indices[(k-1)*P:k*P]; the landing holds the rem newest-inserted.
+// chunkPages paginates a scope by PUBLICATION date: the portada (landing) leads with
+// the newest-published article and pages descend to older ones, so the static pages
+// match the client's published-DESC infinite scroll. indices is sorted oldest-
+// published-first, then cut into pages of P; n=len, full=n/P, rem=n%P. Page k holds
+// indices[(k-1)*P:k*P] (the lower the number, the older); the landing holds the rem
+// newest-published. A back-dated insert therefore re-cuts the affected pages, by
+// design; shards stay insertion-sealed for the client merge.
 func (idx *Index) chunkPages(s Scope, P int) []Page {
-	indices := idx.scopeIndices(s)
+	indices := append([]int(nil), idx.scopeIndices(s)...) // copy: we re-sort locally
+	sort.SliceStable(indices, func(a, b int) bool {
+		ia, ib := idx.All[indices[a]], idx.All[indices[b]]
+		if !ia.PublishedAt.Equal(ib.PublishedAt) {
+			return ia.PublishedAt.Before(ib.PublishedAt) // oldest published first
+		}
+		return idLess(ia.ID, ib.ID) // stable tie-break
+	})
 	n := len(indices)
 	full := n / P
 

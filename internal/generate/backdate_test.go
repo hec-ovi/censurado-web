@@ -5,53 +5,45 @@ import (
 	"testing"
 )
 
-// B1: a back-dated insert never enters a sealed page (insertion-order seal).
-//
-// Deviation from the literal row: PageSize=3 (not 2) with 7 seeds. PageSize=2
-// cannot satisfy both "page/1, page/2 sealed; landing=1" AND "lands only in the
-// landing / no new sealed page" on a single insert, because rem_before would
-// equal P-1 and seal. PageSize=3 with 7 seeds is the faithful construction.
-func TestBackdate_SealedPageImmutable(t *testing.T) {
+// B1: pages paginate by PUBLICATION date, not insertion order, so the portada leads
+// with the newest-published article and a back-dated insert surfaces in its published
+// slot (matching the client's published-DESC infinite scroll).
+func TestPagination_ByPublicationOrder(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	// Insertion order = published descending (June 20..14).
-	for d := 20; d >= 14; d-- {
-		seed(t, repo, seedSpec{Title: "Seal " + string(rune('a'+20-d)), Author: "ada", Section: "tech", Published: date(2026, 6, d)})
+	// Scrambled insert order; distinct published dates so there are no ties.
+	for _, d := range []int{10, 20, 15, 25, 5} {
+		seed(t, repo, seedSpec{Title: "P" + string(rune('a'+d)), Author: "ada", Section: "tech", Published: date(2026, 6, d)})
 	}
-	genInto(t, repo, out, func(o *Options) { o.PageSize = 3 })
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
 
-	page1 := string(readArtifact(t, out, "latest/page/1/index.html"))
-	page2 := string(readArtifact(t, out, "latest/page/2/index.html"))
-
-	// The lone pre-existing landing article is the oldest (June 14).
-	oldest := permalinksIn(readArtifact(t, out, "latest/index.html"))
-	if len(oldest) != 1 {
-		t.Fatalf("landing before = %d articles, want 1", len(oldest))
-	}
-	oldestURL := oldest[0]
-
-	// Back-date into page/1's published window; it is still the newest insert.
-	bd := seed(t, repo, seedSpec{Title: "Backdated", Author: "ada", Section: "tech", Published: date(2026, 6, 19)})
-	res := genInto(t, repo, out, func(o *Options) { o.PageSize = 3 })
-
-	if string(readArtifact(t, out, "latest/page/1/index.html")) != page1 {
-		t.Errorf("sealed page/1 changed under back-dating")
-	}
-	if string(readArtifact(t, out, "latest/page/2/index.html")) != page2 {
-		t.Errorf("sealed page/2 changed under back-dating")
-	}
+	// N=5, P=2 -> full=2, rem=1. The portada is the single newest-published (June 25),
+	// regardless of the scrambled insert order.
 	landing := permalinksIn(readArtifact(t, out, "latest/index.html"))
-	if len(landing) != 2 {
-		t.Fatalf("landing after = %d, want 2", len(landing))
+	if len(landing) != 1 {
+		t.Fatalf("landing = %d articles, want 1 (N=5,P=2,rem=1)", len(landing))
 	}
-	// Ordered by published_at: back-dated June 19 sorts above the June 14 oldest.
-	if landing[0] != articleURL(bd) || landing[1] != oldestURL {
-		t.Errorf("landing display order = %v, want [%q %q]", landing, articleURL(bd), oldestURL)
+	// Pages descend to older (page 1 the oldest); both full pages hold 2.
+	if p1 := permalinksIn(readArtifact(t, out, "latest/page/1/index.html")); len(p1) != 2 {
+		t.Fatalf("page/1 = %d, want 2", len(p1))
 	}
-	for _, u := range res.Purge {
-		if strings.Contains(u, "/page/") {
-			t.Errorf("sealed-page URL in purge: %q", u)
-		}
+	if p2 := permalinksIn(readArtifact(t, out, "latest/page/2/index.html")); len(p2) != 2 {
+		t.Fatalf("page/2 = %d, want 2", len(p2))
+	}
+
+	// Back-date a NEW article published June 22 (between 20 and 25). It must surface in
+	// its PUBLISHED position, not pinned to the insertion tail.
+	bd := seed(t, repo, seedSpec{Title: "Backdated", Author: "ada", Section: "tech", Published: date(2026, 6, 22)})
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
+
+	// N=6, P=2 -> rem==0; the landing mirrors the newest pair: June 25 then the
+	// back-dated June 22 (display order, newest published first).
+	landing2 := permalinksIn(readArtifact(t, out, "latest/index.html"))
+	if len(landing2) != 2 {
+		t.Fatalf("landing after backdate = %d, want 2", len(landing2))
+	}
+	if landing2[1] != articleURL(bd) {
+		t.Errorf("back-dated June 22 not in its published slot: landing = %v, want second = %q", landing2, articleURL(bd))
 	}
 }
 

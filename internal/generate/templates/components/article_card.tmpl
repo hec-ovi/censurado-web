@@ -13,10 +13,14 @@
 {{end}}
 
 {{define "article_card"}}
-<article class="card{{if eq .Thumb.Kind "image"}} card-has-media{{else}} card-textonly{{end}}">
-{{- if eq .Thumb.Kind "image"}}
-<figure class="card-media">
+{{- $video := or (eq .Thumb.Kind "youtube") (eq .Thumb.Kind "video") -}}
+<article class="card{{if .Thumb.Src}} card-has-media{{else}} card-textonly{{end}}{{if $video}} card-has-video{{end}}">
+{{- if .Thumb.Src}}
+<figure class="card-media"{{if $video}} aria-label="Vídeo: {{.Thumb.Alt}}"{{end}}>
 <img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
+{{- if $video}}
+<span class="card-media-play" aria-hidden="true"></span>
+{{- end}}
 </figure>
 {{- end}}
 <div class="card-body">
@@ -44,7 +48,8 @@
      continues full width below. No .card-body wrapper, so the float lives in the
      card's own block flow. Same hooks as article_card (.card-link, data-author). */}}
 {{define "lead_card"}}
-<article class="card lead-card{{if eq .Thumb.Kind "image"}} card-has-media{{else}} card-textonly{{end}}">
+{{- $video := or (eq .Thumb.Kind "youtube") (eq .Thumb.Kind "video") -}}
+<article class="card lead-card{{if .Thumb.Src}} card-has-media{{else}} card-textonly{{end}}{{if $video}} card-has-video{{end}}">
 <div class="card-kicker">
 <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a>
 <time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
@@ -63,9 +68,12 @@
 <p class="byline"><a class="author-link" href="{{.AuthorURL}}" data-author>{{.AuthorLabel}}</a></p>
 </div>
 </div>
-{{- if eq .Thumb.Kind "image"}}
-<figure class="card-media">
+{{- if .Thumb.Src}}
+<figure class="card-media"{{if $video}} aria-label="Vídeo: {{.Thumb.Alt}}"{{end}}>
 <img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">
+{{- if $video}}
+<span class="card-media-play" aria-hidden="true"></span>
+{{- end}}
 </figure>
 {{- end}}
 </div>

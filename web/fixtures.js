@@ -249,6 +249,57 @@ export const BACKDATE_SHARDS = {
 // back-dated D slots between B and A by publication time.
 export const BACKDATE_STREAM = [PP.C, PP.B, PP.D, PP.A];
 
+// ---- body-video poster card: /section/world/ ------------------------------
+//
+// videoEntry has no metadata.image, so its `image` is the first body video's
+// deterministic YouTube poster and `video` is true; the client must rebuild the
+// card-has-video class + .card-media-play badge. imageEntry is a plain image card
+// (video false) to prove the badge appears only for video entries.
+
+export const videoEntry = {
+  slug: "glorieta-clip",
+  url: "/a/glorieta-clip-12345678/",
+  title: "Glorieta Clip",
+  subtitle: "",
+  description: "",
+  image: "https://i.ytimg.com/vi/RdhnMD40q3Y/hqdefault.jpg",
+  video: true,
+  author: "glorieta-sadeta",
+  author_label: "Glorieta Sadeta",
+  avatar: "",
+  section: "world",
+  topics: [],
+  published_at: "2026-06-09T09:00:00Z",
+  ts: 1780995600,
+};
+export const imageEntry = {
+  slug: "plain-image",
+  url: "/a/plain-image-87654321/",
+  title: "Plain Image",
+  subtitle: "",
+  description: "",
+  image: "/media/" + "a".repeat(64) + ".png",
+  video: false,
+  author: "glorieta-sadeta",
+  author_label: "Glorieta Sadeta",
+  avatar: "",
+  section: "world",
+  topics: [],
+  published_at: "2026-06-08T09:00:00Z",
+  ts: 1780909200,
+};
+export const VIDEO_MANIFEST = {
+  scope: "/section/world/",
+  axis: { section: "world" },
+  shards: [{ url: "/shards/section/world/2026/06.json", month: "2026-06", count: 2 }],
+  total: 2,
+  cap: { entries: 500, bytes: 204800 },
+};
+export const VIDEO_SHARDS = {
+  "/shards/section/world/2026/06.json": [videoEntry, imageEntry],
+};
+export const VIDEO_STREAM = [videoEntry, imageEntry];
+
 // ---- DOM builders ----------------------------------------------------------
 
 function itemHTML(e) {

@@ -9,13 +9,15 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (13 fields); id is unexported and never
+// The JSON field set is frozen (14 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
 // listing (ties by id). Subtitle, Description, Image and Avatar carry the authored
 // dek, standfirst, hero URL and byline avatar so client-rebuilt cards (facet
 // filter, live refresh, infinite scroll) match the server cards even for an author
 // absent from the page's first batch; all are always present (possibly "") to keep
-// the exact-key-set invariant.
+// the exact-key-set invariant. Image falls back to the first body video's YouTube
+// poster when there is no metadata.image, and Video is then true so the client
+// rebuilds the play badge over that poster (matching the server thumbForArticle).
 type ShardEntry struct {
 	Slug        string   `json:"slug"`
 	URL         string   `json:"url"`
@@ -23,6 +25,7 @@ type ShardEntry struct {
 	Subtitle    string   `json:"subtitle"`
 	Description string   `json:"description"`
 	Image       string   `json:"image"`
+	Video       bool     `json:"video"`
 	Author      string   `json:"author"`
 	AuthorLabel string   `json:"author_label"`
 	Avatar      string   `json:"avatar"`
@@ -59,13 +62,25 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 	if !ok {
 		auth = a.ContentHash[:12]
 	}
+	// Mirror thumbForArticle: a real metadata.image wins; otherwise fall the card
+	// image back to the first body video's YouTube poster and flag Video so the
+	// client rebuilds the same play badge the server renders.
+	image := metadataMediaSrc("", a.Metadata, "image")
+	video := false
+	if image == "" {
+		if poster := firstBodyVideoPoster(a); poster != "" {
+			image = poster
+			video = true
+		}
+	}
 	return ShardEntry{
 		Slug:        a.Slug,
 		URL:         articleURL(a),
 		Title:       a.Title,
 		Subtitle:    firstMetadataString(a.Metadata, "subtitle"),
 		Description: firstMetadataString(a.Metadata, "description"),
-		Image:       metadataMediaSrc("", a.Metadata, "image"),
+		Image:       image,
+		Video:       video,
 		Author:      auth,
 		AuthorLabel: authorDisplayLabel(a),
 		Avatar:      metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),

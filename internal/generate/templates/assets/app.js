@@ -138,8 +138,10 @@ function fallbackFacetURL(type, slug) {
 // articleItemFromEntry rebuilds the server card structure from a body-free shard
 // entry: optional hero <figure> only when the entry carries an image (no
 // placeholder box), a .card-body wrapping kicker/title/subtitle/signature, and
-// NO per-card topic list (topics filter via the data-topics attribute only). The
-// .article-item / .card-link / data-author / .author-link hooks are preserved
+// NO per-card topic list (topics filter via the data-topics attribute only). When
+// the image is a body video's YouTube poster (e.video true), the card gets the
+// card-has-video class and a .card-media-play badge, matching the server thumb.
+// The .article-item / .card-link / data-author / .author-link hooks are preserved
 // because the refiner and its tests read them.
 function articleItemFromEntry(e, helpers) {
   const labelFor = helpers.labelFor;
@@ -154,12 +156,19 @@ function articleItemFromEntry(e, helpers) {
   li.dataset.month = monthOf(e);
 
   const hasImage = !!e.image;
-  const card = el("article", { class: "card " + (hasImage ? "card-has-media" : "card-textonly") });
+  const isVideo = hasImage && !!e.video;
+  const card = el("article", {
+    class: "card " + (hasImage ? "card-has-media" : "card-textonly") + (isVideo ? " card-has-video" : ""),
+  });
 
   if (hasImage) {
     const figure = el("figure", { class: "card-media" });
+    if (isVideo) figure.setAttribute("aria-label", "Vídeo: " + (e.title || ""));
     const img = el("img", { src: e.image, alt: e.title || "", loading: "lazy", decoding: "async" });
     figure.appendChild(img);
+    if (isVideo) {
+      figure.appendChild(el("span", { class: "card-media-play", "aria-hidden": "true" }));
+    }
     card.appendChild(figure);
   }
 

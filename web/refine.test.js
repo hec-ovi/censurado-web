@@ -24,6 +24,11 @@ import {
   BACKDATE_STREAM,
   BACKDATE_MANIFEST,
   BACKDATE_SHARDS,
+  videoEntry,
+  imageEntry,
+  VIDEO_STREAM,
+  VIDEO_MANIFEST,
+  VIDEO_SHARDS,
   landingHTML,
   deepHTML,
   articleHTML,
@@ -265,6 +270,47 @@ describe("Censurado refiner", () => {
     expect(container.querySelector('a.month-link[href="/2026/06/"]')).not.toBeNull();
     // The chip panel was added alongside, not in place of, the fallbacks.
     expect(container.querySelector(".facet-panel")).not.toBeNull();
+  });
+
+  // Client/server parity for the body-video poster card: a shard entry whose image
+  // is a YouTube poster (video:true) rebuilds with the card-has-video class and the
+  // .card-media-play badge; a plain image entry (video:false) has neither.
+  test("video card: a body-video entry rebuilds with card-has-video + a play badge; a plain image card has neither", async () => {
+    serveJSON(VIDEO_SHARDS);
+    mount(
+      landingHTML({
+        heading: "world",
+        items: VIDEO_STREAM,
+        months: ["2026-06"],
+        monthBase: "/section/world/",
+        manifest: VIDEO_MANIFEST,
+      })
+    );
+
+    refiner = await initRefine(container);
+    const user = userEvent.setup();
+    await user.click(within(container).getByRole("button", { name: "Sección world" }));
+
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-articles] .article-item").length).toBe(2)
+    );
+
+    const cardFor = (url) =>
+      [...container.querySelectorAll("[data-articles] .card")].find(
+        (c) => c.querySelector(".card-link").getAttribute("href") === url
+      );
+
+    const videoCard = cardFor(videoEntry.url);
+    expect(videoCard.classList.contains("card-has-media")).toBe(true);
+    expect(videoCard.classList.contains("card-has-video")).toBe(true);
+    expect(videoCard.querySelector(".card-media-play")).not.toBeNull();
+    expect(videoCard.querySelector(".card-media img").getAttribute("src")).toBe(videoEntry.image);
+
+    const imageCard = cardFor(imageEntry.url);
+    expect(imageCard.classList.contains("card-has-media")).toBe(true);
+    expect(imageCard.classList.contains("card-has-video")).toBe(false);
+    expect(imageCard.querySelector(".card-media-play")).toBeNull();
+    expect(imageCard.querySelector(".card-media img").getAttribute("src")).toBe(imageEntry.image);
   });
 
   test("article page: initRefine does nothing (no facet panel, returns null)", async () => {

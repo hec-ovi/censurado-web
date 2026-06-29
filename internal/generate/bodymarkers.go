@@ -47,6 +47,35 @@ var markerRe = regexp.MustCompile(`\{\{\s*(video|relacionado|tweet):\s*([^}]+?)\
 
 var videoExts = []string{".mp4", ".webm", ".ogg", ".ogv", ".mov", ".m4v"}
 
+// youtubePosterURL builds the deterministic YouTube poster (thumbnail) URL for a
+// video id. hqdefault exists for every video, so the URL is a pure function of the
+// id and a card built from it stays byte-stable.
+func youtubePosterURL(id string) string {
+	return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
+}
+
+// firstBodyVideoPoster returns the YouTube poster URL for the FIRST {{video:...}}
+// marker in the article body when that first video is a YouTube reference, or ""
+// when the body has no video marker or its first video is self-hosted (a
+// non-YouTube .mp4 has no poster, so the card stays text-only). It reuses
+// media.YouTubeEmbedURL (the single id parser) so the listing thumb and the client
+// shard entry agree on the same id, and only the FIRST video decides the card
+// thumbnail even if a later marker is a YouTube one.
+func firstBodyVideoPoster(a domain.Article) string {
+	for _, m := range markerRe.FindAllStringSubmatch(a.Body, -1) {
+		if m[1] != "video" {
+			continue
+		}
+		val := strings.TrimSpace(m[2])
+		if embed := media.YouTubeEmbedURL(val); embed != "" {
+			id := strings.TrimPrefix(embed, "https://www.youtube-nocookie.com/embed/")
+			return youtubePosterURL(id)
+		}
+		return "" // the first video is self-hosted (non-YouTube): no poster
+	}
+	return ""
+}
+
 // renderBodyWithMarkers renders one article's markdown body to sanitized HTML and
 // expands its inline markers. bySlug maps every article's backend slug to the
 // article; self is the article whose body this is (so a related marker never links

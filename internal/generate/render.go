@@ -677,16 +677,24 @@ func articleRelated(idx *Index, self domain.Article, n int) []itemView {
 	return itemViewsOf(related, n)
 }
 
+// thumbForArticle picks a listing card's media. A real metadata.image always wins
+// (Kind:"image"). Otherwise, when the body's FIRST {{video:...}} marker is a
+// YouTube reference, the card borrows its poster as a thumbnail (Kind:"youtube",
+// so the card shows a play badge over the poster); the click still opens the
+// article where the real embed plays. A body with no image and no YouTube video
+// (or whose first video is a self-hosted .mp4) stays text-only.
 func thumbForArticle(a domain.Article) mediaView {
-	src := metadataMediaSrc("", a.Metadata, "image")
-	if src == "" {
-		return mediaView{}
+	if src := metadataMediaSrc("", a.Metadata, "image"); src != "" {
+		alt := firstMetadataString(a.Metadata, "image_alt", "alt")
+		if alt == "" {
+			alt = a.Title
+		}
+		return mediaView{Kind: "image", Src: src, Alt: alt}
 	}
-	alt := firstMetadataString(a.Metadata, "image_alt", "alt")
-	if alt == "" {
-		alt = a.Title
+	if poster := firstBodyVideoPoster(a); poster != "" {
+		return mediaView{Kind: "youtube", Src: poster, Alt: a.Title}
 	}
-	return mediaView{Kind: "image", Src: src, Alt: alt}
+	return mediaView{}
 }
 
 // metaDescriptionMax bounds the SEO excerpt at ~160 runes. This is the only

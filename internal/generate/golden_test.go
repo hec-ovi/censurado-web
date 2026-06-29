@@ -136,7 +136,7 @@ func TestGolden_ShardCaps(t *testing.T) {
 // --- (c) ---------------------------------------------------------------------
 
 var frozenShardKeys = []string{
-	"slug", "url", "title", "subtitle", "description", "image", "author", "author_label", "avatar", "section", "topics", "published_at", "ts",
+	"slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts",
 }
 
 func TestGolden_ShardFieldSetMatchesSchema(t *testing.T) {

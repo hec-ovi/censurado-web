@@ -31,7 +31,7 @@ func TestSpanishUI_PresentationLayer(t *testing.T) {
 		t.Errorf("listing missing 'Lo último' (Latest heading/nav)")
 	}
 
-	// Chrome strings. ("Lo más leído" is no longer always-on chrome: the rail only
+	// Chrome strings. ("Recomendado" is no longer always-on chrome: the rail only
 	// renders on a landing that has below-the-fold articles, so its Spanish heading
 	// is asserted in TestListingRail_Clickable instead, where the rail is populated.)
 	for _, want := range []string{"Portada", "Menú", "Sistema", "Claro", "Oscuro", "Aviso editorial", "Nosotros"} {

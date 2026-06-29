@@ -252,7 +252,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		}
 		view.Items = authorLatestItems(env.plan.Index, sc, env.pageSize)
 	} else if pg.Landing {
-		// "Lo más leído" lives only on the scope landing (the front page and the
+		// "Recomendado" lives only on the scope landing (the front page and the
 		// section/topic fronts), drawn from the articles BELOW this page's fold so
 		// it never repeats the grid the reader is already looking at. Sealed
 		// deep-pagination pages omit it on purpose: a live "below page" rail there
@@ -532,7 +532,7 @@ func markDaySeparators(items []itemView) {
 	}
 }
 
-// railBelowPage builds the "Lo más leído" rail from the scope's articles that are
+// railBelowPage builds the "Recomendado" rail from the scope's articles that are
 // strictly OLDER than this page's oldest item, newest-first, capped at n. Bounding
 // the rail below the page's window does two things: it never repeats the grid the
 // reader is already looking at (the requested fix), and it stays byte-stable,

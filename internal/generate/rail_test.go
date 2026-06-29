@@ -9,7 +9,7 @@ import (
 	"github.com/hec-ovi/censurado-web-backend/domain"
 )
 
-// railListRe isolates the "Lo más leído" rail's <ol class="ranked-list"> ... </ol>
+// railListRe isolates the "Recomendado" rail's <ol class="ranked-list"> ... </ol>
 // so we can collect just the rail's permalinks, separate from the grid's.
 var railListRe = regexp.MustCompile(`(?s)<ol class="ranked-list">(.*?)</ol>`)
 
@@ -21,7 +21,7 @@ func railPermalinks(b []byte) []string {
 	return permalinkRe.FindAllString(string(m[1]), -1)
 }
 
-// TestListingRail_ExcludesPageGrid pins the requested fix: "Lo más leído" must not
+// TestListingRail_ExcludesPageGrid pins the requested fix: "Recomendado" must not
 // repeat the articles already shown in the page's own grid. The rail is drawn from
 // the scope's older articles (below this page's window), so the two sets are
 // disjoint and the rail is still populated.
@@ -46,7 +46,7 @@ func TestListingRail_ExcludesPageGrid(t *testing.T) {
 		t.Fatal("no article cards in the grid")
 	}
 	if len(rail) == 0 {
-		t.Fatal("rail 'Lo más leído' is empty; expected older articles below the page")
+		t.Fatal("rail 'Recomendado' is empty; expected older articles below the page")
 	}
 	for _, r := range rail {
 		if grid[r] {

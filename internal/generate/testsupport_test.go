@@ -192,7 +192,7 @@ var permalinkRe = regexp.MustCompile(`/a/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/`)
 
 // articleListRe isolates the main listing's <ol data-articles> ... </ol> block so
 // permalinksIn counts only the listed article cards, not the permalinks now also
-// carried by the clickable "Lo más leído" rail on the same page.
+// carried by the clickable "Recomendado" rail on the same page.
 var articleListRe = regexp.MustCompile(`(?s)<ol class="article-list(?: [^"]*)?" data-articles>(.*?)</ol>`)
 
 // permalinksIn returns every /a/<slug>-<hash8>/ URL among the listed article

@@ -1012,7 +1012,7 @@ class InfiniteScroll {
     this.tail.append(this.loader, this.sentinel);
     // Live INSIDE the article list, as its last child: this keeps the loader in
     // the content column (centered under the articles) and out of the portal grid
-    // entirely, so it can never disturb the "Lo más leído" rail in column 2. New
+    // entirely, so it can never disturb the "Recomendado" rail in column 2. New
     // cards are inserted before it.
     this.list.appendChild(this.tail);
   }

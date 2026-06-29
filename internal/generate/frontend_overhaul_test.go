@@ -6,7 +6,7 @@ import (
 )
 
 // The frontend overhaul: authored subtitle/description, always-visible author
-// signatures, no image placeholder, a clickable "Lo más leído" rail, an
+// signatures, no image placeholder, a clickable "Recomendado" rail, an
 // article-page rail + "Relacionados", and the "Nosotros" roster. These tests pin
 // the new markup and the byte-stability guarantee the article rail/related rely
 // on.
@@ -94,11 +94,11 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	}
 }
 
-// The listing "Lo más leído" rail is clickable: each item is an <a> to a permalink.
+// The listing "Recomendado" rail is clickable: each item is an <a> to a permalink.
 func TestListingRail_Clickable(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	// Seed more than one page so the landing's "Lo más leído" rail has below-the-fold
+	// Seed more than one page so the landing's "Recomendado" rail has below-the-fold
 	// articles to show (the rail is now drawn from articles NOT on the page's grid).
 	seed(t, repo, seedSpec{Title: "Uno", Author: "ada", Section: "tech", Published: date(2026, 6, 1)})
 	seed(t, repo, seedSpec{Title: "Dos", Author: "ada", Section: "tech", Published: date(2026, 6, 2)})
@@ -114,8 +114,8 @@ func TestListingRail_Clickable(t *testing.T) {
 		t.Errorf("rail items are not links to permalinks")
 	}
 	// The rail's Spanish heading renders when the rail is populated.
-	if !strings.Contains(listing, "Lo más leído") {
-		t.Errorf("rail heading 'Lo más leído' missing")
+	if !strings.Contains(listing, "Recomendado") {
+		t.Errorf("rail heading 'Recomendado' missing")
 	}
 }
 
@@ -152,8 +152,8 @@ func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 		!strings.Contains(bPage, `<a class="author-more-link" href="`+articleURL(a)) {
 		t.Errorf("newer article 'Más de este autor' rail does not link to the author's older piece")
 	}
-	if strings.Contains(bPage, "Lo más leído") {
-		t.Errorf("article page should not show the listing 'Lo más leído' rail")
+	if strings.Contains(bPage, "Recomendado") {
+		t.Errorf("article page should not show the listing 'Recomendado' rail")
 	}
 	if !strings.Contains(bPage, `class="related-item"`) || !strings.Contains(bPage, articleURL(a)) {
 		t.Errorf("newer article Relacionados does not include the shared-topic older one")

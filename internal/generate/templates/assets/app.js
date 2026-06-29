@@ -1384,6 +1384,50 @@ export function initMasthead(root = document) {
 // topic chips, so topics read as one line "< topic . topic . topic >" instead of
 // wrapping. Idempotent: a row already wrapped is skipped, so it is safe to call
 // again once the refiner panel exists.
+// initCardVideos plays a listing-card video inline: clicking a {{video:}} card's
+// poster swaps the poster <img> for an autoplay YouTube iframe right on the
+// listing, instead of only the card title linking through to the article. The
+// video id is parsed from the poster URL (.../vi/<id>/hqdefault.jpg) so it works
+// for both server-rendered and client-rebuilt (refiner) cards with no extra data
+// attribute, and the click is delegated on the root so rebuilt cards need no
+// re-init. The title link is untouched, so clicking the headline still opens the
+// article.
+export function initCardVideos(root = document) {
+  const scope = root || document;
+  if (scope.__cardVideosBound) return;
+  scope.__cardVideosBound = true;
+  const doc = scope.ownerDocument || (scope.nodeType === 9 ? scope : document);
+  scope.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const figure = target.closest(".card-has-video .card-media");
+    if (!figure || figure.dataset.playing) return;
+    const img = figure.querySelector("img");
+    const id = youtubeIdFromPoster(img && img.getAttribute("src"));
+    if (!id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    figure.dataset.playing = "1";
+    const iframe = doc.createElement("iframe");
+    iframe.className = "card-media-embed";
+    iframe.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0";
+    iframe.title = figure.getAttribute("aria-label") || "Vídeo";
+    iframe.setAttribute(
+      "allow",
+      "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    );
+    iframe.setAttribute("allowfullscreen", "");
+    iframe.setAttribute("loading", "lazy");
+    figure.textContent = "";
+    figure.appendChild(iframe);
+  });
+}
+
+function youtubeIdFromPoster(src) {
+  const m = /\/vi\/([A-Za-z0-9_-]{6,})\//.exec(src || "");
+  return m ? m[1] : "";
+}
+
 export function initTopicScroller(root = document) {
   const scope = root || document;
   // The article-page topic strip and the portada topic filter both become a
@@ -1576,6 +1620,7 @@ if (typeof document !== "undefined") {
     initMasthead(document);
     initMenu(document);
     initTheme(document);
+    initCardVideos(document);
     initTopicScroller(document);
     initAuthorMore(document);
     initCardFill(document);

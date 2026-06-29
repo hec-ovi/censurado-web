@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { within, waitFor } from "@testing-library/dom";
 import userEvent from "@testing-library/user-event";
 
-import { initLiveRefresh, initMasthead, initRefine } from "../internal/generate/templates/assets/app.js";
+import { initCardVideos, initLiveRefresh, initMasthead, initRefine } from "../internal/generate/templates/assets/app.js";
 import {
   E,
   LATEST_STREAM,
@@ -311,6 +311,59 @@ describe("Censurado refiner", () => {
     expect(imageCard.classList.contains("card-has-video")).toBe(false);
     expect(imageCard.querySelector(".card-media-play")).toBeNull();
     expect(imageCard.querySelector(".card-media img").getAttribute("src")).toBe(imageEntry.image);
+  });
+
+  // Inline play: clicking a video card's poster swaps it for an autoplay YouTube
+  // embed right on the listing (the title link still navigates to the article); a
+  // plain image card's poster does nothing. Markup mirrors article_card.tmpl.
+  test("inline play: clicking a video poster swaps in an autoplay embed; an image poster does not", async () => {
+    mount(`
+<ol class="article-list" data-articles>
+<li class="article-item" data-author="glorieta-sadeta">
+<article class="card card-has-media card-has-video">
+<figure class="card-media" aria-label="Vídeo: Glorieta Clip">
+<img src="https://i.ytimg.com/vi/RdhnMD40q3Y/hqdefault.jpg" alt="Glorieta Clip" loading="lazy" decoding="async">
+<span class="card-media-play" aria-hidden="true"></span>
+</figure>
+<div class="card-body"><h2 class="card-title"><a class="card-link" href="/a/glorieta-clip-12345678/">Glorieta Clip</a></h2></div>
+</article>
+</li>
+<li class="article-item" data-author="glorieta-sadeta">
+<article class="card card-has-media">
+<figure class="card-media">
+<img src="/media/aaaa.png" alt="Plain Image" loading="lazy" decoding="async">
+</figure>
+<div class="card-body"><h2 class="card-title"><a class="card-link" href="/a/plain-image-87654321/">Plain Image</a></h2></div>
+</article>
+</li>
+</ol>`);
+
+    initCardVideos(container);
+    const user = userEvent.setup();
+
+    const videoCard = container.querySelector(".card-has-video");
+    const imageCard = [...container.querySelectorAll(".card")].find(
+      (c) => !c.classList.contains("card-has-video")
+    );
+
+    // Clicking the image card's poster does nothing: still an <img>, no embed.
+    await user.click(imageCard.querySelector(".card-media"));
+    expect(imageCard.querySelector("iframe")).toBeNull();
+    expect(imageCard.querySelector(".card-media img")).not.toBeNull();
+
+    // Clicking the video poster swaps the <img>+badge for the autoplay embed.
+    await user.click(videoCard.querySelector(".card-media"));
+    const iframe = videoCard.querySelector("iframe.card-media-embed");
+    expect(iframe).not.toBeNull();
+    expect(iframe.getAttribute("src")).toBe(
+      "https://www.youtube-nocookie.com/embed/RdhnMD40q3Y?autoplay=1&rel=0"
+    );
+    expect(videoCard.querySelector(".card-media img")).toBeNull();
+    expect(videoCard.querySelector(".card-media-play")).toBeNull();
+    // The title link is untouched, so the headline still opens the article.
+    expect(videoCard.querySelector(".card-link").getAttribute("href")).toBe(
+      "/a/glorieta-clip-12345678/"
+    );
   });
 
   test("article page: initRefine does nothing (no facet panel, returns null)", async () => {

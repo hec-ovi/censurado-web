@@ -1139,6 +1139,21 @@
     background: var(--color-red);
   }
 
+  /* The whole poster is the play target; initCardVideos swaps it for the embed. */
+  .card-has-video .card-media {
+    cursor: pointer;
+  }
+
+  /* The inline YouTube embed that replaces the poster on click; fills the same
+     16/9 .card-media box. */
+  .card-media-embed {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
   .card-kicker {
     display: none;
   }

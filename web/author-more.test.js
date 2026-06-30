@@ -20,15 +20,15 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
-const MANIFEST = { scope: "/author/lara/", shards: [{ url: "/shards/author/lara/2026/06.json", month: "2026-06" }] };
+const MANIFEST = { scope: "/author/ada/", shards: [{ url: "/shards/author/ada/2026/06.json", month: "2026-06" }] };
 const SHARD = [
-  { slug: "l2", url: "/a/lara-dos-00000002/", title: "Lara Dos", section: "politics", author: "lara", ts: 200 },
-  { slug: "l1", url: "/a/lara-uno-00000001/", title: "Lara Uno", section: "politics", author: "lara", ts: 100 },
+  { slug: "l2", url: "/a/ada-dos-00000002/", title: "Ada Dos", section: "politics", author: "ada", ts: 200 },
+  { slug: "l1", url: "/a/ada-uno-00000001/", title: "Ada Uno", section: "politics", author: "ada", ts: 100 },
 ];
 
 function aside(self) {
   return `
-  <aside class="article-rail author-more" data-author-more="lara" data-self="${self}" aria-label="Más de este autor">
+  <aside class="article-rail author-more" data-author-more="ada" data-self="${self}" aria-label="Más de este autor">
     <h2 class="rail-heading">Más de este autor</h2>
     <ol class="author-more-list" data-author-more-list>
       <li class="author-more-item"><a class="author-more-link" href="/a/fallback-00000000/"><strong>fallback</strong></a></li>
@@ -42,30 +42,30 @@ function links() {
 
 describe("initAuthorMore", () => {
   test("replaces the server fallback with the author's full list (newest first)", async () => {
-    mount(aside("/a/lara-tres-00000003/"));
+    mount(aside("/a/ada-tres-00000003/"));
     const hits = serveJSON({
-      "/manifest/author/lara/index.json": MANIFEST,
-      "/shards/author/lara/2026/06.json": SHARD,
+      "/manifest/author/ada/index.json": MANIFEST,
+      "/shards/author/ada/2026/06.json": SHARD,
     });
     const res = await initAuthorMore(container);
     expect(res).not.toBeNull();
-    expect(links()).toEqual(["/a/lara-dos-00000002/", "/a/lara-uno-00000001/"]);
-    expect(hits["/manifest/author/lara/index.json"]).toBe(1);
+    expect(links()).toEqual(["/a/ada-dos-00000002/", "/a/ada-uno-00000001/"]);
+    expect(hits["/manifest/author/ada/index.json"]).toBe(1);
   });
 
   test("excludes the article being read", async () => {
-    mount(aside("/a/lara-dos-00000002/"));
+    mount(aside("/a/ada-dos-00000002/"));
     serveJSON({
-      "/manifest/author/lara/index.json": MANIFEST,
-      "/shards/author/lara/2026/06.json": SHARD,
+      "/manifest/author/ada/index.json": MANIFEST,
+      "/shards/author/ada/2026/06.json": SHARD,
     });
     await initAuthorMore(container);
-    expect(links()).toEqual(["/a/lara-uno-00000001/"]);
+    expect(links()).toEqual(["/a/ada-uno-00000001/"]);
   });
 
   test("keeps the server fallback when the manifest 404s", async () => {
-    mount(aside("/a/lara-tres-00000003/"));
-    server.use(http.get("*/manifest/author/lara/index.json", () => new HttpResponse(null, { status: 404 })));
+    mount(aside("/a/ada-tres-00000003/"));
+    server.use(http.get("*/manifest/author/ada/index.json", () => new HttpResponse(null, { status: 404 })));
     const res = await initAuthorMore(container);
     expect(res).toBeNull();
     expect(links()).toEqual(["/a/fallback-00000000/"]);

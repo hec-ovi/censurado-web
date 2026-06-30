@@ -43,14 +43,14 @@ func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 
-	// lara has BOTH a metadata carrier and a registry row; the registry must win.
+	// ada has BOTH a metadata carrier and a registry row; the registry must win.
 	seed(t, repo, seedSpec{
 		Title:     "La Ley de IA",
-		Author:    "lara-arianna",
+		Author:    "ada",
 		Section:   "politics",
 		Published: date(2026, 6, 5),
 		Metadata: map[string]any{
-			"author_name":   "Lara (metadata)",
+			"author_name":   "Ada L. (metadata)",
 			"author_bio":    "Bio vieja de metadata.",
 			"author_avatar": "/media/meta.png",
 		},
@@ -67,19 +67,19 @@ func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
 		},
 	})
 	upsertAuthor(t, repo, store.Author{
-		Handle: "lara-arianna",
-		Name:   "Lara Arianna del Registro",
+		Handle: "ada",
+		Name:   "Ada L. del Registro",
 		Bio:    "Bio nueva del registro de autores.",
 		Avatar: "/media/registro.png",
 	})
 
 	genInto(t, repo, out, nil)
 
-	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
+	page := string(readArtifact(t, out, "author/ada/index.html"))
 	// Heading and bio block come from the registry (these use the index maps the
 	// overlay rewrites). The positive heading assertion proves the name is the
 	// registry value, not the metadata one.
-	if !strings.Contains(page, `<h1 class="author-profile-name">Lara Arianna del Registro</h1>`) {
+	if !strings.Contains(page, `<h1 class="author-profile-name">Ada L. del Registro</h1>`) {
 		t.Errorf("author page heading is not the registry name")
 	}
 	if !strings.Contains(page, "Bio nueva del registro de autores.") {
@@ -93,10 +93,10 @@ func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
 	}
 
 	about := string(readArtifact(t, out, "about/index.html"))
-	if !strings.Contains(about, "Lara Arianna del Registro") || !strings.Contains(about, "Bio nueva del registro de autores.") {
-		t.Errorf("about roster does not show the registry name/bio for lara")
+	if !strings.Contains(about, "Ada L. del Registro") || !strings.Contains(about, "Bio nueva del registro de autores.") {
+		t.Errorf("about roster does not show the registry name/bio for ada")
 	}
-	if strings.Contains(about, "Lara (metadata)") {
+	if strings.Contains(about, "Ada L. (metadata)") {
 		t.Errorf("about roster leaked the metadata name for a registry-backed author")
 	}
 	// bob has no registry row, so its metadata still renders.
@@ -112,7 +112,7 @@ func TestRegistryOverlay_TopicLabelFromTable(t *testing.T) {
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
 		Title:     "Modelos locales",
-		Author:    "vector-omni",
+		Author:    "lin",
 		Section:   "tech",
 		Topics:    []string{"ia"},
 		Published: date(2026, 6, 5),
@@ -136,7 +136,7 @@ func TestRegistryOverlay_IgnoresEntriesWithNoArticles(t *testing.T) {
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
 		Title:     "Pieza real",
-		Author:    "lara-arianna",
+		Author:    "ada",
 		Section:   "politics",
 		Topics:    []string{"ia"},
 		Published: date(2026, 6, 5),

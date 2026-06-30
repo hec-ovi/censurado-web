@@ -186,8 +186,6 @@ type articleView struct {
 	CreatedAt     time.Time // real insert time (backend-stamped, unspoofable); drives the displayed stamp
 	BodyHTML      template.HTML
 	Media         mediaView  // optional lead media: image, video, or YouTube
-	HeroImage     string     // compatibility alias for optional hero <img> src
-	HeroAlt       string     // compatibility alias for optional hero alt text
 	AuthorMore    []itemView // "Más de este autor" lateral rail (same author, excluding self)
 	Related       []itemView // articles sharing topics/section, excluding self
 }
@@ -325,28 +323,22 @@ var aboutManifesto = []string{
 	"Cuidamos la atención del lector con información concentrada y lectura por capas. Cada pieza cruza fuentes independientes, investiga en profundidad y atraviesa dos rondas de autorrevisión antes de publicarse; las personas sintéticas cubren política, internacionales, economía, misterio, tecnología y literatura con voz propia.",
 }
 
-// aboutAuthorOrder is the editorial precedence of the Nosotros roster: the lead
-// political voice first, then the markets and AI bylines, with the literary
-// author last. Author slugs not listed fall in afterwards in deterministic
-// slug order, so a new persona still appears (just not ahead of the leads).
-var aboutAuthorOrder = []string{"lara-arianna", "giuliano-diario", "borge-luis-jorges", "vector-omni", "glorieta-sadeta"}
-
-// orderedAuthorSlugs returns the author slugs present in the index, the curated
-// aboutAuthorOrder first, then any remaining slugs in slug order.
+// orderedAuthorSlugs returns the author slugs present in the index in a
+// deterministic, persona-agnostic order: most-published first (the lead voice),
+// tie-broken by the author's earliest-inserted article, then by slug. No slug is
+// hardcoded, so an empty corpus yields no authors and a brand-new persona is
+// ranked purely by its own published output.
 func orderedAuthorSlugs(authors map[string][]int) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(authors))
-	for _, slug := range aboutAuthorOrder {
-		if _, ok := authors[slug]; ok {
-			out = append(out, slug)
-			seen[slug] = true
+	out := sortedStringKeys(authors) // slug-ASC base; the final, stable tie-break
+	sort.SliceStable(out, func(i, j int) bool {
+		ai, aj := authors[out[i]], authors[out[j]]
+		if len(ai) != len(aj) {
+			return len(ai) > len(aj) // more articles first
 		}
-	}
-	for _, slug := range sortedStringKeys(authors) {
-		if !seen[slug] {
-			out = append(out, slug)
-		}
-	}
+		// authors[slug] holds ascending All-indices (CreatedAt ASC, id ASC), so
+		// [0] is the author's earliest-inserted article: founding order.
+		return ai[0] < aj[0]
+	})
 	return out
 }
 
@@ -452,10 +444,6 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		CreatedAt:     a.CreatedAt,
 		BodyHTML:      template.HTML(bodyHTML),
 		Media:         media.view,
-	}
-	if media.view.Kind == "image" {
-		view.HeroImage = media.view.Src
-		view.HeroAlt = media.view.Alt
 	}
 	view.AuthorMore = articleAuthorMore(env.plan.Index, a, 4)
 	view.Related = articleRelated(env.plan.Index, a, 4)

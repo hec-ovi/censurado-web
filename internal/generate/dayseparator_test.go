@@ -20,10 +20,10 @@ func TestDaySeparators_EveryScope(t *testing.T) {
 	out := t.TempDir()
 	// Same author/section/topic so this set lands on latest, the section, the author,
 	// and the topic scope alike. Two on the 20th, one on the 19th, one on the 18th.
-	seed(t, repo, seedSpec{Title: "Veinte A", Author: "lara-arianna", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 20)})
-	seed(t, repo, seedSpec{Title: "Veinte B", Author: "lara-arianna", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 20).Add(1)})
-	seed(t, repo, seedSpec{Title: "Diecinueve", Author: "lara-arianna", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 19)})
-	seed(t, repo, seedSpec{Title: "Dieciocho", Author: "lara-arianna", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 18)})
+	seed(t, repo, seedSpec{Title: "Veinte A", Author: "ada", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 20)})
+	seed(t, repo, seedSpec{Title: "Veinte B", Author: "ada", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 20).Add(1)})
+	seed(t, repo, seedSpec{Title: "Diecinueve", Author: "ada", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 19)})
+	seed(t, repo, seedSpec{Title: "Dieciocho", Author: "ada", Section: "politics", Topics: []string{"reforma"}, Published: date(2026, 6, 18)})
 	genInto(t, repo, out, nil)
 
 	sep19 := sepLI("19 de junio de 2026")
@@ -32,7 +32,7 @@ func TestDaySeparators_EveryScope(t *testing.T) {
 	scopes := []string{
 		"latest/index.html",
 		"section/politics/index.html",
-		"author/lara-arianna/index.html",
+		"author/ada/index.html",
 		"topic/reforma/index.html",
 	}
 	for _, scope := range scopes {

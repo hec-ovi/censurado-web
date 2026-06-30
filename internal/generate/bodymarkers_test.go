@@ -19,7 +19,7 @@ func TestBodyMarker_VideoYouTube(t *testing.T) {
 		"Intro.\n\n{{video: https://youtu.be/dQw4w9WgXcQ }}\n\nOutro.",
 	} {
 		// Distinct titles -> distinct slugs (the store enforces unique slugs).
-		a := seed(t, repo, seedSpec{Title: "Vídeo demo " + string(rune('A'+i)), Author: "vector-omni", Section: "tech", Body: body, Published: date(2026, 6, 10)})
+		a := seed(t, repo, seedSpec{Title: "Vídeo demo " + string(rune('A'+i)), Author: "lin", Section: "tech", Body: body, Published: date(2026, 6, 10)})
 		genInto(t, repo, out, nil)
 		page := string(readArtifact(t, out, articlePath(a)))
 		if strings.Contains(page, "{{video:") {
@@ -43,7 +43,7 @@ func TestBodyMarker_RelatedCard(t *testing.T) {
 	out := t.TempDir()
 	// An older target with a subtitle + image, then a newer article that links it.
 	target := seed(t, repo, seedSpec{
-		Title: "El informe que nadie leyó", Author: "lara-arianna", Section: "politics",
+		Title: "El informe que nadie leyó", Author: "ada", Section: "politics",
 		Published: date(2026, 6, 1),
 		Metadata: map[string]any{
 			"subtitle": "Una bajada larga con el dato que importa, y despues bastante texto adicional puesto a proposito para superar con holgura el limite de caracteres y forzar el recorte por palabra en la tarjeta, hasta esta marca final del subtitulo.",
@@ -54,7 +54,7 @@ func TestBodyMarker_RelatedCard(t *testing.T) {
 	// not in the page's bottom "Relacionados" / "Más de este autor" blocks (which
 	// render the full untrimmed subtitle and would otherwise mask the trim check).
 	newer := seed(t, repo, seedSpec{
-		Title: "La secuela", Author: "vector-omni", Section: "tech",
+		Title: "La secuela", Author: "lin", Section: "tech",
 		Body:      "Antes de seguir.\n\n{{relacionado:" + target.Slug + "}}\n\nDespués del recuadro.",
 		Published: date(2026, 6, 2),
 	})
@@ -143,7 +143,7 @@ func TestBodyMarker_Tweet(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Cita de X", Author: "lara-arianna", Section: "politics",
+		Title: "Cita de X", Author: "ada", Section: "politics",
 		Body:      "Antes.\n\n{{tweet:1234567890}}\n\nDespués.",
 		Published: date(2026, 6, 12),
 		Metadata: map[string]any{
@@ -196,7 +196,7 @@ func TestBodyMarker_TweetErased(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Cita eliminada", Author: "lara-arianna", Section: "politics",
+		Title: "Cita eliminada", Author: "ada", Section: "politics",
 		Body:      "Texto.\n\n{{tweet:999}}\n\nFin.",
 		Published: date(2026, 6, 12),
 		Metadata: map[string]any{
@@ -234,7 +234,7 @@ func TestBodyMarker_TweetMetrics(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Cita con métricas", Author: "vector-omni", Section: "tech",
+		Title: "Cita con métricas", Author: "lin", Section: "tech",
 		Body:      "Antes.\n\n{{tweet:2071122673367941477}}\n\nDespués.",
 		Published: date(2026, 6, 28),
 		Metadata: map[string]any{
@@ -289,7 +289,7 @@ func TestBodyMarker_VideoRemoved(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Video caído", Author: "vector-omni", Section: "tech",
+		Title: "Video caído", Author: "lin", Section: "tech",
 		Body:      "Mira esto.\n\n{{video:dQw4w9WgXcQ}}\n\nYa no está.",
 		Published: date(2026, 6, 12),
 		Metadata: map[string]any{

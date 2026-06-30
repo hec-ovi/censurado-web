@@ -18,18 +18,18 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
-		Title: "Sin imagen", Author: "lara-arianna", Section: "politics",
+		Title: "Sin imagen", Author: "ada", Section: "politics",
 		Published: date(2026, 6, 3),
 		Metadata: map[string]any{
-			"author_name": "Lara Arianna",
+			"author_name": "Ada L.",
 			"subtitle":    "Un dek breve y verificable.",
 		},
 	})
 	seed(t, repo, seedSpec{
-		Title: "Con imagen", Author: "vector-omni", Section: "tech",
+		Title: "Con imagen", Author: "lin", Section: "tech",
 		Published: date(2026, 6, 4),
 		Metadata: map[string]any{
-			"author_name": "Vector Omni",
+			"author_name": "Lin X.",
 			"subtitle":    "La inferencia local, con números.",
 			"image":       "/media/" + strings.Repeat("a", 64) + ".png",
 		},
@@ -45,7 +45,7 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	}
 	// Author signature is visible (not display:none in markup) with the byline link.
 	if !strings.Contains(listing, `<div class="card-meta">`) ||
-		!strings.Contains(listing, `class="author-link" href="/author/lara-arianna/" data-author>Lara Arianna</a>`) {
+		!strings.Contains(listing, `class="author-link" href="/author/ada/" data-author>Ada L.</a>`) {
 		t.Errorf("card author signature missing")
 	}
 	// Text-only vs media-bearing cards are marked, and only the media one has a figure.
@@ -63,10 +63,10 @@ func TestCard_SignatureStamp(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
-		Title: "Con fecha", Author: "lara-arianna", Section: "politics",
+		Title: "Con fecha", Author: "ada", Section: "politics",
 		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC),
 		Created:   time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 AR -> the displayed stamp
-		Metadata:  map[string]any{"author_name": "Lara Arianna"},
+		Metadata:  map[string]any{"author_name": "Ada L."},
 	})
 	genInto(t, repo, out, nil)
 	listing := string(readArtifact(t, out, "latest/index.html"))
@@ -87,10 +87,10 @@ func TestArticlePage_DateHasTime(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Con hora", Author: "lara-arianna", Section: "politics", Body: "Cuerpo del artículo.",
+		Title: "Con hora", Author: "ada", Section: "politics", Body: "Cuerpo del artículo.",
 		Published: time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC),
 		Created:   time.Date(2026, 5, 23, 20, 23, 0, 0, time.UTC), // 17:23 AR -> shown in the footer
-		Metadata:  map[string]any{"author_name": "Lara Arianna"},
+		Metadata:  map[string]any{"author_name": "Ada L."},
 	})
 	genInto(t, repo, out, nil)
 	page := string(readArtifact(t, out, articlePath(a)))
@@ -109,10 +109,10 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{
-		Title: "Pieza", Author: "lara-arianna", Section: "politics", Body: "Cuerpo del artículo.",
+		Title: "Pieza", Author: "ada", Section: "politics", Body: "Cuerpo del artículo.",
 		Published: date(2026, 6, 5),
 		Metadata: map[string]any{
-			"author_name": "Lara Arianna",
+			"author_name": "Ada L.",
 			"subtitle":    "El dek de la pieza.",
 			"description": "El standfirst que resume la pieza en una o dos frases.",
 		},
@@ -125,7 +125,7 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 		`<p class="article-subtitle">El dek de la pieza.</p>`,
 		`<p class="article-standfirst">El standfirst que resume la pieza en una o dos frases.</p>`,
 		`<footer class="article-sign">`,
-		`class="author-link article-sign-name" href="/author/lara-arianna/" rel="author" data-author>Lara Arianna</a>`,
+		`class="author-link article-sign-name" href="/author/ada/" rel="author" data-author>Ada L.</a>`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("article page missing %q", want)
@@ -213,7 +213,7 @@ func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 func TestTopicLabels_Normalized(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	a := seed(t, repo, seedSpec{Title: "Pieza", Author: "lara", Section: "world", Topics: []string{"Análisis Político"}, Published: date(2026, 6, 2)})
+	a := seed(t, repo, seedSpec{Title: "Pieza", Author: "ada", Section: "world", Topics: []string{"Análisis Político"}, Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 	page := string(readArtifact(t, out, articlePath(a)))
 
@@ -230,7 +230,7 @@ func TestTopicLabels_Normalized(t *testing.T) {
 func TestNav_NoDuplicateLabel(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara", Section: "politics", Topics: []string{"política"}, Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "ada", Section: "politics", Topics: []string{"política"}, Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 	listing := string(readArtifact(t, out, "latest/index.html"))
 
@@ -242,28 +242,32 @@ func TestNav_NoDuplicateLabel(t *testing.T) {
 	}
 }
 
-// The About page is titled "Nosotros" and lists authors in the curated editorial
-// order (lara-arianna ahead of borge-luis-jorges), not alphabetically.
+// The About page is titled "Nosotros" and lists authors by the persona-agnostic
+// editorial order: most-published first, tie-broken by the author's earliest
+// inserted article, then slug ascending. So a more-prolific author precedes a
+// less-prolific one even when the latter's slug sorts earlier.
 func TestAutores_RenameAndOrder(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	// Insert borge first so neither insertion nor alphabetical order would put
-	// lara first by accident; only the curated order does.
-	seed(t, repo, seedSpec{Title: "Mercados", Author: "borge-luis-jorges", Section: "economics", Published: date(2026, 6, 1)})
-	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara-arianna", Section: "politics", Published: date(2026, 6, 2)})
+	// "ada" sorts before "cy" and is inserted first, so neither alphabetical nor
+	// insertion order would put "cy" first. Give "cy" two articles and "ada" one
+	// so only the most-published rule explains "cy" leading.
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "ada", Section: "politics", Published: date(2026, 6, 1)})
+	seed(t, repo, seedSpec{Title: "Mercados", Author: "cy", Section: "economics", Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "Bonos", Author: "cy", Section: "economics", Published: date(2026, 6, 3)})
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
 
 	if !strings.Contains(about, `<h1 class="listing-heading">Nosotros</h1>`) {
 		t.Errorf("about page is not titled 'Nosotros'")
 	}
-	lara := strings.Index(about, `href="/author/lara-arianna/"`)
-	borge := strings.Index(about, `href="/author/borge-luis-jorges/"`)
-	if lara < 0 || borge < 0 {
-		t.Fatalf("about page missing an author card (lara=%d borge=%d)", lara, borge)
+	cy := strings.Index(about, `href="/author/cy/"`)
+	ada := strings.Index(about, `href="/author/ada/"`)
+	if cy < 0 || ada < 0 {
+		t.Fatalf("about page missing an author card (cy=%d ada=%d)", cy, ada)
 	}
-	if lara > borge {
-		t.Errorf("curated order broken: lara-arianna should precede borge-luis-jorges")
+	if cy > ada {
+		t.Errorf("ordering broken: more-prolific 'cy' should precede 'ada' even though 'ada' < 'cy'")
 	}
 }
 
@@ -275,25 +279,25 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
-		Title: "Reforma", Author: "lara-arianna", Section: "politics",
+		Title: "Reforma", Author: "ada", Section: "politics",
 		Published: date(2026, 6, 2),
 		Metadata: map[string]any{
-			"author_name":   "Lara Arianna",
-			"author_bio":    "Soy Lara Arianna. Persigo al poder por donde no quiere ser visto.",
-			"author_avatar": "/media/lara.png",
+			"author_name":   "Ada L.",
+			"author_bio":    "Ada cubre política y tecnología y persigue al poder por donde no quiere ser visto.",
+			"author_avatar": "/media/ada.png",
 		},
 	})
 	seed(t, repo, seedSpec{
-		Title: "Paper", Author: "vector-omni", Section: "tech",
+		Title: "Paper", Author: "lin", Section: "tech",
 		Published: date(2026, 6, 1),
-		Metadata:  map[string]any{"author_name": "Vector Omni", "author_avatar": "/media/vector.png"},
+		Metadata:  map[string]any{"author_name": "Lin X.", "author_avatar": "/media/lin.png"},
 	})
-	// Glorieta publishes under the "literatura" section, which must map to the
+	// Bob publishes under the "literatura" section, which must map to the
 	// Spanish label "Literatura" (capitalized) rather than the raw lowercase slug.
 	seed(t, repo, seedSpec{
-		Title: "Cuento", Author: "glorieta-sadeta", Section: "literatura",
+		Title: "Cuento", Author: "bob", Section: "literatura",
 		Published: date(2026, 5, 31),
-		Metadata:  map[string]any{"author_name": "Glorieta Sadeta", "author_avatar": "/media/glorieta.png"},
+		Metadata:  map[string]any{"author_name": "Bob Y.", "author_avatar": "/media/bob.png"},
 	})
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
@@ -327,7 +331,7 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	if !strings.Contains(about, `<div class="author-card-head">`) {
 		t.Errorf("redesigned card missing author-card-head block")
 	}
-	if !strings.Contains(about, `<p class="author-card-bio">Soy Lara Arianna.`) {
+	if !strings.Contains(about, `<p class="author-card-bio">Ada cubre política`) {
 		t.Errorf("politics card missing the first-person bio block")
 	}
 	for _, want := range []string{

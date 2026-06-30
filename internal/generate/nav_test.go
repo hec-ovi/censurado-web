@@ -12,7 +12,7 @@ import (
 func TestNav_FixedCuratedMenu(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara", Section: "politics", Topics: []string{"ajuste"}, Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "ada", Section: "politics", Topics: []string{"ajuste"}, Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 
 	navOf := func(name string) string {
@@ -58,7 +58,7 @@ func TestNav_FixedCuratedMenu(t *testing.T) {
 func TestNav_MisterioLinkResolvesToRealTopicPage(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "El expediente", Author: "borge", Section: "world", Topics: []string{"misterio y conspiración"}, Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "El expediente", Author: "cy", Section: "world", Topics: []string{"misterio y conspiración"}, Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 
 	latest := string(readArtifact(t, out, "latest/index.html"))
@@ -78,7 +78,7 @@ func TestNav_MisterioLinkResolvesToRealTopicPage(t *testing.T) {
 func TestNav_BrandLinksToPortada(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "Reforma", Author: "lara", Section: "politics", Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "Reforma", Author: "ada", Section: "politics", Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 
 	// check an inner article page too, not just the landing, since the chrome
@@ -102,7 +102,7 @@ func TestNav_BrandLinksToPortada(t *testing.T) {
 func TestNav_MobileDefaultsLight(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "X", Author: "lara", Section: "politics", Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "X", Author: "ada", Section: "politics", Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 	htmlStr := string(readArtifact(t, out, "latest/index.html"))
 	if !strings.Contains(htmlStr, "(max-width: 48rem)") || !strings.Contains(htmlStr, `dataset.theme="light"`) {

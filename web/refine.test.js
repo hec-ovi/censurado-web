@@ -319,16 +319,16 @@ describe("Censurado refiner", () => {
   test("inline play: clicking a video poster swaps in an autoplay embed; an image poster does not", async () => {
     mount(`
 <ol class="article-list" data-articles>
-<li class="article-item" data-author="glorieta-sadeta">
+<li class="article-item" data-author="bob">
 <article class="card card-has-media card-has-video">
-<figure class="card-media" aria-label="Vídeo: Glorieta Clip">
-<img src="https://i.ytimg.com/vi/RdhnMD40q3Y/hqdefault.jpg" alt="Glorieta Clip" loading="lazy" decoding="async">
+<figure class="card-media" aria-label="Vídeo: Bob Clip">
+<img src="https://i.ytimg.com/vi/RdhnMD40q3Y/hqdefault.jpg" alt="Bob Clip" loading="lazy" decoding="async">
 <span class="card-media-play" aria-hidden="true"></span>
 </figure>
-<div class="card-body"><h2 class="card-title"><a class="card-link" href="/a/glorieta-clip-12345678/">Glorieta Clip</a></h2></div>
+<div class="card-body"><h2 class="card-title"><a class="card-link" href="/a/bob-clip-12345678/">Bob Clip</a></h2></div>
 </article>
 </li>
-<li class="article-item" data-author="glorieta-sadeta">
+<li class="article-item" data-author="bob">
 <article class="card card-has-media">
 <figure class="card-media">
 <img src="/media/aaaa.png" alt="Plain Image" loading="lazy" decoding="async">
@@ -362,7 +362,7 @@ describe("Censurado refiner", () => {
     expect(videoCard.querySelector(".card-media-play")).toBeNull();
     // The title link is untouched, so the headline still opens the article.
     expect(videoCard.querySelector(".card-link").getAttribute("href")).toBe(
-      "/a/glorieta-clip-12345678/"
+      "/a/bob-clip-12345678/"
     );
   });
 

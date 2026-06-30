@@ -28,8 +28,8 @@ const entry = (n, day) => ({
   slug: `n${n}`,
   url: `/a/n${n}/`,
   title: `Nota ${n}`,
-  author: "lara",
-  author_label: "Lara",
+  author: "ada",
+  author_label: "Ada L.",
   section: "politics",
   topics: [],
   published_at: iso(day),
@@ -136,10 +136,10 @@ describe("initInfiniteScroll", () => {
   });
 
   test("uses the avatar carried by the shard entry for an author not in the first batch", async () => {
-    const AV = "/media/vector-avatar.png";
+    const AV = "/media/lin.png";
     const stream = [
-      entry(1, 27), // lara, shown by the server
-      { ...entry(2, 26), author: "vector-omni", author_label: "Vector Omni", avatar: AV, url: "/a/n2-vector/" },
+      entry(1, 27), // ada, shown by the server
+      { ...entry(2, 26), author: "lin", author_label: "Lin X.", avatar: AV, url: "/a/n2-lin/" },
     ];
     serveJSON({ [SHARD_URL]: stream });
     mount(
@@ -150,10 +150,10 @@ describe("initInfiniteScroll", () => {
 
     await infinite.loadMore();
 
-    const vectorCard = [...container.querySelectorAll("[data-articles] .article-item")].find(
-      (li) => li.dataset.author === "vector-omni"
+    const linCard = [...container.querySelectorAll("[data-articles] .article-item")].find(
+      (li) => li.dataset.author === "lin"
     );
-    const img = vectorCard.querySelector(".author-avatar img");
+    const img = linCard.querySelector(".author-avatar img");
     expect(img).not.toBeNull(); // a real avatar, not the initial-letter fallback
     expect(img.getAttribute("src")).toBe(AV);
   });

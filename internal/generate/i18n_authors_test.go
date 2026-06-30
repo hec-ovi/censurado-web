@@ -107,43 +107,43 @@ func TestSectionDisplayName_SpanishLabelEnglishSlug(t *testing.T) {
 func TestAuthorPage_NameAndBioFromMetadata(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	const bio = "Lara cubre política tecnológica desde Madrid."
+	const bio = "Ada cubre política y tecnología."
 	seed(t, repo, seedSpec{
 		Title:     "La Ley de IA",
-		Author:    "lara-arianna",
+		Author:    "ada",
 		Section:   "politics",
 		Published: date(2026, 6, 5),
 		Metadata: map[string]any{
-			"author_name": "Lara Arianna",
+			"author_name": "Ada L.",
 			"author_bio":  bio,
 		},
 	})
 	genInto(t, repo, out, nil)
 
 	// URL slug is derived from the raw author string.
-	if !exists(out, "author/lara-arianna/index.html") {
-		t.Fatalf("missing /author/lara-arianna/ page")
+	if !exists(out, "author/ada/index.html") {
+		t.Fatalf("missing /author/ada/ page")
 	}
-	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
+	page := string(readArtifact(t, out, "author/ada/index.html"))
 
 	// The profile heading is the display name, not the raw slug.
-	if !strings.Contains(page, `<h1 class="author-profile-name">Lara Arianna</h1>`) {
-		t.Errorf("author profile heading is not the display name 'Lara Arianna'")
+	if !strings.Contains(page, `<h1 class="author-profile-name">Ada L.</h1>`) {
+		t.Errorf("author profile heading is not the display name 'Ada L.'")
 	}
 	// The profile block renders the name, bio text, and avoids the old duplicate
 	// listing hero.
 	if !strings.Contains(page, `data-author-profile`) {
 		t.Errorf("author page missing the profile block")
 	}
-	if !strings.Contains(page, "Lara cubre política tecnológica desde Madrid.") {
+	if !strings.Contains(page, "Ada cubre política y tecnología.") {
 		t.Errorf("author page missing the bio text")
 	}
 	if strings.Contains(page, `<p class="eyebrow">Portada</p>`) {
 		t.Errorf("author page should not repeat the normal listing hero")
 	}
 	// Canonical URL keeps the English-derived slug.
-	if !strings.Contains(page, `href="https://news.example/author/lara-arianna/"`) {
-		t.Errorf("author canonical is not /author/lara-arianna/")
+	if !strings.Contains(page, `href="https://news.example/author/ada/"`) {
+		t.Errorf("author canonical is not /author/ada/")
 	}
 
 	// The byline on the article permalink uses the display name, the author link
@@ -154,11 +154,11 @@ func TestAuthorPage_NameAndBioFromMetadata(t *testing.T) {
 	}
 	art := plan.Index.All[0]
 	article := string(readArtifact(t, out, articlePath(art)))
-	if !strings.Contains(article, ">Lara Arianna</a>") {
-		t.Errorf("article byline does not show display name 'Lara Arianna'")
+	if !strings.Contains(article, ">Ada L.</a>") {
+		t.Errorf("article byline does not show display name 'Ada L.'")
 	}
-	if !strings.Contains(article, `href="/author/lara-arianna/"`) {
-		t.Errorf("article author link does not point at /author/lara-arianna/")
+	if !strings.Contains(article, `href="/author/ada/"`) {
+		t.Errorf("article author link does not point at /author/ada/")
 	}
 }
 
@@ -167,17 +167,17 @@ func TestAuthorPage_ProfileContentLatestPageSize(t *testing.T) {
 	out := t.TempDir()
 	articles := make([]string, 0, 12)
 	for i := 0; i < 12; i++ {
-		title := "Lara pieza " + string(rune('A'+i))
+		title := "Ada pieza " + string(rune('A'+i))
 		a := seed(t, repo, seedSpec{
 			Title:     title,
-			Author:    "lara-arianna",
+			Author:    "ada",
 			Section:   "politics",
 			Topics:    []string{"poder", "ia"},
 			Published: date(2026, 6, i+1),
 			Metadata: map[string]any{
-				"author_name":   "Lara Arianna",
+				"author_name":   "Ada L.",
 				"author_bio":    "Persigo al poder donde no quiere ser visto.",
-				"author_avatar": "/media/lara.png",
+				"author_avatar": "/media/ada.png",
 			},
 		})
 		articles = append(articles, articleURL(a))
@@ -186,7 +186,7 @@ func TestAuthorPage_ProfileContentLatestPageSize(t *testing.T) {
 	// rest), so the initial batch matches every other scope. PageSize 6 exercises
 	// Feature 7 on author profiles too.
 	genInto(t, repo, out, func(o *Options) { o.PageSize = 6 })
-	page := string(readArtifact(t, out, "author/lara-arianna/index.html"))
+	page := string(readArtifact(t, out, "author/ada/index.html"))
 
 	for _, want := range []string{
 		`<section class="author-profile" data-author-profile>`,
@@ -225,11 +225,11 @@ func TestAboutPage_ListsAuthors(t *testing.T) {
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
 		Title:     "Crypto Crash",
-		Author:    "lara-arianna",
+		Author:    "ada",
 		Section:   "crypto",
 		Published: date(2026, 6, 5),
 		Metadata: map[string]any{
-			"author_name": "Lara Arianna",
+			"author_name": "Ada L.",
 			"author_bio":  "Reportera de mercados.",
 		},
 	})
@@ -264,14 +264,14 @@ func TestAboutPage_ListsAuthors(t *testing.T) {
 		}
 	}
 	// Author with metadata: display name, bio, and link to the author page.
-	if !strings.Contains(about, "Lara Arianna") {
-		t.Errorf("about page missing author name 'Lara Arianna'")
+	if !strings.Contains(about, "Ada L.") {
+		t.Errorf("about page missing author name 'Ada L.'")
 	}
 	if !strings.Contains(about, "Reportera de mercados.") {
 		t.Errorf("about page missing the author bio")
 	}
-	if !strings.Contains(about, `href="/author/lara-arianna/"`) {
-		t.Errorf("about page missing the /author/lara-arianna/ link")
+	if !strings.Contains(about, `href="/author/ada/"`) {
+		t.Errorf("about page missing the /author/ada/ link")
 	}
 	// Author without metadata falls back to the stored label and still appears.
 	if !strings.Contains(about, "Bob") || !strings.Contains(about, `href="/author/bob/"`) {

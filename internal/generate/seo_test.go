@@ -247,7 +247,7 @@ func TestSEO_Keywords(t *testing.T) {
 	a := seed(t, repo, seedSpec{
 		Title:     "Pieza con etiquetas",
 		Body:      "Cuerpo con palabras suficientes para derivar una descripción razonable.",
-		Author:    "lara-arianna",
+		Author:    "ada",
 		Section:   "politics",
 		Topics:    []string{"elecciones", "fraude"},
 		Published: date(2026, 6, 7),

@@ -60,7 +60,6 @@ func shardPartPath(scope string, y, m, part int) string {
 	}
 	return fmt.Sprintf("%s.%d.json", base, part)
 }
-func shardPartURL(scope string, y, m, part int) string { return "/" + shardPartPath(scope, y, m, part) }
 
 // absolute joins a trailing-slash-trimmed origin with a root-relative URL.
 func absolute(base, rootRel string) string { return base + rootRel }

@@ -12,7 +12,7 @@ func TestVideoThumb_BodyVideoPosterOnCard(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
-		Title: "Glorieta en vivo", Author: "glorieta-sadeta", Section: "world",
+		Title: "Transmisión en vivo", Author: "bob", Section: "world",
 		Body:      "Intro.\n\n{{video:RdhnMD40q3Y}}\n\nOutro.",
 		Published: date(2026, 6, 10),
 	})
@@ -40,7 +40,7 @@ func TestVideoThumb_MetadataImageWinsOverBodyVideo(t *testing.T) {
 	out := t.TempDir()
 	img := "/media/" + strings.Repeat("a", 64) + ".png"
 	seed(t, repo, seedSpec{
-		Title: "Con imagen propia", Author: "glorieta-sadeta", Section: "world",
+		Title: "Con imagen propia", Author: "bob", Section: "world",
 		Body:      "Intro.\n\n{{video:RdhnMD40q3Y}}\n\nOutro.",
 		Published: date(2026, 6, 11),
 		Metadata:  map[string]any{"image": img},

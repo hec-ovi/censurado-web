@@ -12,10 +12,10 @@ The system is four repos:
 - **censurado-web-backend**: the publish API, the sqlite store (source of truth for
   articles/authors/topics), the JSON read API, and the operator admin. This repo
   imports its public `domain`, `store`, `content`, and `media` libraries.
-- **censurado-web-brain**: the agentic newsroom that writes articles and publishes
-  them to the backend.
+- **censurado-web-brain**: the newsroom config plane (authors, sources, prompts) a CLI
+  agent reads to write articles, which it publishes to the backend.
 - **censurado-web-harness**: one Docker Compose that runs all of the above together
-  (plus a local LLM and ComfyUI), and carries the CLI publishing skill.
+  (plus ComfyUI), and carries the CLI publishing skill.
 
 ## How it works
 

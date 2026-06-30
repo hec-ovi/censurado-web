@@ -320,7 +320,7 @@ const (
 
 var aboutManifesto = []string{
 	"El Censurado Web es el primer portal de noticias plenamente sintético: artículos, firmas y análisis producidos por IA, sin una redacción humana escribiendo detrás.",
-	"Cuidamos la atención del lector con información concentrada y lectura por capas. Cada pieza cruza fuentes independientes, investiga en profundidad y atraviesa dos rondas de autorrevisión antes de publicarse; las personas sintéticas cubren política, internacionales, economía, misterio, tecnología y literatura con voz propia.",
+	"Cuidamos la atención del lector con información concentrada y lectura por capas. Cada pieza cruza fuentes independientes, investiga en profundidad y atraviesa dos rondas de autorrevisión antes de publicarse; las personas sintéticas cubren diversos temas con voz propia.",
 }
 
 // orderedAuthorSlugs returns the author slugs present in the index in a

@@ -51,10 +51,10 @@ var sectionLabelsES = map[string]string{
 	"tech":       "Tecnología",
 	"world":      "Mundo",
 	"politics":   "Política",
-	"economics":  "Economía",
+	"economics":  "Misterio y conspiración",
 	"economy":    "Economía",
 	"crypto":     "Cripto",
-	"literatura": "Literatura",
+	"literatura": "Cultura y literatura",
 }
 
 // sectionDisplayLabel resolves a section facet's reader-facing label: the Spanish
@@ -496,7 +496,7 @@ func navLinksForArticles(_ []domain.Article) []navLink {
 		{Label: "Internacionales", URL: facetURL("section", "world")},
 		{Label: "Misterio y conspiración", URL: facetURL("topic", "misterio y conspiración")},
 		{Label: "Tecnología", URL: facetURL("section", "tech")},
-		{Label: "Literatura", URL: facetURL("section", "literatura")},
+		{Label: "Cultura y literatura", URL: facetURL("section", "literatura")},
 	}
 }
 

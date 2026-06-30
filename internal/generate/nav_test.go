@@ -31,7 +31,7 @@ func TestNav_FixedCuratedMenu(t *testing.T) {
 
 	want := []string{
 		"Lo último", "Nosotros", "Política", "Internacionales",
-		"Misterio y conspiración", "Tecnología", "Literatura",
+		"Misterio y conspiración", "Tecnología", "Cultura y literatura",
 	}
 	last := -1
 	for _, label := range want {

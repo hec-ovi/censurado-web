@@ -292,12 +292,19 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 		Published: date(2026, 6, 1),
 		Metadata:  map[string]any{"author_name": "Lin X.", "author_avatar": "/media/lin.png"},
 	})
-	// Bob publishes under the "literatura" section, which must map to the
-	// Spanish label "Literatura" (capitalized) rather than the raw lowercase slug.
+	// Bob publishes under the "literatura" section, which maps to the Spanish
+	// label "Cultura y literatura" rather than the raw lowercase slug.
 	seed(t, repo, seedSpec{
 		Title: "Cuento", Author: "bob", Section: "literatura",
 		Published: date(2026, 5, 31),
 		Metadata:  map[string]any{"author_name": "Bob Y.", "author_avatar": "/media/bob.png"},
+	})
+	// Cy publishes under "economics", which maps to "Misterio y conspiración"
+	// (the section's reader-facing label is remapped, the URL slug stays English).
+	seed(t, repo, seedSpec{
+		Title: "Pacto", Author: "cy", Section: "economics",
+		Published: date(2026, 5, 30),
+		Metadata:  map[string]any{"author_name": "Cy Z.", "author_avatar": "/media/cy.png"},
 	})
 	genInto(t, repo, out, nil)
 	about := string(readArtifact(t, out, "about/index.html"))
@@ -313,6 +320,9 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	if !strings.Contains(about, `<li class="author-card" data-section="literatura">`) {
 		t.Errorf("literatura author card missing data-section=literatura")
 	}
+	if !strings.Contains(about, `<li class="author-card" data-section="economics">`) {
+		t.Errorf("economics author card missing data-section=economics")
+	}
 	// The Spanish beat label renders beside the name.
 	if !strings.Contains(about, `<p class="author-card-beat">Política</p>`) {
 		t.Errorf("politics card missing Spanish beat label 'Política'")
@@ -320,8 +330,11 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	if !strings.Contains(about, `<p class="author-card-beat">Tecnología</p>`) {
 		t.Errorf("tech card missing Spanish beat label 'Tecnología'")
 	}
-	if !strings.Contains(about, `<p class="author-card-beat">Literatura</p>`) {
-		t.Errorf("literatura card missing capitalized Spanish beat label 'Literatura'")
+	if !strings.Contains(about, `<p class="author-card-beat">Cultura y literatura</p>`) {
+		t.Errorf("literatura card missing remapped Spanish beat label 'Cultura y literatura'")
+	}
+	if !strings.Contains(about, `<p class="author-card-beat">Misterio y conspiración</p>`) {
+		t.Errorf("economics card missing remapped Spanish beat label 'Misterio y conspiración'")
 	}
 	// The redesigned card replaces the old author-card-text wrapper with a head
 	// block; the bio is its own full-width sibling.

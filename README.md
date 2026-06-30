@@ -9,18 +9,21 @@ loads the site; the generator runs at build time and a CDN serves the output.
 The system is four repos:
 
 - **censurado-web** (this): the generator + the public frontend (templates, CSS, JS).
-- **censurado-web-backend**: the publish API, the sqlite store (source of truth for
-  articles/authors/topics), the JSON read API, and the operator admin. This repo
+- **censurado-web-backend**: the publish API, the sqlite store (the source of truth
+  for the published articles), the JSON read API, and the operator admin. This repo
   imports its public `domain`, `store`, `content`, and `media` libraries.
-- **censurado-web-brain**: the newsroom config plane (authors, sources, prompts) a CLI
-  agent reads to write articles, which it publishes to the backend.
+- **censurado-web-brain**: the no-LLM newsroom config plane (personas, sources,
+  prompts) a CLI agent reads to write articles, which it publishes to the backend.
+  Author identity lives in the brain personas DB and is stamped into each article's
+  metadata at publish time.
 - **censurado-web-harness**: one Docker Compose that runs all of the above together
   (plus ComfyUI), and carries the CLI publishing skill.
 
 ## How it works
 
-`generate.Generate` opens the backend's sqlite database as a reader (the backend's
-publish service is the only writer; WAL mode lets them run together), scans the whole
+`generate.Generate` takes an already-open read-only handle to the backend's corpus (a
+`store.Repository`; the backend's publish service is the only writer, and WAL mode lets
+them run together), scans the whole
 corpus once, and materializes every page across every scope (latest, per section,
 author, topic, month, and the section-anchored matrix). It writes only artifacts
 whose bytes changed since the last run and records a purge manifest of exactly the
@@ -32,10 +35,21 @@ listing pages and shards carry a short TTL. The client-side refiner (in
 `internal/generate/templates/app.js`, tested under `web/`) fetches the JSON shards to
 filter by author, date, topic, and section without any backend call.
 
+There is no authors or topics table the generator depends on. The author pages
+(`/author/<slug>/`), the topic pages (`/topic/<slug>/`), and the Nosotros roster
+(`/about/`) are all derived from per-article metadata and tags: an article's
+`metadata.author_*` fields supply each author's display name, bio, and avatar, and an
+article's topics supply the topic facets. The Nosotros roster is ordered by the
+article index, most-published author first, tie-broken by earliest published article,
+then slug; no author is hardcoded, so an empty corpus yields zero authors. When the
+backend store exposes an operator author/topic registry, those rows can override an
+existing author's or topic's label/bio/avatar, but the registry never manufactures a
+page for an author or topic that has no published articles.
+
 ## What's in here
 
 - `internal/generate` and its embedded `templates/` (the generator + the public
-  frontend: HTML, `style.css`, `app.js`, favicons, masthead video).
+  frontend: HTML, `style.css`, `app.js`, favicons, the four masthead clips).
 - `internal/purge` and `cmd/censurado/purge` (CDN cache invalidation).
 - `internal/cachepolicy` (the Cache-Control each generated URL should get).
 - `cmd/censurado/generate` (the generator binary: one-shot and `-watch`).

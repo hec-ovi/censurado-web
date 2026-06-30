@@ -7,10 +7,19 @@ console live in `censurado-web-backend`; the agentic producer lives in
 
 ## Big picture
 
-The backend writes a sqlite database (articles, authors, topics). This repo reads it
-at build time and renders the complete static site for a CDN: immutable HTML pages,
-JSON shards for client-side filtering, feeds, sitemaps, and a purge manifest. Nothing
-here runs at read time; the reading path is fully static.
+The backend writes a sqlite database of published articles. This repo reads it at
+build time and renders the complete static site for a CDN: immutable HTML pages, JSON
+shards for client-side filtering, feeds, sitemaps, and a purge manifest. Nothing here
+runs at read time; the reading path is fully static.
+
+Author and topic pages are not driven by a backend authors/topics table. The author
+pages (`/author/<slug>/`), the topic pages (`/topic/<slug>/`), and the `/about/`
+roster are derived from each article's metadata (`author_name`, `author_bio`,
+`author_avatar`) and its topic tags, recorded from the earliest-inserted carrier per
+slug (`enumerate.go`, `BuildIndex`). The roster order is most-published author first
+(`orderedAuthorSlugs` in `render.go`). An optional operator author/topic registry
+(`store.AuthorStore`/`store.TopicStore`, applied by `overlayRegistry`) can override an
+existing slug's label/bio/avatar but never creates a page for a slug with no articles.
 
 The generator imports the backend module's public libraries (`domain`, `store`,
 `content`, `media`) through a `replace` directive in `go.mod`. Both repos must be

@@ -2,19 +2,21 @@
 
 This is the contract for the client-side live-refresh feature: how a reader who is
 already viewing the portal learns that new stories landed and updates the page
-without a reload. The backend half is built and frozen; the client (the poll loop
-and the "N new stories" banner) is the frontend's to implement against this
-contract. Nothing here requires server-side rendering or per-user work: every
-endpoint is a static file behind the CDN.
+without a reload. Both halves are built: the three static endpoints below are frozen,
+and the client poll loop plus the refresh banner are implemented in
+`templates/assets/app.js` (the `LiveRefresh` class). Nothing here requires
+server-side rendering or per-user work: every endpoint is a static file behind the
+CDN.
 
 See also `README.md` in this folder for the DOM hooks and theming contract, and
 `../../../contracts/` for the JSON Schemas referenced below.
 
 ## What the backend provides
 
-Three static endpoints, all regenerated and CDN-purged automatically after a
-publish (the publish service runs a debounced regenerate + purge; see
-`deploy/CACHING.md`):
+Three static endpoints, all regenerated and CDN-purged after a publish. The
+generator running with `-watch` (see `deploy/README.md`) re-runs generation on a
+fixed interval and purges exactly the URLs that changed; the backend's publish
+service only writes the database:
 
 1. **The version sentinel** `GET /latest/version.json`
    - Schema: `contracts/version.schema.json`.
@@ -48,9 +50,9 @@ publish (the publish service runs a debounced regenerate + purge; see
    - Fetch `/manifest/latest/index.json`, take `shards[0].url`, and fetch that shard.
    - Diff the shard entries against the articles currently rendered (by `url` or
      slug). The new entries are the ones not already on the page.
-   - Show an unobtrusive "N new stories" banner. On click (or per the chosen UX),
-     prepend the new cards using the page's existing card renderer, then update the
-     recorded `v`.
+   - Show an unobtrusive banner (app.js shows a countless "Actualizar nuevos
+     artículos" call to action). On click, prepend the new cards using the page's
+     existing card renderer, then update the recorded `v`.
 
 ## Client best practices (recommended, not enforced by the backend)
 

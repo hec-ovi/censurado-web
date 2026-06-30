@@ -93,9 +93,11 @@ mobile-only primary menu through `data-menu-open`, marks the current primary nav
 item with `aria-current="page"`, and runs the latest-page live refresh loop.
 Desktop navigation remains fully visible without a menu button.
 
-The favicon is emitted as `/assets/favicon.svg`. The masthead background video
-is emitted as `/assets/masthead-bg.mp4`; replace that file with the final brand
-video without changing templates or generator contracts.
+The favicon is emitted as `/assets/favicon.svg`. The masthead background cycles
+four clips emitted as `/assets/video1.mp4` through `/assets/video4.mp4`
+(`components/chrome.tmpl` lists the cycle order in `data-masthead-videos`); replace
+those files with the final brand videos without changing templates or generator
+contracts.
 
 The CSS keeps the public site static and cacheable:
 

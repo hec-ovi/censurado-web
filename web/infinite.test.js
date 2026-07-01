@@ -92,6 +92,15 @@ describe("initInfiniteScroll", () => {
     expect(seps[0].textContent).toBe("26 de junio de 2026");
     expect(seps[0].nextElementSibling.querySelector(".card-link").getAttribute("href")).toBe("/a/n4/");
 
+    // The first card of the new day (n4) opens it as that day's lead; the second
+    // card of the same day (n5) stays a regular card.
+    const cardFor = (href) =>
+      [...container.querySelectorAll("[data-articles] .article-item")]
+        .find((li) => li.querySelector(`.card-link[href="${href}"]`))
+        .querySelector(".card");
+    expect(cardFor("/a/n4/").classList.contains("lead-card")).toBe(true);
+    expect(cardFor("/a/n5/").classList.contains("lead-card")).toBe(false);
+
     // The loading beat ran (brief now), and the shard was fetched exactly once.
     expect(waits.length).toBeGreaterThan(0);
     expect(hits[SHARD_URL]).toBe(1);

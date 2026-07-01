@@ -1,6 +1,5 @@
 {{define "content"}}
 <article class="article" data-article>
-{{template "lead_media" .}}
 <header class="article-header">
 <p class="eyebrow">{{.Section}}</p>
 <h1 class="article-title">{{.Title}}</h1>
@@ -13,6 +12,7 @@
 </div>
 {{template "topic_list" .Topics}}
 </header>
+{{template "lead_media" .}}
 {{- if .Standfirst}}
 <p class="article-standfirst">{{.Standfirst}}</p>
 {{- end}}

@@ -114,6 +114,71 @@ func TestArticlePage_DateHasTime(t *testing.T) {
 	}
 }
 
+// The article header (title) comes BEFORE the hero image: the piece leads with its
+// title, then the illustration, not the other way round.
+func TestArticlePage_TitleBeforeHero(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Con hero", Author: "ada", Section: "tech", Body: "Cuerpo.",
+		Published: date(2026, 6, 5),
+		Metadata: map[string]any{
+			"author_name": "Ada L.",
+			"image":       "/media/" + strings.Repeat("c", 64) + ".png",
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	title, hero := strings.Index(page, `class="article-title"`), strings.Index(page, `class="hero"`)
+	if title < 0 || hero < 0 {
+		t.Fatalf("article missing title (%d) or hero (%d)", title, hero)
+	}
+	if title > hero {
+		t.Errorf("article title should precede the hero image: titleIdx=%d heroIdx=%d", title, hero)
+	}
+}
+
+// The first article of each new day renders as that day's full-width lead (same as
+// the portada lead), so a scrolled-back day opens like the front page. The day
+// separator carries the thick rule and the day-first card spans the row.
+func TestPerDayLead_FirstOfDayIsLead(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	// Jun 5 = today's lead; Jun 4 has a lead (first of that day) + a regular card.
+	seed(t, repo, seedSpec{Title: "Hoy", Author: "ada", Section: "tech", Published: date(2026, 6, 5),
+		Metadata: map[string]any{"author_name": "Ada L.", "subtitle": "Dek hoy."}})
+	seed(t, repo, seedSpec{Title: "Ayer Lead", Author: "ada", Section: "tech", Published: time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC),
+		Metadata: map[string]any{"author_name": "Ada L.", "subtitle": "Dek ayer uno."}})
+	seed(t, repo, seedSpec{Title: "Ayer Dos", Author: "lin", Section: "tech", Published: time.Date(2026, 6, 4, 10, 0, 0, 0, time.UTC),
+		Metadata: map[string]any{"author_name": "Lin X.", "subtitle": "Dek ayer dos."}})
+	genInto(t, repo, out, nil)
+
+	listing := string(readArtifact(t, out, "latest/index.html"))
+	css := string(readArtifact(t, out, "assets/style.css"))
+
+	// Two lead cards: the global lead (Hoy) and the day-lead (Ayer Lead).
+	if n := strings.Count(listing, "card lead-card"); n != 2 {
+		t.Errorf("want 2 lead cards (global + day lead), got %d", n)
+	}
+	// The second card of the day stays a regular grid card.
+	if !strings.Contains(listing, `<article class="card card-textonly">`) {
+		t.Errorf("the day's non-lead card should be a regular article_card")
+	}
+	// The day separator carries the thick opening rule, and the day-first card spans
+	// the full row on the grid.
+	if !strings.Contains(css, "border-bottom: 4px solid var(--color-ink)") {
+		t.Errorf("day separator missing the thick opening rule")
+	}
+	if !strings.Contains(css, ".day-separator + .article-item") {
+		t.Errorf("CSS missing the per-day-lead full-width rule")
+	}
+	// Media cards reorder to date -> image -> title -> subtitle via CSS order.
+	if !strings.Contains(css, ".card:not(.lead-card).card-has-media .card-date") {
+		t.Errorf("CSS missing the media-card date-first reorder")
+	}
+}
+
 // The article page renders the authored subtitle + standfirst and the signed
 // footer (circled portrait + name).
 func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {

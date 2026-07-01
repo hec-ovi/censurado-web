@@ -56,7 +56,7 @@
 <li class="day-separator" role="separator" aria-label="{{$it.DaySeparator}}"><span class="day-separator-label">{{$it.DaySeparator}}</span></li>
 {{- end}}
 <li class="article-item" data-author="{{$it.AuthorSlug}}" data-author-avatar="{{$it.AuthorAvatar}}" data-section="{{$it.SectionSlug}}" data-topics="{{$it.TopicsAttr}}" data-month="{{$it.MonthSlug}}">
-{{if and (eq $i 0) (not $.AuthorName)}}{{template "lead_card" $it}}{{else}}{{template "article_card" $it}}{{end}}
+{{if and (not $.AuthorName) (or (eq $i 0) $it.DaySeparator)}}{{template "lead_card" $it}}{{else}}{{template "article_card" $it}}{{end}}
 </li>
 {{- end}}
 </ol>

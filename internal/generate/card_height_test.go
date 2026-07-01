@@ -3,6 +3,7 @@ package generate
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestCardSummary_DesktopFillAndImageHide pins the desktop card-height contract:
@@ -14,12 +15,14 @@ func TestCardSummary_DesktopFillAndImageHide(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	// A lead (first item) plus two grid cards: one text-only, one with an image,
-	// both carrying a summary.
-	seed(t, repo, seedSpec{Title: "Lead", Author: "ada", Section: "tech", Published: date(2026, 6, 5),
+	// both carrying a summary. All three share ONE day (descending time) so the two
+	// non-lead cards are regular grid cards, not per-day leads (the first card of a
+	// new day now renders as that day's full-width lead).
+	seed(t, repo, seedSpec{Title: "Lead", Author: "ada", Section: "tech", Published: time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC),
 		Metadata: map[string]any{"subtitle": "Dek lead.", "description": "Resumen del lead."}})
-	seed(t, repo, seedSpec{Title: "Texto", Author: "ada", Section: "tech", Published: date(2026, 6, 4),
+	seed(t, repo, seedSpec{Title: "Texto", Author: "ada", Section: "tech", Published: time.Date(2026, 6, 5, 11, 0, 0, 0, time.UTC),
 		Metadata: map[string]any{"subtitle": "Dek texto.", "description": "El resumen del texto que llena la tarjeta."}})
-	seed(t, repo, seedSpec{Title: "Imagen", Author: "ada", Section: "tech", Published: date(2026, 6, 3),
+	seed(t, repo, seedSpec{Title: "Imagen", Author: "ada", Section: "tech", Published: time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC),
 		Metadata: map[string]any{"subtitle": "Dek imagen.", "description": "El resumen de la tarjeta con imagen.",
 			"image": "/media/" + strings.Repeat("b", 64) + ".png"}})
 	genInto(t, repo, out, nil)
@@ -38,8 +41,8 @@ func TestCardSummary_DesktopFillAndImageHide(t *testing.T) {
 	}
 	// Desktop CSS: image cards hide the summary; text cards turn it into a flex fill.
 	for _, want := range []string{
-		".article-item:not(:first-child) .card-has-media .card-description",
-		".article-item:not(:first-child) .card-textonly .card-description",
+		".article-item:not(:first-child) .card-has-media:not(.lead-card) .card-description",
+		".article-item:not(:first-child) .card-textonly:not(.lead-card) .card-description",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("desktop card-summary CSS missing %q", want)

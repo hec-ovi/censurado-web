@@ -976,13 +976,13 @@
     display: flex;
     align-items: center;
     gap: var(--space-5);
-    /* Symmetric block spacing: equal margin above and below so the separator sits
-       evenly between the day it closes and the day it opens (was top-heavy, 48/24). */
-    margin-block: var(--space-5);
-    /* A full-width rule sits over the whole separator, with a gap before the
-       flanked date row below it. */
-    border-top: 1px solid var(--color-line);
-    padding-top: var(--space-5);
+    /* Space above to close the previous day; the thick rule below hugs the day it
+       opens (no margin under it), so the new day starts like the portada top. */
+    margin-block: var(--space-6) 0;
+    padding-bottom: var(--space-4);
+    /* No thin rule above (removed). The date keeps its flanked line (::before/::after)
+       and a thick black rule sits UNDER it, opening the new day like the main portada. */
+    border-bottom: 4px solid var(--color-ink);
     color: var(--color-muted);
     font-family: var(--font-mono);
     font-size: var(--text-base);
@@ -1048,6 +1048,13 @@
     border-top: 4px solid var(--color-ink);
   }
 
+  /* The first card of each new day is that day's lead: it carries no top rule of its
+     own (the day separator's thick bottom rule sits right above it) and spans the
+     full row on the grid (see the grid blocks below). */
+  .day-separator + .article-item {
+    border-top: none;
+  }
+
   .card {
     display: flex;
     flex-direction: column;
@@ -1055,19 +1062,16 @@
     min-height: 100%;
   }
 
-  /* Stacked single column (phones): a portada card leads with its media, then
-     title, dek, date, summary, signature (media/title/subtitle as before, only the
-     date relocated under the dek). The lead keeps its title-first order at every
-     width. Desktop (>=42rem) renders the card_inner source order untouched
-     (title, date, media, dek, summary), so only this narrow block reorders. */
-  @media (max-width: 41.99rem) {
-    .card:not(.lead-card) .card-media { order: -2; }
-    .card:not(.lead-card) .card-title { order: -1; }
-    .card:not(.lead-card) .card-subtitle { order: 0; }
-    .card:not(.lead-card) .card-date { order: 1; }
-    .card:not(.lead-card) .card-description { order: 2; }
-    .card:not(.lead-card) .card-meta { order: 3; }
-  }
+  /* A non-lead card that carries media leads with the date, then the image, then the
+     title, dek and summary (date -> image -> title -> subtitle -> summary). The DOM
+     stays title-first for semantics/SEO; CSS order does the visual reorder. Text-only
+     cards and the lead keep their source order (title -> date -> ...). */
+  .card:not(.lead-card).card-has-media .card-date { order: -2; }
+  .card:not(.lead-card).card-has-media .card-media { order: -1; }
+  .card:not(.lead-card).card-has-media .card-title { order: 0; }
+  .card:not(.lead-card).card-has-media .card-subtitle { order: 1; }
+  .card:not(.lead-card).card-has-media .card-description { order: 2; }
+  .card:not(.lead-card).card-has-media .card-meta { order: 3; }
 
   .card-body {
     display: flex;
@@ -1094,7 +1098,8 @@
     line-height: 1.55;
   }
 
-  .article-item:first-child .card-description {
+  .article-item:first-child .card-description,
+  .day-separator + .article-item .card-description {
     -webkit-line-clamp: 7;
     line-clamp: 7;
   }
@@ -2324,7 +2329,8 @@
       grid-column: span 6;
     }
 
-    .article-item:first-child {
+    .article-item:first-child,
+    .day-separator + .article-item {
       grid-column: 1 / -1;
     }
 
@@ -2336,10 +2342,10 @@
          - text cards turn the summary into a fill that grows to take the leftover
            height; initCardFill then clamps it with an ellipsis when it would
            overflow the row. */
-    .article-item:not(:first-child) .card-has-media .card-description {
+    .article-item:not(:first-child) .card-has-media:not(.lead-card) .card-description {
       display: none;
     }
-    .article-item:not(:first-child) .card-textonly .card-description {
+    .article-item:not(:first-child) .card-textonly:not(.lead-card) .card-description {
       flex: 1 1 auto;
       min-height: 0;
       overflow: hidden;
@@ -2392,7 +2398,8 @@
       grid-column: span 6;
     }
 
-    .article-item:first-child {
+    .article-item:first-child,
+    .day-separator + .article-item {
       grid-column: 1 / -1;
     }
 
@@ -2463,7 +2470,10 @@
       grid-column: auto;
       margin-bottom: 0;
     }
-    .article-list:not(.author-grid) > .article-item:first-child {
+    /* The global lead AND each day's opening card (the one right after a day
+       separator) span the full row, so every day starts with a full-width lead. */
+    .article-list:not(.author-grid) > .article-item:first-child,
+    .article-list:not(.author-grid) > .day-separator + .article-item {
       grid-column: 1 / -1;
     }
     /* Fill the stretched cell so the bottom-pinned signature aligns across the row. */

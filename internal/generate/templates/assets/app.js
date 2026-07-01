@@ -1182,13 +1182,21 @@ class InfiniteScroll {
     let lastDay = this.lastCardDay();
     for (const e of entries) {
       const day = isoDay(e.published_at);
+      let opensDay = false;
       if (day && day !== lastDay) {
         const sep = this.daySeparator(day);
         sep.classList.add("cnz-enter");
         this.list.insertBefore(sep, this.tail);
         lastDay = day;
+        opensDay = true; // this card is the first of a new day -> the day's lead
       }
       const card = articleItemFromEntry(e, h);
+      // The first card of each day renders as a full-width lead (server parity),
+      // matching the portada; CSS (.day-separator + .article-item) spans it.
+      if (opensDay) {
+        const article = card.querySelector(".card");
+        if (article) article.classList.add("lead-card");
+      }
       card.classList.add("cnz-enter");
       this.list.insertBefore(card, this.tail);
       await this.wait(this.stepMs);

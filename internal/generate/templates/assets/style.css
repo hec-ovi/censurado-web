@@ -1388,6 +1388,7 @@
   }
 
   .author-profile-kicker,
+  .author-profile-gender,
   .author-profile-label {
     color: var(--color-muted);
     font-size: var(--text-xs);
@@ -1398,11 +1399,11 @@
   }
 
   .author-profile-name {
-    max-width: 13ch;
     font-family: var(--font-display);
-    font-size: clamp(2.25rem, 8vw, 5.25rem);
+    font-size: clamp(1.5rem, 7vw, 5.25rem);
     font-weight: 950;
-    line-height: 0.92;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   .author-profile-topics {

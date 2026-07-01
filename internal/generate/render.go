@@ -122,6 +122,7 @@ type pageView struct {
 	// Author bio block, populated only on a single-author listing page.
 	AuthorName    string
 	AuthorBio     string
+	AuthorGender  string
 	AuthorAvatar  string
 	AuthorInitial string
 	AuthorTopics  []topicLink
@@ -261,6 +262,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			view.AuthorName = sc.Section.labelOr()
 		}
 		view.AuthorBio = env.plan.Index.authorBio[slug]
+		view.AuthorGender = env.plan.Index.authorGender[slug]
 		view.AuthorInitial = authorInitial(view.AuthorName)
 		view.AuthorTopics = authorTopicLinks(env.plan.Index, slug)
 		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
@@ -346,6 +348,11 @@ func orderedAuthorSlugs(authors map[string][]int) []string {
 		ai, aj := authors[out[i]], authors[out[j]]
 		if len(ai) != len(aj) {
 			return len(ai) > len(aj) // more articles first
+		}
+		if len(ai) == 0 {
+			// Two registered authors with no articles yet: keep the slug-ASC base
+			// order (indexing [0] below would panic on an empty membership slice).
+			return false
 		}
 		// authors[slug] holds ascending All-indices (CreatedAt ASC, id ASC), so
 		// [0] is the author's earliest-inserted article: founding order.

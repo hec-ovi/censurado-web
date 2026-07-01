@@ -42,6 +42,9 @@ type Index struct {
 	// authorSection is the author's beat: the section slug of their first
 	// (earliest-inserted) article, used to theme the Nosotros roster card.
 	authorSection map[string]string
+	// authorGender is the author's gender label, overlaid from the author registry
+	// (Author.Metadata["gender"]); shown on the profile page. Empty == unspecified.
+	authorGender map[string]string
 	// authorProfileTopics is the operator/agent-curated topic list for an author's
 	// public profile, overlaid from the author registry (Author.Metadata). When set for
 	// a slug it REPLACES the uncapped union of every topic the author ever tagged; when
@@ -75,6 +78,7 @@ func newIndex(n int) *Index {
 		authorName:          map[string]string{},
 		authorAvatar:        map[string]string{},
 		authorSection:       map[string]string{},
+		authorGender:        map[string]string{},
 		authorProfileTopics: map[string][]string{},
 		portadaOrd:          map[string]int{},
 		portadaRole:         map[string]string{},
@@ -303,7 +307,24 @@ func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) err
 				continue
 			}
 			if _, has := idx.authors[slug]; !has {
-				continue
+				// A registered author with no published articles yet is still a real
+				// site author: inject an empty article set so the slug flows through
+				// Scopes(), its /author/ page, and the Nosotros roster (the whole
+				// pipeline is keyed on idx.authors). Require a display name, so a bare
+				// handle never manufactures a blank card. Authors that already have
+				// articles are untouched: this branch only fires for a slug absent from
+				// the article-derived map.
+				if a.Name == "" {
+					continue
+				}
+				idx.authors[slug] = []int{}
+				// No article to theme the roster card from; take the section from the
+				// registry's beat metadata when present, so the card is still colored.
+				if beat, _ := a.Metadata["beat"].(string); beat != "" {
+					if bslug, okb := facetSlug(beat); okb {
+						idx.authorSection[slug] = bslug
+					}
+				}
 			}
 			if a.Name != "" {
 				idx.authorName[slug] = a.Name
@@ -320,6 +341,9 @@ func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) err
 			// uncurated author keeps the computed union.
 			if topics := metaStringSlice(a.Metadata["profile_topics"]); len(topics) > 0 {
 				idx.authorProfileTopics[slug] = topics
+			}
+			if g, _ := a.Metadata["gender"].(string); g != "" {
+				idx.authorGender[slug] = g
 			}
 		}
 	}

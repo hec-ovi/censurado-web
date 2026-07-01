@@ -18,6 +18,9 @@
 <div class="author-profile-main">
 <p class="author-profile-kicker">Perfil</p>
 <h1 class="author-profile-name">{{.AuthorName}}</h1>
+{{- if .AuthorGender}}
+<p class="author-profile-gender">{{.AuthorGender}}</p>
+{{- end}}
 {{- if .AuthorTopics}}
 <nav class="author-profile-topics" aria-label="Temas que cubre">
 <p class="author-profile-label">Temas</p>
@@ -61,6 +64,9 @@
 </li>
 {{- end}}
 </ol>
+{{- if and .AuthorName (not .Items)}}
+<p class="author-empty">Todavía no publicó artículos.</p>
+{{- end}}
 {{- if .Rail}}
 <aside class="ranked-rail" aria-label="Recomendado">
 <h2 class="rail-heading">Recomendado</h2>

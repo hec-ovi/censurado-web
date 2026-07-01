@@ -202,11 +202,13 @@ func TestRegistryOverlay_TopicLabelFromTable(t *testing.T) {
 	}
 }
 
-// TestRegistryOverlay_IgnoresEntriesWithNoArticles proves the overlay only touches
-// authors/topics that already have published articles: a registry row for an author or
-// topic with no articles must not manufacture a roster card, an author page, or a topic
-// page.
-func TestRegistryOverlay_IgnoresEntriesWithNoArticles(t *testing.T) {
+// TestRegistryOverlay_ArticlelessAuthorShows_TopicDoesNot proves the split behavior: a
+// registered AUTHOR with no articles yet is still a real site author (a Nosotros roster
+// card themed by its beat, plus its own author page with a "no articles yet" state, from
+// the registry's public fields), while a registered TOPIC with no articles is still
+// ignored. A registry author with a blank name is not manufactured into a card, and two
+// article-less authors must not panic the roster ordering.
+func TestRegistryOverlay_ArticlelessAuthorShows_TopicDoesNot(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	seed(t, repo, seedSpec{
@@ -216,20 +218,51 @@ func TestRegistryOverlay_IgnoresEntriesWithNoArticles(t *testing.T) {
 		Topics:    []string{"ia"},
 		Published: date(2026, 6, 5),
 	})
-	// Registry rows for an author and a topic that have NO articles.
-	upsertAuthor(t, repo, store.Author{Handle: "fantasma", Name: "Autor Fantasma", Bio: "No escribió nada."})
+	// Two registered authors with NO articles (one themed by its beat), a nameless one,
+	// and a topic with no articles.
+	upsertAuthor(t, repo, store.Author{
+		Handle: "fantasma", Name: "Autor Fantasma", Bio: "Todavía no publicó.",
+		Avatar: "/media/fantasma.png", Metadata: map[string]any{"beat": "economics", "gender": "no binario"},
+	})
+	upsertAuthor(t, repo, store.Author{Handle: "nueva-voz", Name: "Nueva Voz", Bio: "Recién llega."})
+	upsertAuthor(t, repo, store.Author{Handle: "sin-nombre"}) // blank name -> no card
 	upsertTopic(t, repo, store.Topic{Slug: "vacio", Label: "Tema Vacío"})
 
 	genInto(t, repo, out, nil)
 
-	if exists(out, "author/fantasma/index.html") {
-		t.Errorf("overlay manufactured an author page for a registry author with no articles")
+	// The article-less author now has its own page: heading + bio + the empty state.
+	page := string(readArtifact(t, out, "author/fantasma/index.html"))
+	if !strings.Contains(page, `<h1 class="author-profile-name">Autor Fantasma</h1>`) {
+		t.Errorf("article-less registry author did not get a titled author page")
 	}
+	if !strings.Contains(page, "Todavía no publicó.") {
+		t.Errorf("article-less author page missing the registry bio")
+	}
+	if !strings.Contains(page, "author-empty") {
+		t.Errorf("article-less author page missing the 'no articles yet' empty state")
+	}
+	if !strings.Contains(page, `<p class="author-profile-gender">no binario</p>`) {
+		t.Errorf("author page missing the gender label from the registry")
+	}
+
+	// ... and a themed Nosotros roster card. Both article-less authors are listed.
+	about := string(readArtifact(t, out, "about/index.html"))
+	if !strings.Contains(about, "Autor Fantasma") || !strings.Contains(about, "Nueva Voz") {
+		t.Errorf("about roster does not list the article-less registered authors")
+	}
+	if !strings.Contains(about, `data-section="economics"`) {
+		t.Errorf("article-less author card is not themed from its registry beat")
+	}
+
+	// A registry author with a blank name is NOT manufactured into a page.
+	if exists(out, "author/sin-nombre/index.html") {
+		t.Errorf("a nameless registry author got an author page")
+	}
+	// A registry TOPIC with no articles is STILL ignored (topic behavior unchanged).
 	if exists(out, "topic/vacio/index.html") {
 		t.Errorf("overlay manufactured a topic page for a registry topic with no articles")
 	}
-	about := string(readArtifact(t, out, "about/index.html"))
-	if strings.Contains(about, "Autor Fantasma") {
-		t.Errorf("about roster lists a registry author with no articles")
+	if strings.Contains(about, "Tema Vacío") {
+		t.Errorf("empty topic leaked onto the about roster")
 	}
 }

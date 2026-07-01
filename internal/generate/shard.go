@@ -9,9 +9,13 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (15 fields); id is unexported and never
+// The JSON field set is frozen (17 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
-// listing (ties by id). Subtitle, Description, Image and Avatar carry the authored
+// listing (ties by id). ord and role carry the curated per-day plan: ord is the
+// article's within-day render position (0 = the day's lead, default = newest-first
+// display rank) and role is "" or "important" (a full-row card), so the client
+// reproduces the server's curated order and roles from the shard alone. Subtitle,
+// Description, Image and Avatar carry the authored
 // dek, standfirst, hero URL and byline avatar so client-rebuilt cards (facet
 // filter, live refresh, infinite scroll) match the server cards even for an author
 // absent from the page's first batch; all are always present (possibly "") to keep
@@ -33,7 +37,9 @@ type ShardEntry struct {
 	Topics      []string `json:"topics"`
 	PublishedAt string   `json:"published_at"`
 	TS          int64    `json:"ts"`
-	CreatedTS   int64    `json:"cts"` // created-at epoch (real insert time); drives the displayed card stamp
+	CreatedTS   int64    `json:"cts"`  // created-at epoch (real insert time); drives the displayed card stamp
+	Ord         int      `json:"ord"`  // within-day render position (0 = the day's lead; default = newest-first display rank)
+	Role        string   `json:"role"` // "" normal, "important" full-row; curated by the per-day plan
 
 	id string // article id; sort tie-break only, never serialized
 }

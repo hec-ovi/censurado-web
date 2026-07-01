@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://censurado.local/contracts/shard.schema.json",
   "title": "ShardFile",
-  "description": "One month-bucketed shard part: a newest-published-first JSON array of body-free article projections for the client-side Tier-B refiner. Routing-axis facets (author, section, topics) are in Slugify form so client membership matches server-rendered membership; author_label carries the original display string. A facet that slugifies to empty uses the ContentHash[:12] fallback so the slug pattern always holds. Field set is frozen; no article body is ever included.",
+  "description": "One month-bucketed shard part: a JSON array of body-free article projections for the client-side Tier-B refiner, ordered by the curated per-day plan (published-day DESC, within-day ord ASC). Routing-axis facets (author, section, topics) are in Slugify form so client membership matches server-rendered membership; author_label carries the original display string. A facet that slugifies to empty uses the ContentHash[:12] fallback so the slug pattern always holds. ord is the article's within-day render position (0 = the day's lead) and role is \"\" or \"important\" (a full-row card). Field set is frozen; no article body is ever included.",
   "type": "array",
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts", "cts"],
+    "required": ["slug", "url", "title", "subtitle", "description", "image", "video", "author", "author_label", "avatar", "section", "topics", "published_at", "ts", "cts", "ord", "role"],
     "properties": {
       "slug":         { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
       "url":          { "type": "string", "pattern": "^/a/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/$" },
@@ -23,7 +23,9 @@
       "topics":       { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } },
       "published_at": { "type": "string", "format": "date-time" },
       "ts":           { "type": "integer" },
-      "cts":          { "type": "integer" }
+      "cts":          { "type": "integer" },
+      "ord":          { "type": "integer", "minimum": 0 },
+      "role":         { "type": "string", "enum": ["", "important"] }
     }
   }
 }

@@ -73,12 +73,32 @@ func displaySorted(in []ShardEntry) []ShardEntry {
 	return out
 }
 
-// entryLess mirrors displayLess for ShardEntry: newest ts first, ties by id desc.
+// entryLess mirrors the server's portadaLess for ShardEntry: a newer published
+// DAY first, then within a day the curated ord (0 = the day's lead), then newest
+// ts, ties by id desc. Uncurated entries all carry the default ord 0, so a day
+// falls straight through to the ts/id ordering the old comparator used, keeping
+// uncurated shards byte-stable.
 func entryLess(a, b ShardEntry) bool {
+	da, db := shardDay(a), shardDay(b)
+	if da != db {
+		return a.TS > b.TS // newer published day first
+	}
+	if a.Ord != b.Ord {
+		return a.Ord < b.Ord // within a day: curated order
+	}
 	if a.TS != b.TS {
-		return a.TS > b.TS
+		return a.TS > b.TS // default within-day: newest published first
 	}
 	return idLess(b.id, a.id)
+}
+
+// shardDay is the entry's published-day bucket ("YYYY-MM-DD") from its RFC3339
+// published_at, matching the server's dayKey and the client's day grouping.
+func shardDay(e ShardEntry) string {
+	if len(e.PublishedAt) >= 10 {
+		return e.PublishedAt[:10]
+	}
+	return e.PublishedAt
 }
 
 // gzipLen measures the gzipped size of b with a deterministic header (the length

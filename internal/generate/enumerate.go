@@ -47,26 +47,38 @@ type Index struct {
 	// a slug it REPLACES the uncapped union of every topic the author ever tagged; when
 	// absent the union (capped) is used. Empty is never stored, so presence == curated.
 	authorProfileTopics map[string][]string
+
+	// portadaOrd is each article's within-day render position and portadaRole its
+	// curated role ("" or "important"), both populated only for days a per-day plan
+	// (PortadaStore) curates; the default 0/"" reproduces the newest-published-first
+	// order so uncurated output stays byte-identical. portadaRecomendado holds a
+	// curated day's "Recomendado" slugs for the front-page rail.
+	portadaOrd         map[string]int
+	portadaRole        map[string]string
+	portadaRecomendado map[string][]string
 }
 
 func newIndex(n int) *Index {
 	return &Index{
-		All:           make([]domain.Article, 0, n),
-		sections:      map[string][]int{},
-		authors:       map[string][]int{},
-		topics:        map[string][]int{},
-		months:        map[ym][]int{},
-		secAuthors:    map[string]map[string]struct{}{},
-		secTopics:     map[string]map[string]struct{}{},
-		secMonths:     map[string]map[ym]struct{}{},
-		sectionLabel:  map[string]string{},
-		authorLabel:   map[string]string{},
-		topicLabel:    map[string]string{},
+		All:                 make([]domain.Article, 0, n),
+		sections:            map[string][]int{},
+		authors:             map[string][]int{},
+		topics:              map[string][]int{},
+		months:              map[ym][]int{},
+		secAuthors:          map[string]map[string]struct{}{},
+		secTopics:           map[string]map[string]struct{}{},
+		secMonths:           map[string]map[ym]struct{}{},
+		sectionLabel:        map[string]string{},
+		authorLabel:         map[string]string{},
+		topicLabel:          map[string]string{},
 		authorBio:           map[string]string{},
 		authorName:          map[string]string{},
 		authorAvatar:        map[string]string{},
 		authorSection:       map[string]string{},
 		authorProfileTopics: map[string][]string{},
+		portadaOrd:          map[string]int{},
+		portadaRole:         map[string]string{},
+		portadaRecomendado:  map[string][]string{},
 	}
 }
 
@@ -151,7 +163,123 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 	if err := overlayRegistry(ctx, idx, repo); err != nil {
 		return nil, err
 	}
+	if err := overlayPortada(ctx, idx, repo); err != nil {
+		return nil, err
+	}
 	return idx, nil
+}
+
+// dayKey is an article's published-day bucket in UTC ("2006-01-02"), the same
+// grouping the day separators and the client use.
+func dayKey(a domain.Article) string {
+	return a.PublishedAt.UTC().Format("2006-01-02")
+}
+
+// portadaLess orders articles for display honoring the curated per-day plan: a
+// newer published DAY first, and within a day by the stored ord. The default ord
+// is 0 for every article, so an uncurated day falls straight through to displayLess
+// (newest-published-first) and the output is byte-identical to the pre-curation
+// build; only a day with a plan carries distinct ords and gets reordered.
+func (idx *Index) portadaLess(a, b domain.Article) bool {
+	if dayKey(a) != dayKey(b) {
+		return displayLess(a, b)
+	}
+	oa, ob := idx.portadaOrd[a.ID], idx.portadaOrd[b.ID]
+	if oa != ob {
+		return oa < ob
+	}
+	return displayLess(a, b)
+}
+
+func (idx *Index) portadaSort(arts []domain.Article) {
+	sort.SliceStable(arts, func(i, j int) bool { return idx.portadaLess(arts[i], arts[j]) })
+}
+
+// overlayPortada applies operator/agent-curated per-day plans (PortadaStore) over
+// the default order. Each plan, keyed by published day, lists article slugs in the
+// wanted order with an optional role: the listed articles take positions 0..k-1
+// (position 0 is the day's lead), any same-day article absent from the plan follows
+// in default display order, and role "important" marks a full-row card. The day's
+// recomendado slugs are recorded for the front-page rail. Purely additive: a store
+// without the registry, or a corpus with no plans, leaves every ord at its default
+// 0, so the generator (and every sealed shard) is byte-identical until a plan is
+// written; a plan slug with no article published that day is ignored, so a plan
+// never manufactures a card. Only a curated day carries non-zero ords, so growth on
+// an uncurated day never shifts a sealed article's position.
+func overlayPortada(ctx context.Context, idx *Index, repo store.Repository) error {
+	ps, ok := repo.(store.PortadaStore)
+	if !ok {
+		return nil
+	}
+	plans, err := ps.ListPortadas(ctx, false)
+	if err != nil {
+		return err
+	}
+	if len(plans) == 0 {
+		return nil
+	}
+	// day -> that day's All-indices in default display order (newest-first), the
+	// working set a plan reorders. Built only when at least one plan exists.
+	byDay := map[string][]int{}
+	for i := range idx.All {
+		d := dayKey(idx.All[i])
+		byDay[d] = append(byDay[d], i)
+	}
+	for d := range byDay {
+		g := byDay[d]
+		sort.SliceStable(g, func(x, y int) bool { return displayLess(idx.All[g[x]], idx.All[g[y]]) })
+	}
+	for _, plan := range plans {
+		dayIdxs, has := byDay[plan.Date]
+		if !has {
+			continue // a plan for a day with no published articles: nothing to order
+		}
+		bySlug := map[string]int{}
+		for _, ix := range dayIdxs {
+			bySlug[idx.All[ix].Slug] = ix
+		}
+		used := map[string]struct{}{}
+		pos := 0
+		for _, e := range plan.Entries {
+			ix, live := bySlug[e.Slug]
+			if !live {
+				continue // slug not published that day: skip (no dead card)
+			}
+			if _, dup := used[e.Slug]; dup {
+				continue
+			}
+			used[e.Slug] = struct{}{}
+			id := idx.All[ix].ID
+			idx.portadaOrd[id] = pos
+			if e.Role == "important" {
+				idx.portadaRole[id] = "important"
+			} else {
+				idx.portadaRole[id] = ""
+			}
+			pos++
+		}
+		// Same-day articles not named in the plan keep their relative display order
+		// (dayIdxs is display-ordered), appended after the curated ones.
+		for _, ix := range dayIdxs {
+			a := idx.All[ix]
+			if _, done := used[a.Slug]; done {
+				continue
+			}
+			idx.portadaOrd[a.ID] = pos
+			idx.portadaRole[a.ID] = ""
+			pos++
+		}
+		rec := make([]string, 0, len(plan.Recomendado))
+		for _, s := range plan.Recomendado {
+			if s = strings.TrimSpace(s); s != "" {
+				rec = append(rec, s)
+			}
+		}
+		if len(rec) > 0 {
+			idx.portadaRecomendado[plan.Date] = rec
+		}
+	}
+	return nil
 }
 
 // overlayRegistry prefers the operator-managed author/topic registry over the

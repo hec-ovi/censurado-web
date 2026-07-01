@@ -142,7 +142,11 @@ func buildScopeShards(env *buildEnv, s Scope) (months []ym, partsByMonth map[str
 		idxs := byMonth[m]
 		entries := make([]ShardEntry, 0, len(idxs))
 		for _, i := range idxs {
-			entries = append(entries, ShardEntryOf(env.plan.Index.All[i]))
+			a := env.plan.Index.All[i]
+			se := ShardEntryOf(a)
+			se.Ord = env.plan.Index.portadaOrd[a.ID]
+			se.Role = env.plan.Index.portadaRole[a.ID]
+			entries = append(entries, se)
 		}
 		parts, perr := EmitShardsForScopeMonth(scopePath, m.Year, m.Month, entries, env.capE, env.capB)
 		if perr != nil {

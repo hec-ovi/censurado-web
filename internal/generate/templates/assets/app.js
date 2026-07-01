@@ -98,15 +98,19 @@ function readInlineManifest(root) {
 // publication-older entry into a higher/newer part, so part boundaries cross
 // publication time and whole-part concatenation interleaves wrong (e.g. server
 // renders C,B,D,A but concat yields C,D,B,A). So we collect every entry across
-// all shards/parts and STABLE-sort the full stream by ts DESC.
+// all shards/parts and STABLE-sort the full stream by (published-day DESC, ord
+// ASC, ts DESC) to match the server's curated per-day order. ord is the article's
+// within-day render position (0 = the day's lead); when it is the default (the
+// newest-first display rank) this reduces to the old ts-DESC ordering, so an
+// uncurated stream is byte-identical to before.
 //
-// The server's id tie-break for equal ts is not in the serialized projection,
-// and does not need to be: within a part, equal-ts entries are already in
-// id-DESC order (the file is display-sorted); across parts, we collect newest
+// The server's id tie-break for equal (day, ord) is not in the serialized
+// projection, and does not need to be: within a part, equal entries are already
+// in id-DESC order (the file is display-sorted); across parts, we collect newest
 // part first, and because parts are cut on insertion order (i.e. id order) a
-// higher part holds the larger ids, so equal-ts entries are collected id-DESC
-// there too. A stable sort preserves that collected pre-order for equal ts, so
-// the result equals the server's (ts DESC, id DESC) order exactly.
+// higher part holds the larger ids, so equal entries are collected id-DESC there
+// too. A stable sort preserves that collected pre-order, so the result equals the
+// server's (day DESC, ord ASC, id DESC) order exactly.
 async function loadScopeEntries(manifest) {
   const out = [];
   for (const ref of manifest.shards || []) {
@@ -119,8 +123,16 @@ async function loadScopeEntries(manifest) {
     }
   }
   // Array.prototype.sort has been stable since ES2019 (V8/Node included), so
-  // equal-ts entries keep the id-DESC pre-order described above.
-  out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  // entries with an equal (day, ord) keep the id-DESC pre-order described above.
+  out.sort((a, b) => {
+    const da = (a.published_at || "").slice(0, 10);
+    const db = (b.published_at || "").slice(0, 10);
+    if (da !== db) return (b.ts || 0) - (a.ts || 0); // newer published day first
+    const oa = a.ord || 0;
+    const ob = b.ord || 0;
+    if (oa !== ob) return oa - ob; // within a day: curated order (0 = the lead)
+    return (b.ts || 0) - (a.ts || 0); // stable tie-break (identical to old ts-DESC)
+  });
   return out;
 }
 
@@ -1192,10 +1204,14 @@ class InfiniteScroll {
       }
       const card = articleItemFromEntry(e, h);
       // The first card of each day renders as a full-width lead (server parity),
-      // matching the portada; CSS (.day-separator + .article-item) spans it.
+      // matching the portada; CSS (.day-separator + .article-item) spans it. A
+      // curated "important" card (not the day's lead) also spans the full row via
+      // the .article-item.is-important class the server emits.
       if (opensDay) {
         const article = card.querySelector(".card");
         if (article) article.classList.add("lead-card");
+      } else if (e.role === "important") {
+        card.classList.add("is-important");
       }
       card.classList.add("cnz-enter");
       this.list.insertBefore(card, this.tail);

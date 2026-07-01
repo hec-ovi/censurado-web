@@ -50,7 +50,7 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 	var pages []Page
 	for k := 1; k <= full; k++ {
 		arts := idx.articlesAt(indices[(k-1)*P : k*P])
-		sortDisplay(arts)
+		idx.portadaSort(arts)
 		pg := Page{
 			Scope:     s,
 			Number:    k,
@@ -90,7 +90,7 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 		landing.Prev = s.PageURL(full)
 	}
 	arts := idx.articlesAt(landIdx)
-	sortDisplay(arts)
+	idx.portadaSort(arts)
 	landing.Articles = arts
 	pages = append(pages, landing)
 	return pages

@@ -2342,7 +2342,8 @@
     }
 
     .article-item:first-child,
-    .day-separator + .article-item {
+    .day-separator + .article-item,
+    .article-item.is-important {
       grid-column: 1 / -1;
     }
 
@@ -2411,7 +2412,8 @@
     }
 
     .article-item:first-child,
-    .day-separator + .article-item {
+    .day-separator + .article-item,
+    .article-item.is-important {
       grid-column: 1 / -1;
     }
 
@@ -2485,7 +2487,8 @@
     /* The global lead AND each day's opening card (the one right after a day
        separator) span the full row, so every day starts with a full-width lead. */
     .article-list:not(.author-grid) > .article-item:first-child,
-    .article-list:not(.author-grid) > .day-separator + .article-item {
+    .article-list:not(.author-grid) > .day-separator + .article-item,
+    .article-list:not(.author-grid) > .article-item.is-important {
       grid-column: 1 / -1;
     }
     /* Fill the stretched cell so the bottom-pinned signature aligns across the row. */

@@ -152,6 +152,11 @@ type itemView struct {
 	// no separator). Empty otherwise. Server-rendered so the date grouping shows on
 	// every scope with JS off; the client continues it on infinite-scroll appends.
 	DaySeparator string
+	// Important marks a curated full-row card (role "important" in the per-day plan):
+	// it spans the whole grid row like the day lead but keeps the normal card body.
+	// The day's lead (first item of the day) is handled positionally, so Important is
+	// only honored on non-lead cards. Always false when no plan curates the day.
+	Important bool
 }
 
 type topicLink struct{ Label, URL string }
@@ -242,7 +247,9 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		view.PrevURL = absolute(env.siteBase, pg.Prev)
 	}
 	for _, a := range pg.Articles {
-		view.Items = append(view.Items, itemViewOf(a))
+		iv := itemViewOf(a)
+		iv.Important = env.plan.Index.portadaRole[a.ID] == "important"
+		view.Items = append(view.Items, iv)
 	}
 	authorLanding := isAuthorScope(sc) && pg.Landing
 	if authorLanding {
@@ -266,8 +273,13 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		// it never repeats the grid the reader is already looking at. Sealed
 		// deep-pagination pages omit it on purpose: a live "below page" rail there
 		// would break the append-only byte-stability of older pages under a
-		// backdated insert.
-		view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, 10)
+		// backdated insert. On the front page a curated plan can override this with
+		// its own recomendado list for the newest day.
+		if rail := curatedRail(env, sc, pg.Articles); rail != nil {
+			view.Rail = rail
+		} else {
+			view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, 10)
+		}
 	}
 	// Group the listing by published day with full-width separators (every scope,
 	// server-rendered). Runs after the author override and the rail copy so it
@@ -567,6 +579,35 @@ func railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []ite
 		}
 	}
 	return itemViewsOf(below, n)
+}
+
+// curatedRail returns the "Recomendado" rail from the per-day plan's recomendado
+// list for the front page's newest day, in the operator's stored order. It applies
+// only to the Latest landing (the front page), and only when that day carries a
+// curated recomendado list; otherwise it returns nil so the caller falls back to
+// the computed below-page rail. A recomendado slug with no matching article is
+// skipped, so the rail never links a dead page.
+func curatedRail(env *buildEnv, sc Scope, pageArts []domain.Article) []itemView {
+	if !isLatest(sc) || len(pageArts) == 0 {
+		return nil
+	}
+	idx := env.plan.Index
+	// pageArts is portada-sorted, so [0] is the newest day's lead.
+	slugs := idx.portadaRecomendado[dayKey(pageArts[0])]
+	if len(slugs) == 0 {
+		return nil
+	}
+	bySlug := make(map[string]domain.Article, len(idx.All))
+	for _, a := range idx.All {
+		bySlug[a.Slug] = a
+	}
+	var out []itemView
+	for _, s := range slugs {
+		if a, ok := bySlug[s]; ok {
+			out = append(out, itemViewOf(a))
+		}
+	}
+	return out
 }
 
 // articlesUpToSelf returns every article that is NOT newer than self (older or

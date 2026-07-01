@@ -36,6 +36,14 @@ function absURL(u) {
   }
 }
 
+// Cache-bust a URL for iOS WebKit (Brave/Safari on iOS), which does not reliably
+// revalidate no-cache/no-store on its own: a distinct query per fetch sidesteps its HTTP
+// disk cache entirely. Used only for the freshness-critical live-refresh fetches (the
+// version sentinel and the newest shard), so the "new articles" check actually fires on iOS.
+function bust(u) {
+  return u + (u.includes("?") ? "&" : "?") + "t=" + Date.now();
+}
+
 // monthOf derives a "YYYY-MM" bucket from a shard entry's published_at.
 function monthOf(entry) {
   return (entry.published_at || "").slice(0, 7);
@@ -664,7 +672,7 @@ class LiveRefresh {
     this.setTimer = options.setTimeout || this.win.setTimeout.bind(this.win);
     this.clearTimer = options.clearTimeout || this.win.clearTimeout.bind(this.win);
     const interval = Number(options.intervalMs || 0);
-    this.minIntervalMs = interval || Number(options.minIntervalMs || 30000);
+    this.minIntervalMs = interval || Number(options.minIntervalMs || 60000);
     this.maxIntervalMs = interval || Number(options.maxIntervalMs || 60000);
     this.maxBackoffMs = Number(options.maxBackoffMs || 300000);
     this.autoStart = options.autoStart !== false;
@@ -676,6 +684,10 @@ class LiveRefresh {
     this.version = "";
     this.pendingEntries = [];
     this.pendingSentinel = null;
+    this.reloadPending = false;
+    this.reload = options.reload || (() => {
+      if (this.win.location && this.win.location.reload) this.win.location.reload();
+    });
     this.banner = null;
     this._onVisibility = () => this.onVisibility();
   }
@@ -699,9 +711,9 @@ class LiveRefresh {
   async fetchSentinel(withValidator) {
     const headers = {};
     if (withValidator && this.etag) headers["If-None-Match"] = this.etag;
-    const res = await this.fetcher(absURL(LIVE_SENTINEL_URL), {
+    const res = await this.fetcher(bust(absURL(LIVE_SENTINEL_URL)), {
       headers,
-      cache: "no-cache",
+      cache: "no-store",
     });
     if (res.status === 304) return { notModified: true };
     if (!res.ok) {
@@ -717,7 +729,7 @@ class LiveRefresh {
   }
 
   async fetchJSON(url) {
-    const res = await this.fetcher(absURL(url), { cache: "no-cache" });
+    const res = await this.fetcher(bust(absURL(url)), { cache: "no-store" });
     if (!res.ok) throw new Error("live refresh fetch failed: " + url);
     return res.json();
   }
@@ -768,7 +780,7 @@ class LiveRefresh {
       const entries = await this.fetchNewestEntries();
       const fresh = this.diffNewEntries(entries);
       if (fresh.length) this.showBanner(fresh, sentinel);
-      else this.commitSentinel(sentinel);
+      else this.showReloadBanner(sentinel);
       this.errorCount = 0;
     } catch (err) {
       this.errorCount += 1;
@@ -778,9 +790,7 @@ class LiveRefresh {
     }
   }
 
-  showBanner(entries, sentinel) {
-    this.pendingEntries = entries;
-    this.pendingSentinel = sentinel;
+  _ensureBanner() {
     if (!this.banner) {
       this.banner = el("button", {
         type: "button",
@@ -791,12 +801,40 @@ class LiveRefresh {
       this.banner.addEventListener("click", () => this.applyPending());
       this.list.parentNode.insertBefore(this.banner, this.list);
     }
+    return this.banner;
+  }
+
+  showBanner(entries, sentinel) {
+    this.pendingEntries = entries;
+    this.pendingSentinel = sentinel;
+    this.reloadPending = false;
+    this._ensureBanner();
     // A plain call to action, no count: the reader taps to pull in whatever is new.
     this.banner.textContent = "Actualizar nuevos artículos";
     this.banner.removeAttribute("hidden");
   }
 
+  showReloadBanner(sentinel) {
+    // The version changed but no NEW article appeared, so an existing one was edited
+    // (or removed). Offer a fresh reload rather than silently swapping content under a
+    // reader mid-article; the reader taps when ready, nothing auto-refreshes.
+    this.pendingEntries = [];
+    this.pendingSentinel = sentinel;
+    this.reloadPending = true;
+    this._ensureBanner();
+    this.banner.textContent = "Actualizar";
+    this.banner.removeAttribute("hidden");
+  }
+
   applyPending() {
+    if (this.reloadPending) {
+      this.reloadPending = false;
+      if (this.pendingSentinel) this.commitSentinel(this.pendingSentinel);
+      this.pendingSentinel = null;
+      if (this.banner) this.banner.setAttribute("hidden", "");
+      this.reload();
+      return;
+    }
     const entries = this.pendingEntries.filter(
       (entry) => entry && entry.url && !this.renderedKeys().has(normalizedPath(entry.url))
     );

@@ -469,6 +469,42 @@ describe("Censurado refiner", () => {
     expect(container.querySelector("[data-live-refresh-banner]").hasAttribute("hidden")).toBe(true);
   });
 
+  test("live refresh cache-busts the sentinel (no-store) and offers a reload when an article is edited", async () => {
+    // The version bumps but the newest shard yields NO new slug: an existing article was
+    // edited, not a new one posted. The reader should get a reload prompt, not a silent swap.
+    let sentinelHits = 0;
+    const reload = vi.fn();
+    const fetchMock = vi.fn(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/latest/version.json") {
+        sentinelHits += 1;
+        return responseJSON(
+          { v: sentinelHits === 1 ? "v1" : "v2", latest_ids: LATEST_STREAM.map((e) => e.slug) },
+          { etag: sentinelHits === 1 ? '"v1"' : '"v2"' }
+        );
+      }
+      if (url.pathname === "/manifest/latest/index.json") return responseJSON(LATEST_MANIFEST);
+      if (url.pathname === "/shards/latest/2026/06.json")
+        return responseJSON(LATEST_SHARDS["/shards/latest/2026/06.json"]); // nothing new
+      throw new Error("unexpected fetch: " + url.pathname);
+    });
+
+    mount(latestFragment());
+    liveRefresh = await initLiveRefresh(container, { fetch: fetchMock, autoStart: false, reload });
+    await liveRefresh.checkNow();
+
+    // iOS WebKit fix: the sentinel is fetched no-store with a cache-bust query, so the
+    // poll actually detects the new version on an iPhone instead of a stale disk copy.
+    expect(fetchMock.mock.calls[0][1].cache).toBe("no-store");
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/latest\/version\.json\?.*\bt=\d+/);
+
+    // v changed with no new article -> a reload prompt (not the "nuevos artículos" one).
+    const banner = within(container).getByRole("button", { name: "Actualizar" });
+    const user = userEvent.setup();
+    await user.click(banner);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   test("masthead cycles videos with a crossfade and alternating top/bottom alignment", () => {
     vi.useFakeTimers();
     try {

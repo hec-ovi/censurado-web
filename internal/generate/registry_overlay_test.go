@@ -105,6 +105,81 @@ func TestRegistryOverlay_AuthorTablePrefersOverMetadata(t *testing.T) {
 	}
 }
 
+// TestAuthorProfileTopics_CuratedPrefersAndCapsFallback proves the author-profile topic
+// chips: a curated profile_topics list (carried in the author registry's Metadata blob)
+// REPLACES the auto-computed union and is filtered to topics that actually have a page,
+// while an author with NO curated list falls back to the union CAPPED at maxAuthorTopics.
+func TestAuthorProfileTopics_CuratedPrefersAndCapsFallback(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+
+	// ada writes politica + sociedad (so the UNION would be those two). Her curated list
+	// is ["economia", "inexistente"]: economia is a live topic (lin tagged it below) and
+	// must show; inexistente has no article anywhere and must be dropped.
+	seed(t, repo, seedSpec{Title: "Ley ada", Author: "ada", Section: "politics",
+		Topics: []string{"politica", "sociedad"}, Published: date(2026, 6, 5)})
+	seed(t, repo, seedSpec{Title: "Economia lin", Author: "lin", Section: "world",
+		Topics: []string{"economia"}, Published: date(2026, 6, 6)})
+	upsertAuthor(t, repo, store.Author{
+		Handle:   "ada",
+		Name:     "Ada L.",
+		Metadata: map[string]any{"profile_topics": []string{"economia", "inexistente"}},
+	})
+
+	// cap writes ten distinct single-tag topics and has NO curated list, so the union
+	// fallback applies and must be capped at maxAuthorTopics (8). Counts all tie at 1, so
+	// the order is slug-ascending: tema0..tema7 survive, tema8/tema9 are cut.
+	for i := 0; i < 10; i++ {
+		seed(t, repo, seedSpec{
+			Title:     "Cap " + string(rune('a'+i)),
+			Author:    "cap",
+			Section:   "tech",
+			Topics:    []string{"tema" + string(rune('0'+i))},
+			Published: date(2026, 6, 7),
+		})
+	}
+
+	genInto(t, repo, out, nil)
+
+	adaTopics := topicsNav(t, string(readArtifact(t, out, "author/ada/index.html")))
+	if !strings.Contains(adaTopics, `href="/topic/economia/"`) {
+		t.Errorf("curated topic economia missing from ada's profile topics")
+	}
+	for _, dead := range []string{"/topic/politica/", "/topic/sociedad/", "/topic/inexistente/"} {
+		if strings.Contains(adaTopics, dead) {
+			t.Errorf("ada profile topics leaked %q (curated list must suppress the union and drop dead topics)", dead)
+		}
+	}
+
+	capTopics := topicsNav(t, string(readArtifact(t, out, "author/cap/index.html")))
+	if !strings.Contains(capTopics, `href="/topic/tema7/"`) {
+		t.Errorf("capped fallback dropped tema7 (should keep the first 8)")
+	}
+	for _, cut := range []string{"/topic/tema8/", "/topic/tema9/"} {
+		if strings.Contains(capTopics, cut) {
+			t.Errorf("capped fallback kept %q past maxAuthorTopics=%d", cut, maxAuthorTopics)
+		}
+	}
+}
+
+// topicsNav returns just the <nav class="author-profile-topics"> ... </nav> slice of an
+// author page, so a topic assertion cannot accidentally match a link elsewhere on the
+// page (a card byline, a related block). Fails the test if the nav is absent.
+func topicsNav(t *testing.T, page string) string {
+	t.Helper()
+	const open = `<nav class="author-profile-topics"`
+	i := strings.Index(page, open)
+	if i < 0 {
+		t.Fatalf("author page has no author-profile-topics nav")
+	}
+	rest := page[i:]
+	j := strings.Index(rest, "</nav>")
+	if j < 0 {
+		t.Fatalf("author-profile-topics nav is not closed")
+	}
+	return rest[:j]
+}
+
 // TestRegistryOverlay_TopicLabelFromTable proves the managed topics table supplies the
 // topic page heading, overriding the slug-derived label.
 func TestRegistryOverlay_TopicLabelFromTable(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hec-ovi/censurado-web-backend/domain"
@@ -41,6 +42,11 @@ type Index struct {
 	// authorSection is the author's beat: the section slug of their first
 	// (earliest-inserted) article, used to theme the Nosotros roster card.
 	authorSection map[string]string
+	// authorProfileTopics is the operator/agent-curated topic list for an author's
+	// public profile, overlaid from the author registry (Author.Metadata). When set for
+	// a slug it REPLACES the uncapped union of every topic the author ever tagged; when
+	// absent the union (capped) is used. Empty is never stored, so presence == curated.
+	authorProfileTopics map[string][]string
 }
 
 func newIndex(n int) *Index {
@@ -56,10 +62,11 @@ func newIndex(n int) *Index {
 		sectionLabel:  map[string]string{},
 		authorLabel:   map[string]string{},
 		topicLabel:    map[string]string{},
-		authorBio:     map[string]string{},
-		authorName:    map[string]string{},
-		authorAvatar:  map[string]string{},
-		authorSection: map[string]string{},
+		authorBio:           map[string]string{},
+		authorName:          map[string]string{},
+		authorAvatar:        map[string]string{},
+		authorSection:       map[string]string{},
+		authorProfileTopics: map[string][]string{},
 	}
 }
 
@@ -180,6 +187,12 @@ func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) err
 			if a.Avatar != "" {
 				idx.authorAvatar[slug] = a.Avatar
 			}
+			// Curated public-profile topics ride in the registry's Metadata blob
+			// (the brain pushes them there). Overlay only when non-empty, so an
+			// uncurated author keeps the computed union.
+			if topics := metaStringSlice(a.Metadata["profile_topics"]); len(topics) > 0 {
+				idx.authorProfileTopics[slug] = topics
+			}
 		}
 	}
 	if ts, ok := repo.(store.TopicStore); ok {
@@ -201,6 +214,31 @@ func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) err
 		}
 	}
 	return nil
+}
+
+// metaStringSlice coerces a Metadata value into a clean []string. It accepts the
+// []any a JSON array decodes to (the store's path) and a native []string, keeping only
+// non-blank trimmed strings in order. Anything else (a scalar, a nested object, nil)
+// yields nil, so a malformed blob degrades to "no curated topics" rather than an error.
+func metaStringSlice(v any) []string {
+	var out []string
+	switch xs := v.(type) {
+	case []string:
+		for _, s := range xs {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+	case []any:
+		for _, e := range xs {
+			if s, ok := e.(string); ok {
+				if s = strings.TrimSpace(s); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // idLess compares decimal id strings numerically; both adapters use integer PKs.

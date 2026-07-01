@@ -604,7 +604,40 @@ func authorLatestItems(idx *Index, sc Scope, n int) []itemView {
 	return itemViewsOf(arts, n)
 }
 
+// maxAuthorTopics bounds the auto-computed topic union on an author profile so a
+// prolific author does not paper the page with dozens of chips. It caps ONLY the
+// fallback: a curated profile_topics list (from the author registry) is shown in full,
+// trusting the operator/agent that chose it.
+const maxAuthorTopics = 8
+
 func authorTopicLinks(idx *Index, authorSlug string) []topicLink {
+	// Prefer the operator/agent-curated list when the registry carries one. Each entry is
+	// normalized to its facet slug (so topics read the same as everywhere else) and kept
+	// only when it has a real topic page (published articles anywhere), so a curated topic
+	// never links to a dead page and the "never manufacture a heading" invariant holds. An
+	// all-empty curated list (nothing survives) falls through to the computed union.
+	if curated := idx.authorProfileTopics[authorSlug]; len(curated) > 0 {
+		out := make([]topicLink, 0, len(curated))
+		seen := map[string]struct{}{}
+		for _, raw := range curated {
+			slug, ok := facetSlug(raw)
+			if !ok {
+				continue
+			}
+			if _, dup := seen[slug]; dup {
+				continue
+			}
+			if _, live := idx.topics[slug]; !live {
+				continue
+			}
+			seen[slug] = struct{}{}
+			out = append(out, topicLink{Label: slug, URL: pageURL("topic/"+slug, 0)})
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+
 	counts := map[string]int{}
 	for _, i := range idx.authors[authorSlug] {
 		seen := map[string]struct{}{}
@@ -630,6 +663,10 @@ func authorTopicLinks(idx *Index, authorSlug string) []topicLink {
 		}
 		return slugs[i] < slugs[j]
 	})
+	// Cap the union so the profile shows the author's dominant beats, not every stray tag.
+	if len(slugs) > maxAuthorTopics {
+		slugs = slugs[:maxAuthorTopics]
+	}
 	out := make([]topicLink, 0, len(slugs))
 	for _, slug := range slugs {
 		out = append(out, topicLink{Label: slug, URL: pageURL("topic/"+slug, 0)})

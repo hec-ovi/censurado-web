@@ -313,6 +313,23 @@ func TestMasthead_YouTubeChannelLink(t *testing.T) {
 	if !strings.Contains(rule, "position: absolute;") || !strings.Contains(rule, "bottom:") || !strings.Contains(rule, "right:") {
 		t.Errorf("YouTube link not pinned to the hero corner: %q", rule)
 	}
+
+	// The .site-nav bar overlays the masthead's bottom-right (where the icon is pinned)
+	// and sits above the isolated masthead, so it must be click-through at the container
+	// level with the links re-enabled; otherwise the bar's empty right side swallows the
+	// icon's click and :hover (the bug this guards against).
+	navRule := cssRuleBody(t, css, "\n  .site-nav {")
+	if !strings.Contains(navRule, "pointer-events: none;") {
+		t.Errorf(".site-nav must be click-through so it does not block the YouTube icon: %q", navRule)
+	}
+	if !strings.Contains(cssRuleBody(t, css, ".site-nav-link {"), "pointer-events: auto;") {
+		t.Errorf(".site-nav-link must re-enable clicks over the click-through nav bar")
+	}
+
+	// The icon has a rollover: it scales up on hover/focus.
+	if !strings.Contains(css, ".masthead-youtube:hover,") || !strings.Contains(css, "scale(1.18)") {
+		t.Errorf("YouTube icon missing the hover rollover animation")
+	}
 }
 
 // The listing "Recomendado" rail is clickable: each item is an <a> to a permalink.

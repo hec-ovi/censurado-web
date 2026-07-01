@@ -48,6 +48,10 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 		!strings.Contains(listing, `class="author-link" href="/author/ada/" data-author>Ada L.</a>`) {
 		t.Errorf("card author signature missing")
 	}
+	// The signature signs Name then portrait: the byline precedes the author-avatar.
+	if b, av := strings.Index(listing, `class="byline"`), strings.Index(listing, `class="author-avatar"`); b < 0 || av < 0 || b > av {
+		t.Errorf("card signature should read name then avatar: bylineIdx=%d avatarIdx=%d", b, av)
+	}
 	// Text-only vs media-bearing cards are marked, and only the media one has a figure.
 	if !strings.Contains(listing, "card card-textonly") {
 		t.Errorf("text-only card not marked card-textonly")
@@ -57,8 +61,8 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	}
 }
 
-// The card signature carries the AR-local stamp (long Spanish date, then AM/PM
-// time) fed by CreatedAt, rendered before the author signature: DATE then SIGNATURE.
+// The card carries the AR-local date stamp (long Spanish date, then AM/PM time) fed
+// by CreatedAt, in its own .card-date line above the author signature.
 func TestCard_SignatureStamp(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
@@ -71,13 +75,13 @@ func TestCard_SignatureStamp(t *testing.T) {
 	genInto(t, repo, out, nil)
 	listing := string(readArtifact(t, out, "latest/index.html"))
 
-	want := `<time class="card-sign-date" datetime="2026-05-23T20:23:00Z">23 de mayo de 2026, 05:23PM</time>`
+	want := `<time class="card-date" datetime="2026-05-23T20:23:00Z">23 de mayo de 2026, 05:23PM</time>`
 	if !strings.Contains(listing, want) {
-		t.Errorf("card signature stamp missing or wrong; want %q", want)
+		t.Errorf("card date stamp missing or wrong; want %q", want)
 	}
-	// The stamp renders before the byline (date then signature) within the card.
-	if d, b := strings.Index(listing, `card-sign-date`), strings.Index(listing, `class="byline"`); d < 0 || b < 0 || d > b {
-		t.Errorf("stamp should precede the byline: stampIdx=%d bylineIdx=%d", d, b)
+	// The date renders above the signature (before the byline) within the card.
+	if d, b := strings.Index(listing, `card-date`), strings.Index(listing, `class="byline"`); d < 0 || b < 0 || d > b {
+		t.Errorf("date should precede the byline: dateIdx=%d bylineIdx=%d", d, b)
 	}
 }
 
@@ -100,6 +104,13 @@ func TestArticlePage_DateHasTime(t *testing.T) {
 	}
 	if !strings.Contains(page, "05:23PM") {
 		t.Errorf("article date should include the AR clock time 05:23PM")
+	}
+	// The date now sits under the subtitle in the header, above the signature footer.
+	if d, s := strings.Index(page, `class="article-date"`), strings.Index(page, `class="article-sign"`); d < 0 || s < 0 || d > s {
+		t.Errorf("article date should precede the signature footer: dateIdx=%d signIdx=%d", d, s)
+	}
+	if strings.Contains(page, `class="article-sign">`) && strings.Contains(page[strings.Index(page, `class="article-sign"`):], `class="article-date"`) {
+		t.Errorf("article date should not be inside the signature footer anymore")
 	}
 }
 
@@ -130,6 +141,10 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("article page missing %q", want)
 		}
+	}
+	// The footer signs Name then portrait: the name link precedes the author-avatar.
+	if n, av := strings.Index(page, `article-sign-name`), strings.Index(page, `class="author-avatar"`); n < 0 || av < 0 || n > av {
+		t.Errorf("article signature should read name then avatar: nameIdx=%d avatarIdx=%d", n, av)
 	}
 	for _, want := range []string{
 		`.article-standfirst {`,

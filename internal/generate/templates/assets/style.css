@@ -1053,6 +1053,20 @@
     min-height: 100%;
   }
 
+  /* Stacked single column (phones): a portada card leads with its media, then
+     title, dek, date, summary, signature (media/title/subtitle as before, only the
+     date relocated under the dek). The lead keeps its title-first order at every
+     width. Desktop (>=42rem) renders the card_inner source order untouched
+     (title, date, media, dek, summary), so only this narrow block reorders. */
+  @media (max-width: 41.99rem) {
+    .card:not(.lead-card) .card-media { order: -2; }
+    .card:not(.lead-card) .card-title { order: -1; }
+    .card:not(.lead-card) .card-subtitle { order: 0; }
+    .card:not(.lead-card) .card-date { order: 1; }
+    .card:not(.lead-card) .card-description { order: 2; }
+    .card:not(.lead-card) .card-meta { order: 3; }
+  }
+
   .card-body {
     display: flex;
     flex: 1 1 auto;
@@ -1220,14 +1234,14 @@
     display: none;
   }
 
-  /* The visible per-card signature stamp: Argentina-local "02:23PM 23/05/26",
-     pushed to the left of the signature row (margin-right:auto) so the row reads
-     date then author. Tiny, muted, monospaced; never wraps. */
-  .card-sign-date {
-    margin-right: auto;
+  /* The visible per-card date stamp (Argentina-local, long Spanish date + AM/PM).
+     It now sits under the title/subtitle as a small right-aligned italic line
+     rather than a cell in the signature row. */
+  .card-date {
+    align-self: flex-end;
     color: var(--color-subtle);
-    font-family: var(--font-mono);
     font-size: var(--text-xs);
+    font-style: italic;
     letter-spacing: 0.01em;
     line-height: 1.45;
     white-space: nowrap;
@@ -1715,20 +1729,22 @@
     line-height: 1.5;
   }
 
-  /* The author "signs" the foot of the piece: circled portrait + name. */
-  /* The signature spans the body column and sits hard against its right edge
-     (not a centered measure-width block, which read as centered). */
+  /* The author "signs" the foot of the piece: name then circled portrait, hard
+     against the right edge. margin-top:auto drops it to the very bottom of the main
+     column so it lines up with the foot of the rail beside it (the shell stretches
+     both columns to a common height on wide screens), instead of floating just under
+     a short body. */
   .article-sign {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: var(--space-3);
+    margin-top: auto;
     padding-top: var(--space-4);
     border-top: 2px solid var(--color-ink);
   }
 
-  /* The date sits at the left end of the signature line; the portrait + name at the
-     right end. */
+  /* Name first, portrait to its right. */
   .article-sign-author {
     display: flex;
     align-items: center;
@@ -1755,8 +1771,12 @@
     gap: var(--space-6);
   }
 
+  /* Flex column (not grid) so the signature's margin-top:auto can drop to the foot
+     of a stretched main column. On narrow screens the column is content-height, so
+     the auto margin collapses and the signature sits right under the body as before. */
   .article-main {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-5);
     min-width: 0;
   }
@@ -1861,15 +1881,21 @@
        sidebar shape), so neither edge carries a lopsided gutter. The main column
        is flexible (1fr) but the body inside it stays capped at the reading measure
        and flush-left. */
+    /* stretch (not start) so the main column grows to the row height when the rail
+       is the taller of the two; that gives the signature's margin-top:auto the room
+       to drop to the foot and align with the bottom of the rail. The rail itself
+       stays top-anchored (align-self:start) so its sticky behavior is preserved and
+       it is not stretched into a full-height block that cannot stick. */
     .article-shell {
       grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
-      align-items: start;
+      align-items: stretch;
       column-gap: var(--space-7);
     }
 
     .article-rail {
       position: sticky;
       top: var(--space-4);
+      align-self: start;
     }
 
     /* Flush-left prose that fills toward the rail. The extra specificity
@@ -2231,13 +2257,16 @@
     font-weight: 700;
   }
 
-  /* The published date: a small, right-aligned stamp just above the signature
-     (full article only; the portada cards rely on the day separators instead). */
+  /* The published date: a small right-aligned italic line under the subtitle in the
+     article header (full article only; the portada cards carry their own .card-date).
+     justify-self:end pins it to the right edge of the centered header block. */
   .article-date {
-    color: var(--color-muted);
-    font-family: var(--font-mono);
+    justify-self: end;
+    color: var(--color-subtle);
     font-size: var(--text-xs);
-    letter-spacing: 0.08em;
+    font-style: italic;
+    letter-spacing: 0.02em;
+    text-align: right;
   }
 
   /* The per-card date is redundant on listings (the day separators carry it). */
@@ -2326,48 +2355,19 @@
       overflow: hidden;
     }
 
-    /* The full-width lead is a feature card: the kicker and title run full width up
-       top; below them a two-column body puts the text on the LEFT (the dek, then the
-       summary, then the signature) and the image on the RIGHT. */
-    .card.lead-card {
-      display: block;
-    }
-    .lead-card .card-kicker {
-      justify-content: flex-start;
-    }
+    /* The full-width lead is a feature card: title, date, then a wide full-bleed
+       hero under them, then the dek and summary. The hero spans the whole card at a
+       wide banner ratio (never the old tall side column), so it reads wide-not-tall. */
     .lead-card .card-title {
       font-size: var(--text-2xl);
     }
-    .lead-card-body {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr);
-      gap: var(--space-5);
-      align-items: start;
-      margin-top: var(--space-3);
-    }
-    .lead-card.card-textonly .lead-card-body {
-      grid-template-columns: 1fr;
-    }
-    .lead-card-body .card-media {
-      margin: 0;
-      height: auto;
-      min-height: 0;
+    .lead-card .card-media {
+      aspect-ratio: 21 / 9;
     }
 
     .author-grid .article-item,
     .author-grid .article-item:first-child {
       grid-column: span 6;
-    }
-
-    .author-grid .article-item:first-child .card-has-media {
-      display: flex;
-      grid-template-columns: none;
-      gap: var(--space-3);
-    }
-
-    .author-grid .article-item:first-child .card-has-media .card-media {
-      height: auto;
-      min-height: 0;
     }
 
     .author-grid .article-item:first-child .card-title {

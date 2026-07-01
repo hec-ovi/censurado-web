@@ -91,13 +91,36 @@ describe("card summary (.card-description) + fill", () => {
     expect(textCard.querySelector("figure.card-media")).toBeNull();
     expect(imgCard.querySelector("figure.card-media")).toBeTruthy();
 
-    // The rebuilt card carries the AR-local signature stamp (UTC-3) from the entry's
-    // created time (cts), placed before the byline: cts 2026-06-08T09:00Z = 06:00 AR.
-    const stamp = textCard.querySelector(".card-meta .card-sign-date");
+    // The rebuilt card carries the AR-local date stamp (UTC-3) from the entry's
+    // created time (cts) in its own .card-date line (not in the signature row):
+    // cts 2026-06-08T09:00Z = 06:00 AR.
+    const stamp = textCard.querySelector(".card-date");
     expect(stamp.textContent).toBe("8 de junio de 2026, 06:00AM");
+    // The date is a body line, not a child of the signature row.
+    expect(textCard.querySelector(".card-meta .card-date")).toBeNull();
+    // The signature signs Name then portrait: byline before the author-avatar.
     const meta = textCard.querySelector(".card-meta");
-    expect([...meta.children].indexOf(stamp)).toBeLessThan(
-      [...meta.children].indexOf(meta.querySelector(".byline"))
+    expect([...meta.children].indexOf(meta.querySelector(".byline"))).toBeLessThan(
+      [...meta.children].indexOf(meta.querySelector(".author-avatar"))
+    );
+    // Source-order field layout: title, date, then dek (media sits between on image
+    // cards); the date precedes the subtitle in the DOM.
+    const body = textCard.querySelector(".card-body");
+    const kids = [...body.children];
+    expect(kids.indexOf(body.querySelector(".card-title"))).toBeLessThan(
+      kids.indexOf(body.querySelector(".card-date"))
+    );
+    expect(kids.indexOf(body.querySelector(".card-date"))).toBeLessThan(
+      kids.indexOf(body.querySelector(".card-subtitle"))
+    );
+    // Image card: the media figure sits between the date and the dek.
+    const imgBody = imgCard.querySelector(".card-body");
+    const imgKids = [...imgBody.children];
+    expect(imgKids.indexOf(imgBody.querySelector(".card-date"))).toBeLessThan(
+      imgKids.indexOf(imgBody.querySelector("figure.card-media"))
+    );
+    expect(imgKids.indexOf(imgBody.querySelector("figure.card-media"))).toBeLessThan(
+      imgKids.indexOf(imgBody.querySelector(".card-subtitle"))
     );
   });
 

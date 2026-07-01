@@ -7,6 +7,7 @@
 {{- if .Subtitle}}
 <p class="article-subtitle">{{.Subtitle}}</p>
 {{- end}}
+<time class="article-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
 <div class="article-meta">
 <p class="byline">Por <a class="author-link" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a> en <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a></p>
 </div>
@@ -21,10 +22,9 @@
 {{.BodyHTML}}
 </div>
 <footer class="article-sign">
-<time class="article-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
 <span class="article-sign-author">
-{{template "author_avatar" .}}
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>
+{{template "author_avatar" .}}
 </span>
 </footer>
 </div>

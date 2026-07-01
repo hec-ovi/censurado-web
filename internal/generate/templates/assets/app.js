@@ -160,9 +160,9 @@ function longStampES(entry) {
 }
 
 // articleItemFromEntry rebuilds the server card structure from a body-free shard
-// entry: optional hero <figure> only when the entry carries an image (no
-// placeholder box), a .card-body wrapping kicker/title/subtitle/signature, and
-// NO per-card topic list (topics filter via the data-topics attribute only). When
+// entry: a .card-body flex column in the server's field order (kicker, title, date,
+// optional hero <figure> only when the entry carries an image, dek, summary,
+// signature) and NO per-card topic list (topics filter via data-topics only). When
 // the image is a body video's YouTube poster (e.video true), the card gets the
 // card-has-video class and a .card-media-play badge, matching the server thumb.
 // The .article-item / .card-link / data-author / .author-link hooks are preserved
@@ -185,17 +185,8 @@ function articleItemFromEntry(e, helpers) {
     class: "card " + (hasImage ? "card-has-media" : "card-textonly") + (isVideo ? " card-has-video" : ""),
   });
 
-  if (hasImage) {
-    const figure = el("figure", { class: "card-media" });
-    if (isVideo) figure.setAttribute("aria-label", "Vídeo: " + (e.title || ""));
-    const img = el("img", { src: e.image, alt: e.title || "", loading: "lazy", decoding: "async" });
-    figure.appendChild(img);
-    if (isVideo) {
-      figure.appendChild(el("span", { class: "card-media-play", "aria-hidden": "true" }));
-    }
-    card.appendChild(figure);
-  }
-
+  // One flex column in the server's field order: kicker, title, date, media, dek,
+  // summary, signature. CSS reorders it to media-first on a stacked single column.
   const body = el("div", { class: "card-body" });
 
   const kicker = el("div", { class: "card-kicker" });
@@ -214,7 +205,25 @@ function articleItemFromEntry(e, helpers) {
   cardLink.textContent = e.title;
   h2.appendChild(cardLink);
 
-  body.append(kicker, h2);
+  const stampSec = e.cts || e.ts;
+  const signDate = el("time", {
+    class: "card-date",
+    datetime: stampSec ? new Date(stampSec * 1000).toISOString() : (e.published_at || ""),
+  });
+  signDate.textContent = longStampES(e);
+
+  body.append(kicker, h2, signDate);
+
+  if (hasImage) {
+    const figure = el("figure", { class: "card-media" });
+    if (isVideo) figure.setAttribute("aria-label", "Vídeo: " + (e.title || ""));
+    const img = el("img", { src: e.image, alt: e.title || "", loading: "lazy", decoding: "async" });
+    figure.appendChild(img);
+    if (isVideo) {
+      figure.appendChild(el("span", { class: "card-media-play", "aria-hidden": "true" }));
+    }
+    body.appendChild(figure);
+  }
 
   if (e.subtitle) {
     const sub = el("p", { class: "card-subtitle" });
@@ -231,7 +240,17 @@ function articleItemFromEntry(e, helpers) {
     body.appendChild(desc);
   }
 
+  // The signature signs Name then portrait (byline first, avatar to its right).
   const meta = el("div", { class: "card-meta" });
+  const byline = el("p", { class: "byline" });
+  const authorLink = el("a", {
+    class: "author-link",
+    href: facetURL("author", e.author),
+    "data-author": "",
+  });
+  authorLink.textContent = labelFor("author", e.author, e.author_label);
+  byline.appendChild(authorLink);
+
   const avatar = el("span", { class: "author-avatar", "aria-hidden": "true" });
   // Prefer the avatar carried by the shard entry (works for any author, even one
   // absent from the page's first batch); fall back to the DOM-derived map.
@@ -245,22 +264,7 @@ function articleItemFromEntry(e, helpers) {
     avatar.appendChild(fallback);
   }
 
-  const byline = el("p", { class: "byline" });
-  const authorLink = el("a", {
-    class: "author-link",
-    href: facetURL("author", e.author),
-    "data-author": "",
-  });
-  authorLink.textContent = labelFor("author", e.author, e.author_label);
-  byline.appendChild(authorLink);
-
-  const stampSec = e.cts || e.ts;
-  const signDate = el("time", {
-    class: "card-sign-date",
-    datetime: stampSec ? new Date(stampSec * 1000).toISOString() : (e.published_at || ""),
-  });
-  signDate.textContent = longStampES(e);
-  meta.append(signDate, avatar, byline);
+  meta.append(byline, avatar);
   body.appendChild(meta);
 
   card.appendChild(body);

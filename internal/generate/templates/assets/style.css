@@ -976,7 +976,9 @@
     display: flex;
     align-items: center;
     gap: var(--space-5);
-    margin-block: var(--space-7) var(--space-5);
+    /* Symmetric block spacing: equal margin above and below so the separator sits
+       evenly between the day it closes and the day it opens (was top-heavy, 48/24). */
+    margin-block: var(--space-5);
     /* A full-width rule sits over the whole separator, with a gap before the
        flanked date row below it. */
     border-top: 1px solid var(--color-line);
@@ -1175,12 +1177,14 @@
   /* Portada titles are always a single full-width line; a too-long title is
      clipped with an ellipsis rather than wrapping. Titles are kept short at the
      source (the authored title is a <=5-word synthesis). */
-  /* Titles wrap across as many lines as they need, never truncated. */
+  /* Titles wrap across as many lines as they need, never truncated, and are
+     centered on the card (portada and lead alike). */
   .card-title {
     font-family: var(--font-display);
     font-size: var(--text-xl);
     font-weight: 930;
     line-height: 1.08;
+    text-align: center;
   }
 
   .card-link {
@@ -1730,16 +1734,12 @@
   }
 
   /* The author "signs" the foot of the piece: name then circled portrait, hard
-     against the right edge. margin-top:auto drops it to the very bottom of the main
-     column so it lines up with the foot of the rail beside it (the shell stretches
-     both columns to a common height on wide screens), instead of floating just under
-     a short body. */
+     against the right edge, right after the body. */
   .article-sign {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-3);
-    margin-top: auto;
     padding-top: var(--space-4);
     border-top: 2px solid var(--color-ink);
   }
@@ -1771,12 +1771,8 @@
     gap: var(--space-6);
   }
 
-  /* Flex column (not grid) so the signature's margin-top:auto can drop to the foot
-     of a stretched main column. On narrow screens the column is content-height, so
-     the auto margin collapses and the signature sits right under the body as before. */
   .article-main {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: var(--space-5);
     min-width: 0;
   }
@@ -1881,21 +1877,15 @@
        sidebar shape), so neither edge carries a lopsided gutter. The main column
        is flexible (1fr) but the body inside it stays capped at the reading measure
        and flush-left. */
-    /* stretch (not start) so the main column grows to the row height when the rail
-       is the taller of the two; that gives the signature's margin-top:auto the room
-       to drop to the foot and align with the bottom of the rail. The rail itself
-       stays top-anchored (align-self:start) so its sticky behavior is preserved and
-       it is not stretched into a full-height block that cannot stick. */
     .article-shell {
       grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
-      align-items: stretch;
+      align-items: start;
       column-gap: var(--space-7);
     }
 
     .article-rail {
       position: sticky;
       top: var(--space-4);
-      align-self: start;
     }
 
     /* Flush-left prose that fills toward the rail. The extra specificity

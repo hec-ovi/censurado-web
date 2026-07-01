@@ -1698,17 +1698,25 @@
     gap: var(--space-5);
   }
 
+  /* The header spans the full content width (like the hero) so the headline has the
+     whole measure to distribute across and wraps to as few lines as it needs. The
+     other header items keep their own narrow measures (subtitle, date) and stay
+     centered, so only the title takes advantage of the extra width. */
   .article-header {
     display: grid;
     justify-items: center;
     gap: var(--space-3);
-    max-width: 66rem;
+    max-width: 100%;
     margin-inline: auto;
     text-align: center;
   }
 
+  /* The article headline uses the full header width (up to the 66rem measure) rather
+     than a narrow 16ch column, so a title wraps to as few lines as it needs (one or
+     two) instead of being forced into three. It still wraps at the header edge, so
+     it never overflows the layout. */
   .article-title {
-    max-width: 16ch;
+    max-width: 100%;
   }
 
   /* Mobile: the full-article headline (--text-3xl ~3.55rem) reads too heavy on a
@@ -2254,9 +2262,13 @@
 
   /* The published date: a small right-aligned italic line under the subtitle in the
      article header (full article only; the portada cards carry their own .card-date).
-     justify-self:end pins it to the right edge of the centered header block. */
+     It sits in a centered column the width of the subtitle and right-aligns within it,
+     so it stays tied to the subtitle's right edge even though the header now spans the
+     full content width. */
   .article-date {
-    justify-self: end;
+    justify-self: center;
+    width: 100%;
+    max-width: 36rem;
     color: var(--color-subtle);
     font-size: var(--text-xs);
     font-style: italic;

@@ -30,10 +30,12 @@ whose bytes changed since the last run and records a purge manifest of exactly t
 URLs that changed, so a rebuild is incremental and a CDN invalidation is surgical.
 
 Page identity is content-addressed: an article's permalink carries an 8-hex prefix of
-its content hash, so published pages are immutable and safe to cache forever, while
-listing pages and shards carry a short TTL. The client-side refiner (in
-`internal/generate/templates/app.js`, tested under `web/`) fetches the JSON shards to
-filter by author, date, topic, and section without any backend call.
+its content hash, so a changed article is a new URL and permalinks never need purging.
+HTML and JSON are served `no-store`, and readers stay current through the app.js
+version-sentinel poll (see `internal/generate/templates/LIVE-REFRESH.md`), not through
+cache TTLs. The client-side refiner (in
+`internal/generate/templates/assets/app.js`, tested under `web/`) fetches the JSON shards to
+filter by author, date, and section without any backend call.
 
 There is no authors or topics table the generator depends on. The author pages
 (`/author/<slug>/`), the topic pages (`/topic/<slug>/`), and the Nosotros roster
@@ -51,7 +53,6 @@ page for an author or topic that has no published articles.
 - `internal/generate` and its embedded `templates/` (the generator + the public
   frontend: HTML, `style.css`, `app.js`, favicons, the four masthead clips).
 - `internal/purge` and `cmd/censurado/purge` (CDN cache invalidation).
-- `internal/cachepolicy` (the Cache-Control each generated URL should get).
 - `cmd/censurado/generate` (the generator binary: one-shot and `-watch`).
 - `web/` (the frontend's vitest suite for `app.js`).
 

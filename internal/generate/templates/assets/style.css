@@ -437,6 +437,27 @@
       var(--color-ink);
   }
 
+  /* Official YouTube channel link, pinned to the hero's bottom-right corner.
+     Absolutely positioned so it sits above the video/scanlines without touching the
+     centered brand, the menu, or the theme switcher. */
+  .masthead-youtube {
+    position: absolute;
+    right: var(--space-3);
+    bottom: var(--space-3);
+    z-index: 3;
+    display: inline-flex;
+    line-height: 0;
+    /* The icon is the official red badge + white triangle; the shadow lifts it off
+       whatever video frame is behind. */
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%));
+    transition: transform 0.18s ease;
+  }
+
+  .masthead-youtube:hover,
+  .masthead-youtube:focus-visible {
+    transform: scale(1.08);
+  }
+
   .masthead-media {
     position: absolute;
     inset: 0;
@@ -1267,8 +1288,9 @@
     color: var(--color-red);
   }
 
-  /* Compact byline/avatar treatment used in cards and article signatures. The
-     author profile and about roster use larger rectangular portraits below. */
+  /* Compact byline/avatar treatment used in cards and article signatures: a small
+     circular portrait with no ring. The author profile and about roster use larger
+     rectangular portraits below. */
   .author-avatar {
     --avatar-size: 1.7rem;
     display: inline-grid;
@@ -1278,7 +1300,6 @@
     height: var(--avatar-size);
     overflow: hidden;
     border-radius: 50%;
-    border: 1px solid var(--color-line-dark);
     background:
       linear-gradient(135deg, rgb(224 24 66 / 20%), transparent 52%),
       var(--color-page);
@@ -1727,8 +1748,10 @@
     }
   }
 
+  /* Full width, like the title, so the dek spans the header rather than a narrow
+     centered column. */
   .article-subtitle {
-    max-width: 36rem;
+    max-width: 100%;
     color: var(--color-muted);
     font-family: var(--font-display);
     font-size: var(--text-lg);
@@ -2262,13 +2285,12 @@
 
   /* The published date: a small right-aligned italic line under the subtitle in the
      article header (full article only; the portada cards carry their own .card-date).
-     It sits in a centered column the width of the subtitle and right-aligns within it,
-     so it stays tied to the subtitle's right edge even though the header now spans the
-     full content width. */
+     It spans the full header width like the title and subtitle and right-aligns
+     within it, so it stays tied to the title's right edge. */
   .article-date {
-    justify-self: center;
+    justify-self: stretch;
     width: 100%;
-    max-width: 36rem;
+    max-width: 100%;
     color: var(--color-subtle);
     font-size: var(--text-xs);
     font-style: italic;

@@ -221,6 +221,100 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	}
 }
 
+// cssRuleBody returns the declaration block for the first rule matching selector
+// (from the selector to its closing brace), so a test can assert on one rule
+// without matching stray occurrences of a property elsewhere in the sheet.
+func cssRuleBody(t *testing.T, css, selector string) string {
+	t.Helper()
+	i := strings.Index(css, selector)
+	if i < 0 {
+		t.Fatalf("CSS missing rule %q", selector)
+	}
+	j := strings.Index(css[i:], "}")
+	if j < 0 {
+		t.Fatalf("CSS rule %q is not closed", selector)
+	}
+	return css[i : i+j]
+}
+
+// The compact signature avatar is a plain circular portrait: circular on both the
+// card and the article signature, with no ring/border around the image.
+func TestSignatureAvatar_CircularNoBorder(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Pieza", Author: "ada", Section: "politics", Body: "Cuerpo.",
+		Published: date(2026, 6, 5),
+		Metadata:  map[string]any{"author_name": "Ada L.", "subtitle": "Dek."},
+	})
+	genInto(t, repo, out, nil)
+	listing := string(readArtifact(t, out, "latest/index.html"))
+	page := string(readArtifact(t, out, articlePath(a)))
+	css := string(readArtifact(t, out, "assets/style.css"))
+
+	// The avatar markup carries no beat data-section (the coloring idea was dropped).
+	if strings.Contains(listing, `class="author-avatar" data-section`) ||
+		strings.Contains(page, `class="author-avatar" data-section`) {
+		t.Errorf("signature avatar should not carry a data-section attribute")
+	}
+	// The avatar is circular with no ring/border around the image.
+	avatar := cssRuleBody(t, css, ".author-avatar {")
+	if !strings.Contains(avatar, "border-radius: 50%") {
+		t.Errorf("signature avatar should be circular: %q", avatar)
+	}
+	if strings.Contains(avatar, "border:") || strings.Contains(avatar, "border-right:") {
+		t.Errorf("signature avatar should have no border/ring: %q", avatar)
+	}
+	if strings.Contains(css, "--avatar-accent") {
+		t.Errorf("dropped avatar beat-color plumbing (--avatar-accent) should be gone")
+	}
+}
+
+// The article header's subtitle and date span the full header width like the title,
+// no longer capped in the old narrow 36rem column.
+func TestArticleHeader_FullWidthSubtitleDate(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	genInto(t, repo, out, nil)
+	css := string(readArtifact(t, out, "assets/style.css"))
+
+	if sub := cssRuleBody(t, css, ".article-subtitle {"); !strings.Contains(sub, "max-width: 100%;") {
+		t.Errorf("article-subtitle is not full width: %q", sub)
+	}
+	if d := cssRuleBody(t, css, ".article-date {"); !strings.Contains(d, "max-width: 100%;") {
+		t.Errorf("article-date is not full width: %q", d)
+	}
+	if strings.Contains(css, "36rem") {
+		t.Errorf("the old 36rem subtitle/date cap should be gone")
+	}
+}
+
+// The masthead carries the official YouTube channel link, pinned to the hero's
+// bottom-right corner and layered above the video via .masthead-youtube.
+func TestMasthead_YouTubeChannelLink(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{Title: "Hoy", Author: "ada", Section: "tech", Published: date(2026, 6, 5)})
+	genInto(t, repo, out, nil)
+	listing := string(readArtifact(t, out, "latest/index.html"))
+	css := string(readArtifact(t, out, "assets/style.css"))
+
+	if !strings.Contains(listing, `class="masthead-youtube" href="https://www.youtube.com/@elcensuradoweb"`) {
+		t.Errorf("masthead missing the official YouTube channel link")
+	}
+	if !strings.Contains(listing, `aria-label="Canal de YouTube de El Censurado Web"`) {
+		t.Errorf("YouTube link missing its accessible label")
+	}
+	// The mark uses the official YouTube red badge with a white play triangle.
+	if !strings.Contains(listing, `<path fill="#FF0000"`) || !strings.Contains(listing, `<path fill="#fff" d="M9.55 15.57`) {
+		t.Errorf("YouTube icon should be the official red badge with a white triangle")
+	}
+	rule := cssRuleBody(t, css, ".masthead-youtube {")
+	if !strings.Contains(rule, "position: absolute;") || !strings.Contains(rule, "bottom:") || !strings.Contains(rule, "right:") {
+		t.Errorf("YouTube link not pinned to the hero corner: %q", rule)
+	}
+}
+
 // The listing "Recomendado" rail is clickable: each item is an <a> to a permalink.
 func TestListingRail_Clickable(t *testing.T) {
 	repo := newStore(t)

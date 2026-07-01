@@ -28,15 +28,16 @@ The client refiner and tests depend on these hooks:
 - Listing pages include `[data-facets]` and `[data-articles]`.
 - Each listing row is `.article-item` with `data-author`, `data-section`,
   `data-topics`, and `data-month`.
-- Card links use `.card-link`; author, section, topic, and time use
-  `.author-link`, `.section-link`, `.topic-link`, and `.published`.
+- Card links use `.card-link`; author, section, and time use
+  `.author-link`, `.section-link`, and `.published`.
 - Landing pages embed `#cnz-manifest`; sealed/deep pages link to
   `<link rel="manifest" href="/manifest/.../index.json">`.
 - Latest pages can be live-refreshed by `/assets/app.js`, which uses
   `/latest/version.json`, `/manifest/latest/index.json`, and the newest latest
   shard. The behavior and polling rules are specified in `LIVE-REFRESH.md`.
 - Article pages render sanitized Markdown through `.article-body`; raw author
-  HTML is never trusted.
+  HTML is never trusted. `.topic-link` lives on the article permalink topic list
+  only; listing topics ride the `data-topics` attribute on `.article-item`.
 
 New classes can be added freely, but these hooks must remain.
 
@@ -45,8 +46,8 @@ New classes can be added freely, but these hooks must remain.
 - `base.tmpl` owns the document shell and stable asset links.
 - `components/chrome.tmpl` owns masthead, navigation, and footer.
 - `components/article_card.tmpl` owns reusable listing cards, topic chips, and
-  author avatar fallback. Listing cards prefer `metadata.image` and otherwise
-  render a generic section art panel.
+  author avatar fallback. Listing cards render `metadata.image` when present and
+  otherwise fall back to a text-only card (`card-textonly`).
 - `components/media.tmpl` owns article lead media.
 - `listing.tmpl` composes the listing hero, article list, pager, months, and
   manifest. It keeps `[data-articles]` as a direct child of `[data-facets]`
@@ -72,8 +73,10 @@ Unsupported by design:
 - Arbitrary iframe providers.
 - `javascript:`, `data:`, protocol-relative, malformed, or relative media URLs
   that are not root-relative.
-- Listing-card thumbnails from shard JSON; the shard schema is body-free and
-  media-free on purpose.
+- Rebuilding the article body from shard JSON; shards deliberately omit the body.
+  They do carry media hints (image URL, a video boolean, and author avatar) so
+  client-rebuilt listing cards match the server-rendered cards, including the play
+  badge over a body-video poster.
 
 ## Theming
 

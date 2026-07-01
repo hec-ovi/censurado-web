@@ -37,12 +37,10 @@ resolves.
 3. `internal/purge` + `cmd/censurado/purge` :: CDN cache invalidation. Parses the
    generator's `purge.json` and calls a vendor-neutral purge endpoint (dry run by
    default).
-4. `internal/cachepolicy` :: which `Cache-Control` each generated URL should get, a
-   serving-layer reference applied at the CDN.
-5. `cmd/censurado/generate` :: the generator binary. One-shot, or `-watch` to stay
+4. `cmd/censurado/generate` :: the generator binary. One-shot, or `-watch` to stay
    resident and regenerate plus purge whenever the backend writes new content (this is
    the freshness worker that used to live in the publish service before the split).
-6. `web/` :: the vitest suite for `app.js`.
+5. `web/` :: the vitest suite for `app.js`.
 
 ## Contracts to honor
 
@@ -66,9 +64,10 @@ resolves.
 - Media rides the article `metadata` object (`image`, `image_alt`, `youtube`,
   `subtitle`, `description`); it never changes the article contract or the content
   hash.
-- The cache policy is a serving-layer contract (`internal/cachepolicy`); the generator
-  emits no HTTP headers on its files. The version sentinel is byte-stable so it returns
-  304 until content changes.
+- The cache policy is a serving-layer concern; the generator emits no HTTP headers on
+  its files. HTML and JSON are served `no-store` so readers always fetch fresh bytes.
+  The version sentinel is byte-stable, so its `v` only changes when the top of the site
+  changes.
 - The site has no reader search box by design; discovery is faceted chip filters over
   pre-built scope pages and the client-side shard refiner.
 - Never cap LLM or any output length anywhere; article bodies are never truncated.

@@ -21,6 +21,19 @@
 <div class="body article-body">
 {{.BodyHTML}}
 </div>
+<div class="reactions" data-reactions data-slug="{{.Slug}}" hidden>
+<p class="reactions-question">¿Qué te pareció esta nota?</p>
+<div class="reactions-buttons">
+<button type="button" class="reaction-btn" data-vote="up" aria-pressed="false" aria-label="Me gusta">
+<svg class="reaction-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 10h4v11H2zM8 21h9.4a3 3 0 0 0 2.9-2.2l1.6-6A2.5 2.5 0 0 0 19.5 10H14l.9-4.4a2.1 2.1 0 0 0-3.7-1.8L8 10z"/></svg>
+<span class="reaction-count" data-count="up">0</span>
+</button>
+<button type="button" class="reaction-btn" data-vote="down" aria-pressed="false" aria-label="No me gusta">
+<svg class="reaction-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M22 14h-4V3h4zM16 3H6.6a3 3 0 0 0-2.9 2.2l-1.6 6A2.5 2.5 0 0 0 4.5 14H10l-.9 4.4a2.1 2.1 0 0 0 3.7 1.8L16 14z"/></svg>
+<span class="reaction-count" data-count="down">0</span>
+</button>
+</div>
+</div>
 <footer class="article-sign">
 <span class="article-sign-author">
 <a class="author-link article-sign-name" href="{{.AuthorURL}}" rel="author" data-author>{{.AuthorLabel}}</a>

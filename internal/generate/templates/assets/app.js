@@ -172,7 +172,7 @@ function longStampES(entry) {
 }
 
 // articleItemFromEntry rebuilds the server card structure from a body-free shard
-// entry: a .card-body flex column in the server's field order (kicker, title, date,
+// entry: a .card-body flex column in the server's field order (kicker, date, title,
 // optional hero <figure> only when the entry carries an image, dek, summary,
 // signature) and NO per-card topic list (topics filter via data-topics only). When
 // the image is a body video's YouTube poster (e.video true), the card gets the
@@ -197,8 +197,8 @@ function articleItemFromEntry(e, helpers) {
     class: "card " + (hasImage ? "card-has-media" : "card-textonly") + (isVideo ? " card-has-video" : ""),
   });
 
-  // One flex column in the server's field order: kicker, title, date, media, dek,
-  // summary, signature. CSS reorders it to media-first on a stacked single column.
+  // One flex column in the server's field order: kicker, date, title, media, dek,
+  // summary, signature. On media cards CSS pulls the image between date and title.
   const body = el("div", { class: "card-body" });
 
   const kicker = el("div", { class: "card-kicker" });
@@ -224,7 +224,7 @@ function articleItemFromEntry(e, helpers) {
   });
   signDate.textContent = longStampES(e);
 
-  body.append(kicker, h2, signDate);
+  body.append(kicker, signDate, h2);
 
   if (hasImage) {
     const figure = el("figure", { class: "card-media" });
@@ -1703,6 +1703,68 @@ export function initCardFill(root = document) {
   return { fill: fillAll };
 }
 
+// Reactions: the like/dislike bar on the article permalink. The server renders
+// it [hidden]; this only unhides it after GET /api/reactions answers with JSON,
+// so on a local stack or a deploy without the D1 binding (404/503/HTML) the bar
+// simply never appears. One vote per article per IP, enforced server-side; a
+// click on the active button withdraws the vote ("none"). The count also lives
+// in each button's aria-label (the label overrides the button's content in the
+// accessible name, so without it screen readers would never hear the numbers).
+export async function initReactions(root = document) {
+  const bar = root.querySelector("[data-reactions]");
+  if (!bar) return;
+  const slug = bar.getAttribute("data-slug") || "";
+  if (!slug) return;
+  if (bar.dataset.reactionsBound) return; // guard: this init mutates server state
+  bar.dataset.reactionsBound = "1";
+  let state;
+  try {
+    const res = await fetch(`/api/reactions?slug=${encodeURIComponent(slug)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return;
+    state = await res.json();
+  } catch {
+    return;
+  }
+  const labels = { up: "Me gusta", down: "No me gusta" };
+  const buttons = [...bar.querySelectorAll("button[data-vote]")];
+  const paint = () => {
+    for (const btn of buttons) {
+      const kind = btn.getAttribute("data-vote");
+      const count = btn.querySelector("[data-count]");
+      if (count) count.textContent = String(state[kind] ?? 0);
+      btn.setAttribute("aria-pressed", state.vote === kind ? "true" : "false");
+      btn.setAttribute("aria-label", `${labels[kind]} (${state[kind] ?? 0})`);
+    }
+  };
+  paint();
+  bar.hidden = false;
+  let busy = false;
+  bar.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-vote]");
+    if (!btn || busy) return;
+    const kind = btn.getAttribute("data-vote");
+    const next = state.vote === kind ? "none" : kind;
+    busy = true;
+    try {
+      const res = await fetch("/api/reactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ slug, vote: next }),
+      });
+      if (res.ok) {
+        state = await res.json();
+        paint();
+      }
+    } catch {
+      /* transient network failure: keep the last painted state */
+    } finally {
+      busy = false;
+    }
+  });
+}
+
 // usually parsed; guard for the rare loading state. No-ops off a listing page.
 if (typeof document !== "undefined") {
   const boot = () => {
@@ -1713,6 +1775,7 @@ if (typeof document !== "undefined") {
     initTopicScroller(document);
     initAuthorMore(document);
     initCardFill(document);
+    initReactions(document);
     initRefine(document)
       .then(() => initTopicScroller(document))
       .finally(() => {

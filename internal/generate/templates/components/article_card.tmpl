@@ -13,9 +13,9 @@
 {{end}}
 
 {{/* card_inner is the body shared by the portada card and the full-width lead: one
-     flex column in a single source order (title, date, media, dek, summary,
-     signature). The desktop grid renders that order as-is; a stacked single column
-     reorders it to media-first with CSS `order` (see style.css). The signature signs
+     flex column in a single source order (date, title, media, dek, summary,
+     signature). The date always opens the card; on media cards CSS `order` pulls the
+     image between the date and the title (see style.css). The signature signs
      Name then portrait (name first, avatar to its right). */}}
 {{define "card_inner"}}
 {{- $video := or (eq .Thumb.Kind "youtube") (eq .Thumb.Kind "video") -}}
@@ -24,8 +24,8 @@
 <a class="section-link" href="{{.SectionURL}}" data-section>{{.Section}}</a>
 <time class="published" datetime="{{rfc3339 .PublishedAt}}">{{humandate .PublishedAt}}</time>
 </div>
-<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
 <time class="card-date" datetime="{{rfc3339 .CreatedAt}}">{{humanstampar .CreatedAt}}</time>
+<h2 class="card-title"><a class="card-link" href="{{.URL}}">{{.Title}}</a></h2>
 {{- if .Thumb.Src}}
 <figure class="card-media"{{if $video}} aria-label="Vídeo: {{.Thumb.Alt}}"{{end}}>
 <img src="{{.Thumb.Src}}" alt="{{.Thumb.Alt}}" loading="lazy" decoding="async">

@@ -103,20 +103,25 @@ describe("card summary (.card-description) + fill", () => {
     expect([...meta.children].indexOf(meta.querySelector(".byline"))).toBeLessThan(
       [...meta.children].indexOf(meta.querySelector(".author-avatar"))
     );
-    // Source-order field layout: title, date, then dek (media sits between on image
-    // cards); the date precedes the subtitle in the DOM.
+    // Source-order field layout: the date opens the card, then title, then dek
+    // (media sits between title and dek on image cards; CSS pulls it above the
+    // title visually).
     const body = textCard.querySelector(".card-body");
     const kids = [...body.children];
-    expect(kids.indexOf(body.querySelector(".card-title"))).toBeLessThan(
-      kids.indexOf(body.querySelector(".card-date"))
-    );
     expect(kids.indexOf(body.querySelector(".card-date"))).toBeLessThan(
+      kids.indexOf(body.querySelector(".card-title"))
+    );
+    expect(kids.indexOf(body.querySelector(".card-title"))).toBeLessThan(
       kids.indexOf(body.querySelector(".card-subtitle"))
     );
-    // Image card: the media figure sits between the date and the dek.
+    // Image card: date still first; the media figure sits between the title and
+    // the dek in the DOM.
     const imgBody = imgCard.querySelector(".card-body");
     const imgKids = [...imgBody.children];
     expect(imgKids.indexOf(imgBody.querySelector(".card-date"))).toBeLessThan(
+      imgKids.indexOf(imgBody.querySelector(".card-title"))
+    );
+    expect(imgKids.indexOf(imgBody.querySelector(".card-title"))).toBeLessThan(
       imgKids.indexOf(imgBody.querySelector("figure.card-media"))
     );
     expect(imgKids.indexOf(imgBody.querySelector("figure.card-media"))).toBeLessThan(

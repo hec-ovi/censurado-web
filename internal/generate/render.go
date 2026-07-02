@@ -178,6 +178,7 @@ type navLink struct{ Label, URL string }
 
 type articleView struct {
 	headData
+	Slug          string // backend slug, the key the reactions bar votes under (data-slug)
 	Subtitle      string // authored dek (metadata.subtitle); "" when absent
 	Standfirst    string // authored description/lede (metadata.description); "" when absent
 	AuthorLabel   string
@@ -449,6 +450,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			JSONLD:      ld,
 			NavLinks:    navLinksForArticle(a),
 		},
+		Slug:          a.Slug,
 		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
 		Standfirst:    firstMetadataString(a.Metadata, "description"),
 		AuthorLabel:   authorDisplayLabel(a),

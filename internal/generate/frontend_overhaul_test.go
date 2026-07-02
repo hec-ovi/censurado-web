@@ -85,6 +85,46 @@ func TestCard_SignatureStamp(t *testing.T) {
 	}
 }
 
+// Dates open every card: the .card-date stamp precedes the title in each card's
+// DOM (lead and regular alike), and the article view centers its date line.
+func TestDates_CardTopAndArticleCentered(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	// Two same-day articles: the first renders as the lead, the second as a
+	// regular text card, so both card shapes are covered.
+	seed(t, repo, seedSpec{Title: "Lider Del Dia", Author: "ada", Section: "tech",
+		Published: time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC),
+		Metadata:  map[string]any{"author_name": "Ada L.", "subtitle": "Dek uno."}})
+	seed(t, repo, seedSpec{Title: "Segunda Nota", Author: "lin", Section: "tech",
+		Published: time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC),
+		Metadata:  map[string]any{"author_name": "Lin X.", "subtitle": "Dek dos."}})
+	genInto(t, repo, out, nil)
+
+	listing := string(readArtifact(t, out, "latest/index.html"))
+	cards := strings.Split(listing, `<article class="card`)[1:]
+	if len(cards) < 2 {
+		t.Fatalf("want at least 2 cards on the listing, got %d", len(cards))
+	}
+	for i, c := range cards {
+		d, ti := strings.Index(c, `class="card-date"`), strings.Index(c, `class="card-title"`)
+		if d < 0 || ti < 0 || d > ti {
+			t.Errorf("card %d: date should precede the title: dateIdx=%d titleIdx=%d", i, d, ti)
+		}
+	}
+
+	// The article header's date line centers (like the title above it).
+	css := string(readArtifact(t, out, "assets/style.css"))
+	start := strings.Index(css, ".article-date {")
+	if start < 0 {
+		t.Fatalf("CSS missing the .article-date block")
+	}
+	block := css[start:]
+	block = block[:strings.Index(block, "}")]
+	if !strings.Contains(block, "text-align: center") {
+		t.Errorf(".article-date should be centered; block:\n%s", block)
+	}
+}
+
 // The article view's date carries the AR clock time too (long Spanish date, then
 // the AM/PM time), so the article page shows the time like the cards do.
 func TestArticlePage_DateHasTime(t *testing.T) {

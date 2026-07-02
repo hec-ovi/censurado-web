@@ -1105,16 +1105,13 @@
     min-height: 100%;
   }
 
-  /* A non-lead card that carries media leads with the date, then the image, then the
-     title, dek and summary (date -> image -> title -> subtitle -> summary). The DOM
-     stays title-first for semantics/SEO; CSS order does the visual reorder. Text-only
-     cards and the lead keep their source order (title -> date -> ...). */
+  /* The DOM is date-first on every card (date -> title -> media -> dek -> summary).
+     A non-lead card that carries media pulls the image between the date and the
+     title (date -> image -> title -> ...); the two negative orders sort before the
+     rest of the column, which keeps its source order at the default 0. Text-only
+     cards and the lead render the source order as-is. */
   .card:not(.lead-card).card-has-media .card-date { order: -2; }
   .card:not(.lead-card).card-has-media .card-media { order: -1; }
-  .card:not(.lead-card).card-has-media .card-title { order: 0; }
-  .card:not(.lead-card).card-has-media .card-subtitle { order: 1; }
-  .card:not(.lead-card).card-has-media .card-description { order: 2; }
-  .card:not(.lead-card).card-has-media .card-meta { order: 3; }
 
   .card-body {
     display: flex;
@@ -1287,8 +1284,8 @@
   }
 
   /* The visible per-card date stamp (Argentina-local, long Spanish date + AM/PM).
-     It now sits under the title/subtitle as a small right-aligned italic line
-     rather than a cell in the signature row. */
+     It opens the card: a small right-aligned italic line above the title (and above
+     the image on media cards), never a cell in the signature row. */
   .card-date {
     align-self: flex-end;
     color: var(--color-subtle);
@@ -1822,6 +1819,74 @@
     white-space: nowrap;
   }
 
+  /* Reactions: the like/dislike bar between the body and the signature. The
+     server renders it [hidden] and initReactions unhides it only once the API
+     answers, so a local stack (no /api/reactions) shows nothing at all. The
+     explicit [hidden] rule is required: the flex display below would otherwise
+     override the UA's display:none for the hidden attribute. */
+  .reactions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+  }
+
+  .reactions[hidden] {
+    display: none;
+  }
+
+  .reactions-question {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .reactions-buttons {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .reaction-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-line-dark);
+    border-radius: 999px;
+    background: var(--color-paper);
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .reaction-btn:hover {
+    border-color: var(--color-ink);
+    color: var(--color-ink);
+  }
+
+  .reaction-btn[aria-pressed="true"] {
+    border-color: var(--color-ink);
+    background: var(--color-ink);
+    color: var(--color-page);
+  }
+
+  .reaction-icon {
+    width: 1.05em;
+    height: 1.05em;
+    fill: currentColor;
+  }
+
+  .reaction-count {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
   /* Article permalink layout: the piece + a "Relacionados" grid in the main
      column, with "Recomendado" as a lateral rail on wide screens (stacked
      below on narrow). */
@@ -2306,10 +2371,10 @@
     font-weight: 700;
   }
 
-  /* The published date: a small right-aligned italic line under the subtitle in the
+  /* The published date: a small centered italic line under the subtitle in the
      article header (full article only; the portada cards carry their own .card-date).
-     It spans the full header width like the title and subtitle and right-aligns
-     within it, so it stays tied to the title's right edge. */
+     It spans the full header width like the title and subtitle and centers within
+     it, matching the centered title above. */
   .article-date {
     justify-self: stretch;
     width: 100%;
@@ -2318,7 +2383,7 @@
     font-size: var(--text-xs);
     font-style: italic;
     letter-spacing: 0.02em;
-    text-align: right;
+    text-align: center;
   }
 
   /* The per-card date is redundant on listings (the day separators carry it). */

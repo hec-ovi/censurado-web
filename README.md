@@ -75,6 +75,11 @@ npm test      # the frontend (vitest) suite
 Without `make`, run the `docker run ...` the Makefile wraps (it shows the exact mount
 layout).
 
+The container writes Go's module and build caches into repo-local `.gomodcache/` and
+`.gocache/` (both gitignored, a few hundred MB each). Treat `.gomodcache/` like a Go
+`node_modules`: it is vendored dependency code, not ours. Skip it when grepping, auditing,
+or counting tests; it is full of third-party `*_test.go` files that are not part of this repo.
+
 ## Generating the site
 
 One-shot, or `-watch` to stay resident and regenerate plus purge whenever the backend

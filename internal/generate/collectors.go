@@ -81,6 +81,7 @@ func collectors() []collector {
 	return []collector{
 		tierAPageCollector{},
 		aboutPageCollector{},
+		notFoundPageCollector{},
 		articleCollector{},
 		shardCollector{},
 		manifestCollector{},
@@ -214,6 +215,30 @@ func (aboutPageCollector) collect(ctx context.Context, env *buildEnv, out *Artif
 	return out.Add(Artifact{
 		Path:  "about/index.html",
 		URL:   "/about/",
+		Kind:  KindPage,
+		Bytes: b,
+	})
+}
+
+// notFoundPageCollector emits the site-root 404.html served for unknown routes.
+// Both serving layers pick it up by convention: local nginx via `error_page 404
+// /404.html` (harness nginx/site.conf) and Cloudflare Pages, which serves a root
+// 404.html for any not-found request (walking up the directory tree). Its bytes are
+// a pure constant (no dependence on the live corpus), so it stays byte-stable across
+// runs and never appears in a purge diff; it is emitted even for an empty corpus so
+// a fresh site still shows a styled 404. KindPage, alongside the other HTML pages.
+type notFoundPageCollector struct{}
+
+func (notFoundPageCollector) name() string { return "not-found-page" }
+
+func (notFoundPageCollector) collect(ctx context.Context, env *buildEnv, out *ArtifactSet) error {
+	b, err := renderNotFound(env)
+	if err != nil {
+		return err
+	}
+	return out.Add(Artifact{
+		Path:  "404.html",
+		URL:   "/404.html",
 		Kind:  KindPage,
 		Bytes: b,
 	})

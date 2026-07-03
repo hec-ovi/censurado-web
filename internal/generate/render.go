@@ -82,9 +82,10 @@ func facetDisplayLabel(f Facet) string {
 // defines "content". A single combined set is impossible because listing.tmpl and
 // article.tmpl both define "content" (and listing.tmpl also defines "headextra").
 var (
-	listingTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
-	articleTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
-	aboutTmpl   = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/about.tmpl", "templates/components/*.tmpl"))
+	listingTmpl  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
+	articleTmpl  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
+	aboutTmpl    = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/about.tmpl", "templates/components/*.tmpl"))
+	notFoundTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/notfound.tmpl", "templates/components/*.tmpl"))
 )
 
 // headData is the shared <head> model: the SEO/social meta plus the per-scope
@@ -413,6 +414,64 @@ func renderAbout(env *buildEnv) ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	if err := aboutTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// notFoundView is the model for the site-root 404 page. It reuses the site chrome
+// (header, nav, footer via base.tmpl) and carries a friendly Spanish message plus a
+// link back to the portada.
+type notFoundView struct {
+	headData
+	Heading   string
+	Message   []string
+	HomeURL   string
+	HomeLabel string
+}
+
+// The 404 copy and links are fixed constants: the page never depends on the live
+// corpus, so 404.html is byte-identical run to run (it never enters a purge diff)
+// and is emitted even for an empty corpus.
+const (
+	notFoundHeading     = "¡Ups! No encontramos esta página"
+	notFoundDescription = "La página que buscás no existe o se movió. Volvé a la portada para seguir leyendo."
+	notFoundHomeURL     = "/latest/"
+	notFoundHomeLabel   = "Volver a la portada"
+)
+
+var notFoundMessage = []string{
+	"La dirección que abriste no existe, cambió o quedó fuera de línea.",
+	"Puede que el enlace esté mal escrito o que la página se haya movido.",
+}
+
+// renderNotFound renders the /404.html page served for unknown routes. nginx serves
+// it via `error_page 404 /404.html` (harness nginx/site.conf) and Cloudflare Pages
+// serves the same root file by convention on the cloud deploy.
+func renderNotFound(env *buildEnv) ([]byte, error) {
+	canonical := absolute(env.siteBase, "/404.html")
+	ld, err := collectionJSONLD(notFoundHeading, canonical, notFoundDescription)
+	if err != nil {
+		return nil, err
+	}
+	view := notFoundView{
+		headData: headData{
+			Title:       notFoundHeading + " | " + env.siteName,
+			Canonical:   canonical,
+			Description: notFoundDescription,
+			SiteName:    env.siteName,
+			OGType:      "website",
+			TwitterCard: "summary",
+			JSONLD:      ld,
+			NavLinks:    navLinksForArticles(nil),
+		},
+		Heading:   notFoundHeading,
+		Message:   notFoundMessage,
+		HomeURL:   notFoundHomeURL,
+		HomeLabel: notFoundHomeLabel,
+	}
+	var buf bytes.Buffer
+	if err := notFoundTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

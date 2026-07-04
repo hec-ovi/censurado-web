@@ -50,6 +50,12 @@ type Index struct {
 	// a slug it REPLACES the uncapped union of every topic the author ever tagged; when
 	// absent the union (capped) is used. Empty is never stored, so presence == curated.
 	authorProfileTopics map[string][]string
+	// authorDeleted marks author slugs whose registry row is tombstoned (soft-deleted).
+	// A deleted author is dropped from the Nosotros roster (authorCards) but keeps their
+	// articles, their /author/<slug>/ page, and their bylines, so no link ever dangles.
+	// Populated from ListAuthors(includeDeleted=true); empty until an author is actually
+	// deleted, so output stays byte-identical for any store with no tombstones.
+	authorDeleted map[string]bool
 
 	// portadaOrd is each article's within-day render position and portadaRole its
 	// curated role ("" or "important"), both populated only for days a per-day plan
@@ -80,6 +86,7 @@ func newIndex(n int) *Index {
 		authorSection:       map[string]string{},
 		authorGender:        map[string]string{},
 		authorProfileTopics: map[string][]string{},
+		authorDeleted:       map[string]bool{},
 		portadaOrd:          map[string]int{},
 		portadaRole:         map[string]string{},
 		portadaRecomendado:  map[string][]string{},
@@ -297,13 +304,26 @@ func overlayPortada(ctx context.Context, idx *Index, repo store.Repository) erro
 // author/topic with no articles.
 func overlayRegistry(ctx context.Context, idx *Index, repo store.Repository) error {
 	if as, ok := repo.(store.AuthorStore); ok {
-		authors, err := as.ListAuthors(ctx, false)
+		// includeDeleted=true so tombstoned authors are visible here and can be
+		// recorded in authorDeleted (to drop them from the roster). This is a no-op
+		// for a store with no tombstones: the same rows come back, the a.Deleted
+		// branch never fires, and every artifact stays byte-identical.
+		authors, err := as.ListAuthors(ctx, true)
 		if err != nil {
 			return err
 		}
 		for _, a := range authors {
 			slug, ok := facetSlug(a.Handle)
 			if !ok {
+				continue
+			}
+			if a.Deleted {
+				// Tombstoned: record the slug so authorCards drops it from the Nosotros
+				// roster, then skip. No profile overlay and no empty-set injection,
+				// exactly as when ListAuthors(false) excluded it. The article-derived
+				// scope, the /author/<slug>/ page, and every byline stay intact, so no
+				// link dangles.
+				idx.authorDeleted[slug] = true
 				continue
 			}
 			if _, has := idx.authors[slug]; !has {

@@ -33,9 +33,12 @@ var assetFS embed.FS
 var argentinaZone = time.FixedZone("ART", -3*60*60)
 
 var templateFuncs = template.FuncMap{
-	"rfc3339":     func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"humandate":   func(t time.Time) string { return t.UTC().Format("2006-01-02") },
-	"humandatees": dayLabelES, // "28 de junio de 2026", matching the day separators
+	"rfc3339": func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+	// humandateart is the card kicker date ("2026-06-08") in Argentina local time
+	// (UTC-3), so it names the same day as the ART day separator above it. The
+	// companion datetime="" attr stays UTC (rfc3339), the machine/SEO instant.
+	"humandateart": func(t time.Time) string { return t.In(argentinaZone).Format("2006-01-02") },
+	"humandatees":  dayLabelES, // "28 de junio de 2026", matching the day separators
 	// humanstampar is the displayed signature stamp in Argentina local time:
 	// "29 de junio de 2026, 08:30PM" (long Spanish date, then AM/PM time). Used on
 	// cards and the article view, fed by CreatedAt (the real, unspoofable insert time).
@@ -369,6 +372,9 @@ func authorCards(env *buildEnv) []authorCardView {
 	idx := env.plan.Index
 	var out []authorCardView
 	for _, slug := range orderedAuthorSlugs(idx.authors) {
+		if idx.authorDeleted[slug] {
+			continue // tombstoned author: keep their articles/page/bylines, drop the roster card
+		}
 		card := authorCardView{
 			Name: idx.authorName[slug],
 			URL:  pageURL("author/"+slug, 0),
@@ -591,10 +597,12 @@ var monthsES = []string{
 	"julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 }
 
-// dayLabelES formats a published instant as "D de mes de YYYY" in UTC, the same
-// day bucket the client derives from the card's RFC3339 datetime attribute.
+// dayLabelES formats a published instant as "D de mes de YYYY" in Argentina local
+// time (UTC-3), so the day separator matches the reader's ART signature stamp
+// instead of UTC. The client derives the same ART day from the card's RFC3339
+// datetime attribute.
 func dayLabelES(t time.Time) string {
-	u := t.UTC()
+	u := t.In(argentinaZone)
 	return fmt.Sprintf("%d de %s de %d", u.Day(), monthsES[int(u.Month())-1], u.Year())
 }
 
@@ -607,12 +615,21 @@ func humanstampar(t time.Time) string {
 
 // markDaySeparators sets DaySeparator on the first item of each new published day
 // in a display-ordered (newest-first) item slice, skipping the first item so the
-// newest day carries no separator. Pure function of the slice, so a sealed page
-// stays byte-stable. It mutates in place (itemView elements are addressable).
+// newest day carries no separator. The day is keyed in Argentina local time (UTC-3)
+// so the separator matches the reader's ART card stamp. Pure function of the slice,
+// so a sealed page stays byte-stable. It mutates in place (itemView elements are
+// addressable).
+//
+// The key is PublishedAt (the display sort key), so across days it is monotonic and
+// the separators walk oldest-ward cleanly. Within one UTC day a per-day plan
+// (portada) may reorder cards out of instant order; only such a curated day that
+// also straddles 03:00Z (ART midnight) spans two ART days, in which case the
+// separators reflect that split. Uncurated days are always instant-monotonic and
+// unaffected.
 func markDaySeparators(items []itemView) {
 	lastDay := ""
 	for i := range items {
-		day := items[i].PublishedAt.UTC().Format("2006-01-02")
+		day := items[i].PublishedAt.In(argentinaZone).Format("2006-01-02")
 		if i > 0 && lastDay != "" && day != lastDay {
 			items[i].DaySeparator = dayLabelES(items[i].PublishedAt)
 		}

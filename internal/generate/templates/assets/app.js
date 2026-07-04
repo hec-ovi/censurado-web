@@ -209,7 +209,7 @@ function articleItemFromEntry(e, helpers) {
   });
   sectionLink.textContent = labelFor("section", e.section, e.section);
   const time = el("time", { class: "published", datetime: e.published_at });
-  time.textContent = (e.published_at || "").slice(0, 10);
+  time.textContent = artDayFromSec(e.ts); // ART day text; datetime attr stays UTC
   kicker.append(sectionLink, time);
 
   const h2 = el("h2", { class: "card-title" });
@@ -950,16 +950,28 @@ function formatDayES(isoDayStr) {
   return parseInt(m[3], 10) + " de " + month + " de " + m[1];
 }
 
-function isoDay(s) {
-  return (s || "").slice(0, 10);
+// artDayFromSec returns the "YYYY-MM-DD" of an instant in Argentina local time
+// (UTC-3, no DST) from epoch SECONDS. Integer shift + UTC field reads, so it is
+// timezone-stable under any test runtime, mirroring longStampES's stamp shift and
+// the server's dayLabelES / markDaySeparators ART day.
+function artDayFromSec(sec) {
+  if (!isFinite(sec)) return "";
+  const d = new Date((sec - 3 * 3600) * 1000);
+  const p2 = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
 }
 
-// cardDay reads the "YYYY-MM-DD" of an existing .article-item from its
-// <time class="published" datetime="..."> (server and client cards both carry it).
+// cardDay reads the Argentina-local "YYYY-MM-DD" of an existing .article-item from
+// its <time class="published" datetime="..."> machine instant. It reads ONLY the
+// datetime attr (a full RFC3339 with an explicit offset, so Date.parse is
+// runtime-stable), never the visible textContent: that text is already the ART day,
+// and a bare date would parse as UTC midnight and mis-shift. Matches the server's
+// ART day separator.
 function cardDay(li) {
   const t = li.querySelector("time.published");
-  const dt = (t && (t.getAttribute("datetime") || t.textContent)) || "";
-  return isoDay(dt);
+  const dt = (t && t.getAttribute("datetime")) || "";
+  if (!dt) return "";
+  return artDayFromSec(Math.floor(Date.parse(dt) / 1000));
 }
 
 class InfiniteScroll {
@@ -1193,7 +1205,7 @@ class InfiniteScroll {
     const h = this.helpers();
     let lastDay = this.lastCardDay();
     for (const e of entries) {
-      const day = isoDay(e.published_at);
+      const day = artDayFromSec(e.ts);
       let opensDay = false;
       if (day && day !== lastDay) {
         const sep = this.daySeparator(day);

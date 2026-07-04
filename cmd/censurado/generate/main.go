@@ -5,10 +5,9 @@
 //
 // With -watch it stays resident and re-runs the SAME idempotent generation on a
 // fixed interval, then invalidates exactly the URLs that changed (the generator's
-// purge.json) at the CDN. This is the freshness worker that used to live in-process
-// in the publish service before the backend/generator split: the backend now only
-// writes the database; this generator owns turning the database into the static
-// site and purging the CDN. Wipe OutDir when changing PageSize, BaseURL, or the
+// purge.json) at the CDN. The backend writes the database; this generator owns
+// turning the database into the static site and purging the CDN. Wipe OutDir when
+// changing PageSize, BaseURL, or the
 // shard caps for a fully clean tree: the fingerprint forces a rewrite and purges
 // orphaned URLs, but stray files untracked by prior state are not removed.
 package main

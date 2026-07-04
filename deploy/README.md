@@ -37,9 +37,8 @@ docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp \
 
 `-watch` keeps the generator resident and re-runs the same idempotent generation on
 a fixed interval (default 2s), then invalidates exactly the URLs that changed at the
-CDN. This replaces the in-process auto-regenerate the publish service used to do
-before the split: the backend now only writes the database; this generator turns the
-database into the static site and purges the CDN.
+CDN. The backend writes the database; this generator turns the database into the
+static site and purges the CDN.
 
 ```sh
 # ... same docker run as above, but append:

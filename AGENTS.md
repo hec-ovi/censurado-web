@@ -38,8 +38,7 @@ resolves.
    generator's `purge.json` and calls a vendor-neutral purge endpoint (dry run by
    default).
 4. `cmd/censurado/generate` :: the generator binary. One-shot, or `-watch` to stay
-   resident and regenerate plus purge whenever the backend writes new content (this is
-   the freshness worker that used to live in the publish service before the split).
+   resident and regenerate plus purge whenever the backend writes new content.
 5. `web/` :: the vitest suite for `app.js`.
 
 ## Contracts to honor
@@ -49,10 +48,10 @@ resolves.
   page manifest, live-refresh sentinel). Frozen so old pages and polling clients keep
   working.
 - `purge.json` (emitted to the state dir) :: the generate-to-purge handoff.
-- The content hash (`domain.ContentHash`, now in the backend) is the page-identity
-  and dedup key; an article's permalink carries an 8-hex prefix of it. Changing its
+- The content hash (`domain.ContentHash`, in the backend) is the page-identity and
+  dedup key; an article's permalink carries an 8-hex prefix of it. Changing its
   inputs is a cross-repo break (the brain ports it byte-for-byte). The publish payload
-  contract (`article.schema.json`) also lives in the backend now.
+  contract (`article.schema.json`) lives in the backend.
 
 ## Conventions and invariants
 

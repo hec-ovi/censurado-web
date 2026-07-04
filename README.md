@@ -6,18 +6,17 @@ pages, JSON shards for client-side filtering, feeds, sitemaps, and a CDN purge
 manifest. The public reading path is fully static, so nothing here runs when a reader
 loads the site; the generator runs at build time and a CDN serves the output.
 
-The system is four repos:
+The system is three code repos plus an image backend:
 
 - **censurado-web** (this): the generator + the public frontend (templates, CSS, JS).
 - **censurado-web-backend**: the publish API, the sqlite store (the source of truth
-  for the published articles), the JSON read API, and the operator admin. This repo
-  imports its public `domain`, `store`, `content`, and `media` libraries.
-- **censurado-web-brain**: the no-LLM newsroom config plane (personas, sources,
-  prompts) a CLI agent reads to write articles, which it publishes to the backend.
-  Author identity lives in the brain personas DB and is stamped into each article's
-  metadata at publish time.
-- **censurado-web-harness**: one Docker Compose that runs all of the above together
-  (plus ComfyUI), and carries the CLI publishing skill.
+  for the published articles and for authors, sources, topics, and the portada), the
+  JSON read API, and the operator admin panel. This repo imports its public `domain`,
+  `store`, `content`, and `media` libraries.
+- **censurado-web-brain**: the agentic layer (the CLI, the SKILL, and the editorial
+  prompts) a CLI agent walks to write and publish articles. It holds no data and runs
+  no model, and it carries the one Docker Compose that wires the whole stack together.
+- **comfyui-strix-docker**: ComfyUI on ROCm, the image backend for hero art.
 
 ## How it works
 

@@ -198,7 +198,7 @@ func TestEmitShards_GzipByteCap(t *testing.T) {
 }
 
 // S5
-func TestEmitShards_AdapterPrecision(t *testing.T) {
+func TestEmitShards_WholeSecondPrecision(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	// Two articles in the same wall-clock second, sub-second apart at ingress.

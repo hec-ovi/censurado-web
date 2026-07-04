@@ -87,7 +87,7 @@ func newIndex(n int) *Index {
 }
 
 // BuildIndex reads the whole corpus, truncates every PublishedAt/CreatedAt to
-// whole seconds for adapter-independent bytes, and sorts into canonical
+// whole seconds for deterministic bytes, and sorts into canonical
 // insertion order (CreatedAt ASC, id ASC) which is the append-only seal axis.
 func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 	raw, err := repo.Find(ctx, store.Filter{Order: store.OldestFirst})
@@ -393,7 +393,7 @@ func metaStringSlice(v any) []string {
 	return out
 }
 
-// idLess compares decimal id strings numerically; both adapters use integer PKs.
+// idLess compares decimal id strings numerically; the store uses integer PKs.
 // It falls back to a lexical compare when an id is unparseable (defensive only).
 func idLess(a, b string) bool {
 	ai, aerr := strconv.ParseInt(a, 10, 64)

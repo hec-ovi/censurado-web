@@ -21,7 +21,7 @@
 // yields byte-identical public artifacts and an empty purge) and incremental
 // (only changed artifacts are written, removed ones are deleted, and a purge
 // manifest lists every changed or removed public URL). PublishedAt and CreatedAt
-// are truncated to whole seconds when an article enters the index so SQLite
-// (RFC3339 text, second precision) and Postgres (sub-second timestamptz) produce
-// identical bytes and ordering for the same logical data.
+// are truncated to whole seconds when an article enters the index (SQLite stores
+// RFC3339 text at second precision), so the same logical data always produces
+// identical bytes and ordering.
 package generate

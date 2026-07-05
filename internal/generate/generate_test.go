@@ -324,14 +324,29 @@ func TestTempFileSwept(t *testing.T) {
 	seed(t, repo, seedSpec{Title: "Sweep Me", Author: "ada", Section: "tech", Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 
+	// A STALE orphan (from an interrupted earlier run) must be swept.
 	orphan := filepath.Join(out, "section", "tech", ".cnz-orphan")
 	if err := os.WriteFile(orphan, []byte("stale"), 0o644); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(orphan, old, old); err != nil {
+		t.Fatalf("age orphan: %v", err)
+	}
+	// A FRESH temp models the in-flight temp of a CONCURRENT pass (the watcher plus a
+	// manual one-shot on the same volume). Sweeping it is what caused the chmod ENOENT,
+	// so it must SURVIVE this sweep.
+	inflight := filepath.Join(out, "section", "tech", ".cnz-inflight")
+	if err := os.WriteFile(inflight, []byte("live"), 0o644); err != nil {
+		t.Fatalf("write inflight: %v", err)
+	}
 	genInto(t, repo, out, nil)
 
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Errorf(".cnz-orphan was not swept: %v", err)
+		t.Errorf(".cnz-orphan (stale) was not swept: %v", err)
+	}
+	if _, err := os.Stat(inflight); err != nil {
+		t.Errorf(".cnz-inflight (fresh, concurrent) was swept, reopening the chmod race: %v", err)
 	}
 	if !exists(out, "section/tech/index.html") {
 		t.Errorf("sweep removed a real artifact")

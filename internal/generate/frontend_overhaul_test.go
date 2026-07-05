@@ -530,8 +530,8 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 		Published: date(2026, 5, 31),
 		Metadata:  map[string]any{"author_name": "Bob Y.", "author_avatar": "/media/bob.png"},
 	})
-	// Cy publishes under "economics", which maps to "Misterio y conspiración"
-	// (the section's reader-facing label is remapped, the URL slug stays English).
+	// Cy publishes under the legacy "economics" slug, which is folded at load into
+	// the first-class section "misterio-y-conspiracion" (label "Misterio y conspiración").
 	seed(t, repo, seedSpec{
 		Title: "Pacto", Author: "cy", Section: "economics",
 		Published: date(2026, 5, 30),
@@ -551,8 +551,8 @@ func TestAutores_ThemedCardCarriesBeat(t *testing.T) {
 	if !strings.Contains(about, `<li class="author-card" data-section="literatura">`) {
 		t.Errorf("literatura author card missing data-section=literatura")
 	}
-	if !strings.Contains(about, `<li class="author-card" data-section="economics">`) {
-		t.Errorf("economics author card missing data-section=economics")
+	if !strings.Contains(about, `<li class="author-card" data-section="misterio-y-conspiracion">`) {
+		t.Errorf("author card missing data-section=misterio-y-conspiracion (legacy economics is folded into it)")
 	}
 	// The Spanish beat label renders beside the name.
 	if !strings.Contains(about, `<p class="author-card-beat">Política</p>`) {

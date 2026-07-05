@@ -50,27 +50,27 @@ func TestNav_FixedCuratedMenu(t *testing.T) {
 	}
 }
 
-// The fixed "Misterio y conspiración" entry must link to the topic page the
-// generator actually emits. The slug is derived by Slugifying the full label
-// ("misterio y conspiración" -> "misterio-y-conspiracion"); a hand-shortened
-// "misterio" pointed every page at a /topic/misterio/ page that is never built,
-// a site-wide dead link. This pins the link to a page that exists on disk.
-func TestNav_MisterioLinkResolvesToRealTopicPage(t *testing.T) {
+// The fixed "Misterio y conspiración" entry links to the first-class SECTION page
+// /section/misterio-y-conspiracion/. Legacy pieces stored under the old `economics`
+// slug are folded onto that same page (canonicalSectionSlug), so a single article
+// filed as `economics` both builds the page and proves the fold, and the old
+// same-named topic-facet split is gone.
+func TestNav_MisterioLinkResolvesToRealSectionPage(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	seed(t, repo, seedSpec{Title: "El expediente", Author: "cy", Section: "world", Topics: []string{"misterio y conspiración"}, Published: date(2026, 6, 2)})
+	seed(t, repo, seedSpec{Title: "El expediente", Author: "cy", Section: "economics", Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 
 	latest := string(readArtifact(t, out, "latest/index.html"))
-	if !strings.Contains(latest, `href="/topic/misterio-y-conspiracion/"`) {
-		t.Errorf("nav does not link Misterio y conspiración to its real topic page /topic/misterio-y-conspiracion/\n  got: %s", latest)
+	if !strings.Contains(latest, `href="/section/misterio-y-conspiracion/"`) {
+		t.Errorf("nav does not link Misterio y conspiración to its section page /section/misterio-y-conspiracion/\n  got: %s", latest)
 	}
-	if strings.Contains(latest, `href="/topic/misterio/"`) {
-		t.Errorf("nav still points at the dead /topic/misterio/ page")
+	if strings.Contains(latest, `/topic/misterio`) {
+		t.Errorf("nav still points at the old topic facet instead of the section page")
 	}
-	// The linked topic page must exist on disk (readArtifact fails if missing),
-	// so the nav link is never dead.
-	readArtifact(t, out, "topic/misterio-y-conspiracion/index.html")
+	// The folded section page must exist on disk (readArtifact fails if missing),
+	// so the nav link is never dead and the legacy `economics` piece lands here.
+	readArtifact(t, out, "section/misterio-y-conspiracion/index.html")
 }
 
 // The masthead and footer wordmarks are links back to the portada (/latest/),

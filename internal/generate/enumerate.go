@@ -104,6 +104,7 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 	for i := range raw {
 		raw[i].PublishedAt = raw[i].PublishedAt.UTC().Truncate(time.Second)
 		raw[i].CreatedAt = raw[i].CreatedAt.UTC().Truncate(time.Second)
+		raw[i].Section = canonicalSectionSlug(raw[i].Section)
 	}
 	sort.SliceStable(raw, func(a, b int) bool {
 		if !raw[a].CreatedAt.Equal(raw[b].CreatedAt) {

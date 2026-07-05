@@ -51,13 +51,28 @@ var templateFuncs = template.FuncMap{
 // listed here falls back to the stored, Title-cased label (Facet.labelOr). This
 // applies ONLY to section-axis facets, never to author or topic labels.
 var sectionLabelsES = map[string]string{
-	"tech":       "Tecnología",
-	"world":      "Mundo",
-	"politics":   "Política",
-	"economics":  "Misterio y conspiración",
-	"economy":    "Economía",
-	"crypto":     "Cripto",
-	"literatura": "Cultura y literatura",
+	"tech":                    "Tecnología",
+	"world":                   "Mundo",
+	"politics":                "Política",
+	"misterio-y-conspiracion": "Misterio y conspiración",
+	"economy":                 "Economía",
+	"crypto":                  "Cripto",
+	"literatura":              "Cultura y literatura",
+}
+
+// canonicalSectionSlug folds the legacy `economics` section into its first-class
+// name `misterio-y-conspiracion`. The section was historically STORED as
+// `economics` and only relabelled to "Misterio y conspiración" in Spanish at
+// render time, a confusing split from the same-named nav topic facet. New
+// articles file directly under `misterio-y-conspiracion`; folding the legacy
+// value at load keeps the handful of old `economics` pieces on the one canonical
+// section page instead of an orphaned duplicate. Section axis ONLY: an
+// `economics` TOPIC tag is a different thing and is left untouched.
+func canonicalSectionSlug(section string) string {
+	if section == "economics" {
+		return "misterio-y-conspiracion"
+	}
+	return section
 }
 
 // sectionDisplayLabel resolves a section facet's reader-facing label: the Spanish
@@ -578,17 +593,17 @@ func itemViewOf(a domain.Article) itemView {
 // ignored: the menu is identical on every page (landing, article, section,
 // About), which removes the previous reshuffle bug, where the entries and their
 // order were derived from the current page's articles and so changed as the
-// reader clicked around. Section items point at their facet pages; "Misterio y
-// conspiración" points at the topic facet the markets/conspiracy pieces carry.
-// The menu is intentionally fixed, so a category stays in the bar even on a page
-// that does not feature it.
+// reader clicked around. Every entry points at its section facet page, including
+// "Misterio y conspiración", the first-class section that the legacy `economics`
+// slug is folded into (canonicalSectionSlug). The menu is intentionally fixed, so
+// a category stays in the bar even on a page that does not feature it.
 func navLinksForArticles(_ []domain.Article) []navLink {
 	return []navLink{
 		{Label: "Lo último", URL: "/latest/"},
 		{Label: "Nosotros", URL: "/about/"},
 		{Label: "Política", URL: facetURL("section", "politics")},
 		{Label: "Internacionales", URL: facetURL("section", "world")},
-		{Label: "Misterio y conspiración", URL: facetURL("topic", "misterio y conspiración")},
+		{Label: "Misterio y conspiración", URL: facetURL("section", "misterio-y-conspiracion")},
 		{Label: "Tecnología", URL: facetURL("section", "tech")},
 		{Label: "Cultura y literatura", URL: facetURL("section", "literatura")},
 	}

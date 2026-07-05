@@ -315,7 +315,9 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 // every author with at least one article.
 type aboutView struct {
 	headData
+	Kicker  string
 	Heading string
+	Summary string
 	Intro   []string
 	Authors []authorCardView
 }
@@ -335,6 +337,10 @@ type authorCardView struct {
 const (
 	aboutHeading     = "Nosotros"
 	aboutDescription = "El primer portal de noticias plenamente sintético por IA: investigación, validación cruzada y voces especializadas sin una redacción humana tradicional."
+	// aboutKicker/aboutSummary give the /about/ hero the same three-part header the
+	// listing pages carry (eyebrow, heading, summary), e.g. "Portada / Lo último / ...".
+	aboutKicker  = "La redacción sintética"
+	aboutSummary = "Las voces, el método y las fuentes detrás de El Censurado Web."
 )
 
 var aboutManifesto = []string{
@@ -414,7 +420,9 @@ func renderAbout(env *buildEnv) ([]byte, error) {
 			JSONLD:      ld,
 			NavLinks:    navLinksForArticles(env.plan.Index.All),
 		},
+		Kicker:  aboutKicker,
 		Heading: aboutHeading,
+		Summary: aboutSummary,
 		Intro:   aboutManifesto,
 		Authors: authorCards(env),
 	}

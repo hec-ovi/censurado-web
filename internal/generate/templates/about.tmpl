@@ -1,6 +1,8 @@
 {{define "content"}}
 <header class="listing-hero">
+{{- if .Kicker}}<p class="eyebrow">{{.Kicker}}</p>{{end}}
 <h1 class="listing-heading">{{.Heading}}</h1>
+{{- if .Summary}}<p class="listing-summary">{{.Summary}}</p>{{end}}
 </header>
 <section class="about-manifesto" aria-label="Manifiesto">
 {{- range .Intro}}

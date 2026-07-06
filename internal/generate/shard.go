@@ -69,17 +69,13 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 	if !ok {
 		auth = a.ContentHash[:12]
 	}
-	// Mirror thumbForArticle: a real metadata.image wins; otherwise fall the card
-	// image back to the first body video's YouTube poster and flag Video so the
-	// client rebuilds the same play badge the server renders.
-	image := metadataMediaSrc("", a.Metadata, "image")
-	video := false
-	if image == "" {
-		if poster := firstBodyVideoPoster(a); poster != "" {
-			image = poster
-			video = true
-		}
-	}
+	// Reuse thumbForArticle so the client shard entry and the server-rendered
+	// listing card agree exactly: an authored metadata.card wins; else the legacy
+	// image / first-body-video-poster derivation. Video is the play-badge flag
+	// (a youtube or self-hosted video card), so the client rebuilds the same badge.
+	thumb := thumbForArticle(a)
+	image := thumb.Src
+	video := thumb.Kind == "youtube" || thumb.Kind == "video"
 	return ShardEntry{
 		Slug:        a.Slug,
 		URL:         articleURL(a),

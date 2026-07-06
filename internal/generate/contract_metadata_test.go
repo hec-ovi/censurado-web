@@ -16,7 +16,7 @@ import (
 // key is forward-compatible and does not trip it; deliberately dropping one means
 // updating CONTRACT.md and this list together.
 var frozenMetadataVocab = []string{
-	"subtitle", "description", "image", "image_alt", "alt",
+	"subtitle", "description", "card", "image", "image_alt", "alt",
 	"author_name", "author_bio", "author_avatar", "avatar",
 	"youtube", "youtube_id", "video", "keywords", "tweets", "media_checks",
 	"gender", "beat", "profile_topics",

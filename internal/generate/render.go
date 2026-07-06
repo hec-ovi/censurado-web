@@ -871,13 +871,62 @@ func articleRelated(idx *Index, self domain.Article, n int) []itemView {
 	return itemViewsOf(related, n)
 }
 
-// thumbForArticle picks a listing card's media. A real metadata.image always wins
-// (Kind:"image"). Otherwise, when the body's FIRST {{video:...}} marker is a
-// YouTube reference, the card borrows its poster as a thumbnail (Kind:"youtube",
-// so the card shows a play badge over the poster); the click still opens the
-// article where the real embed plays. A body with no image and no YouTube video
-// (or whose first video is a self-hosted .mp4) stays text-only.
+// cardThumb builds the listing card's media from an AUTHORED metadata.card block
+// (the explicit preview the writer chose). ok is false when the article authored no
+// usable card (no card object, or an unknown/blank type), so thumbForArticle falls
+// back to the legacy derivation below, which keeps every pre-card (sealed) page
+// byte-identical. The card decouples the preview from the body: it is the single
+// source of what the card shows, regardless of how many videos/images the body
+// embeds. type "text" -> no thumbnail; "image"/"video" -> the /media src as an
+// <img> (video adds the play badge, since an .mp4 has no auto thumbnail so src is a
+// poster still); "youtube" -> the YouTube poster + play badge.
+func cardThumb(a domain.Article) (mediaView, bool) {
+	c, isMap := a.Metadata["card"].(map[string]any)
+	if !isMap {
+		return mediaView{}, false
+	}
+	typ, _ := c["type"].(string)
+	typ = strings.TrimSpace(typ)
+	src, _ := c["src"].(string)
+	src = strings.TrimSpace(src)
+	alt, _ := c["alt"].(string)
+	if alt = strings.TrimSpace(alt); alt == "" {
+		alt = a.Title
+	}
+	switch typ {
+	case "text":
+		return mediaView{}, true
+	case "image", "video":
+		resolved, _ := media.SafeMediaURL("", src)
+		if resolved == "" {
+			return mediaView{}, true // authored but no usable src -> a text card
+		}
+		kind := "image"
+		if typ == "video" {
+			kind = "video"
+		}
+		return mediaView{Kind: kind, Src: resolved, Alt: alt}, true
+	case "youtube":
+		if embed := media.YouTubeEmbedURL(src); embed != "" {
+			id := strings.TrimPrefix(embed, "https://www.youtube-nocookie.com/embed/")
+			return mediaView{Kind: "youtube", Src: youtubePosterURL(id), Alt: alt}, true
+		}
+		return mediaView{}, true // an unparseable youtube ref -> a text card
+	}
+	return mediaView{}, false // no/unknown type -> legacy fallback
+}
+
+// thumbForArticle picks a listing card's media. An AUTHORED metadata.card wins
+// (cardThumb). Otherwise, for a legacy piece with no card block: a real
+// metadata.image wins (Kind:"image"); else, when the body's FIRST {{video:...}}
+// marker is a YouTube reference, the card borrows its poster as a thumbnail
+// (Kind:"youtube", so the card shows a play badge over the poster); the click still
+// opens the article where the real embed plays. A body with no image and no YouTube
+// video (or whose first video is a self-hosted .mp4) stays text-only.
 func thumbForArticle(a domain.Article) mediaView {
+	if v, ok := cardThumb(a); ok {
+		return v
+	}
 	if src := metadataMediaSrc("", a.Metadata, "image"); src != "" {
 		alt := firstMetadataString(a.Metadata, "image_alt", "alt")
 		if alt == "" {

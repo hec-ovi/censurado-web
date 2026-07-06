@@ -21,10 +21,11 @@ func railPermalinks(b []byte) []string {
 	return permalinkRe.FindAllString(string(m[1]), -1)
 }
 
-// TestListingRail_ExcludesPageGrid pins the requested fix: "Recomendado" must not
-// repeat the articles already shown in the page's own grid. The rail is drawn from
-// the scope's older articles (below this page's window), so the two sets are
-// disjoint and the rail is still populated.
+// TestListingRail_ExcludesPageGrid pins the requested fix on a SECTION front (the
+// front page now shows the global editor's-pick list instead): the computed
+// "Recomendado" rail must not repeat the articles already shown in the page's own
+// grid. The rail is drawn from the scope's older articles (below this page's window),
+// so the two sets are disjoint and the rail is still populated.
 func TestListingRail_ExcludesPageGrid(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
@@ -38,7 +39,7 @@ func TestListingRail_ExcludesPageGrid(t *testing.T) {
 	}
 	genInto(t, repo, out, func(o *Options) { o.PageSize = 4 })
 
-	page := readArtifact(t, out, "latest/index.html")
+	page := readArtifact(t, out, "section/tech/index.html")
 	grid := strSet(permalinksIn(page))
 	rail := railPermalinks(page)
 

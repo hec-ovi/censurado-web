@@ -376,12 +376,13 @@ func TestMasthead_YouTubeChannelLink(t *testing.T) {
 func TestListingRail_Clickable(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
-	// Seed more than one page so the landing's "Recomendado" rail has below-the-fold
-	// articles to show (the rail is now drawn from articles NOT on the page's grid).
-	seed(t, repo, seedSpec{Title: "Uno", Author: "ada", Section: "tech", Published: date(2026, 6, 1)})
-	seed(t, repo, seedSpec{Title: "Dos", Author: "ada", Section: "tech", Published: date(2026, 6, 2)})
+	// The front-page "Recomendado" rail is the site's global editor's-pick list; seed
+	// a few articles and curate some so the rail has clickable items to check.
+	one := seed(t, repo, seedSpec{Title: "Uno", Author: "ada", Section: "tech", Published: date(2026, 6, 1)})
+	two := seed(t, repo, seedSpec{Title: "Dos", Author: "ada", Section: "tech", Published: date(2026, 6, 2)})
 	seed(t, repo, seedSpec{Title: "Tres", Author: "ada", Section: "tech", Published: date(2026, 6, 3)})
 	seed(t, repo, seedSpec{Title: "Cuatro", Author: "ada", Section: "tech", Published: date(2026, 6, 4)})
+	setRecomendado(t, repo, []string{one.Slug, two.Slug})
 	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
 	listing := string(readArtifact(t, out, "latest/index.html"))
 

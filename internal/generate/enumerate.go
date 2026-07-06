@@ -60,11 +60,13 @@ type Index struct {
 	// portadaOrd is each article's within-day render position and portadaRole its
 	// curated role ("" or "important"), both populated only for days a per-day plan
 	// (PortadaStore) curates; the default 0/"" reproduces the newest-published-first
-	// order so uncurated output stays byte-identical. portadaRecomendado holds a
-	// curated day's "Recomendado" slugs for the front-page rail.
-	portadaOrd         map[string]int
-	portadaRole        map[string]string
-	portadaRecomendado map[string][]string
+	// order so uncurated output stays byte-identical.
+	portadaOrd  map[string]int
+	portadaRole map[string]string
+	// recomendado is the site's single GLOBAL editor's-pick slug list (RecomendadoStore),
+	// day-independent and persistent, rendered as the front-page "Recomendado" rail in
+	// stored order. Empty until an operator sets one.
+	recomendado []string
 }
 
 func newIndex(n int) *Index {
@@ -89,7 +91,6 @@ func newIndex(n int) *Index {
 		authorDeleted:       map[string]bool{},
 		portadaOrd:          map[string]int{},
 		portadaRole:         map[string]string{},
-		portadaRecomendado:  map[string][]string{},
 	}
 }
 
@@ -178,7 +179,35 @@ func BuildIndex(ctx context.Context, repo store.Repository) (*Index, error) {
 	if err := overlayPortada(ctx, idx, repo); err != nil {
 		return nil, err
 	}
+	if err := overlayRecomendado(ctx, idx, repo); err != nil {
+		return nil, err
+	}
 	return idx, nil
+}
+
+// overlayRecomendado loads the site's single GLOBAL "Recomendado" list
+// (RecomendadoStore) into the index for the front-page rail. It is day-independent:
+// the same list renders on the front page every day until an operator replaces it,
+// unlike the per-day portada order. Purely additive: a store without the registry,
+// or one with no list set, leaves idx.recomendado empty and the front-page rail
+// renders as an empty widget (the render layer still shows it so the layout holds).
+func overlayRecomendado(ctx context.Context, idx *Index, repo store.Repository) error {
+	rs, ok := repo.(store.RecomendadoStore)
+	if !ok {
+		return nil
+	}
+	slugs, err := rs.GetRecomendado(ctx)
+	if err != nil {
+		return err
+	}
+	rec := make([]string, 0, len(slugs))
+	for _, s := range slugs {
+		if s = strings.TrimSpace(s); s != "" {
+			rec = append(rec, s)
+		}
+	}
+	idx.recomendado = rec
+	return nil
 }
 
 // dayKey is an article's published-day bucket in UTC ("2006-01-02"), the same
@@ -211,8 +240,9 @@ func (idx *Index) portadaSort(arts []domain.Article) {
 // the default order. Each plan, keyed by published day, lists article slugs in the
 // wanted order with an optional role: the listed articles take positions 0..k-1
 // (position 0 is the day's lead), any same-day article absent from the plan follows
-// in default display order, and role "important" marks a full-row card. The day's
-// recomendado slugs are recorded for the front-page rail. Purely additive: a store
+// in default display order, and role "important" marks a full-row card. (The
+// front-page "Recomendado" rail is a separate GLOBAL list; see overlayRecomendado.)
+// Purely additive: a store
 // without the registry, or a corpus with no plans, leaves every ord at its default
 // 0, so the generator (and every sealed shard) is byte-identical until a plan is
 // written; a plan slug with no article published that day is ignored, so a plan
@@ -280,15 +310,6 @@ func overlayPortada(ctx context.Context, idx *Index, repo store.Repository) erro
 			idx.portadaOrd[a.ID] = pos
 			idx.portadaRole[a.ID] = ""
 			pos++
-		}
-		rec := make([]string, 0, len(plan.Recomendado))
-		for _, s := range plan.Recomendado {
-			if s = strings.TrimSpace(s); s != "" {
-				rec = append(rec, s)
-			}
-		}
-		if len(rec) > 0 {
-			idx.portadaRecomendado[plan.Date] = rec
 		}
 	}
 	return nil

@@ -135,6 +135,10 @@ type pageView struct {
 	Heading   string
 	Items     []itemView
 	Rail      []itemView
+	// ShowRail renders the "Recomendado" widget even when Rail is empty. The front
+	// page always shows it (so the two-column layout holds); other landings show it
+	// only when the computed rail has items.
+	ShowRail  bool
 	Pager     pagerView
 	Months    []monthLink
 	Manifest  template.HTML
@@ -291,16 +295,22 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		view.Items = authorLatestItems(env.plan.Index, sc, env.pageSize)
 	} else if pg.Landing {
 		// "Recomendado" lives only on the scope landing (the front page and the
-		// section/topic fronts), drawn from the articles BELOW this page's fold so
-		// it never repeats the grid the reader is already looking at. Sealed
-		// deep-pagination pages omit it on purpose: a live "below page" rail there
-		// would break the append-only byte-stability of older pages under a
-		// backdated insert. On the front page a curated plan can override this with
-		// its own recomendado list for the newest day.
-		if rail := curatedRail(env, sc, pg.Articles); rail != nil {
-			view.Rail = rail
+		// section/topic fronts). Sealed deep-pagination pages omit it on purpose: a
+		// live "below page" rail there would break the append-only byte-stability of
+		// older pages under a backdated insert.
+		if isLatest(sc) {
+			// The FRONT PAGE shows the site's single GLOBAL editor's-pick list: a
+			// fixed, day-independent, persistent list an operator curates (NOT the
+			// computed below-fold rail). The widget always renders here, even when the
+			// list is empty, so the two-column layout holds.
+			view.Rail = globalRail(env)
+			view.ShowRail = true
 		} else {
-			view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, 10)
+			// Section/topic/author fronts keep the computed below-fold rail, drawn from
+			// articles below this page's window so it never repeats the grid; shown
+			// only when it has items.
+			view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, recomendadoCap)
+			view.ShowRail = len(view.Rail) > 0
 		}
 	}
 	// Group the listing by published day with full-width separators (every scope,
@@ -689,30 +699,32 @@ func railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []ite
 	return itemViewsOf(below, n)
 }
 
-// curatedRail returns the "Recomendado" rail from the per-day plan's recomendado
-// list for the front page's newest day, in the operator's stored order. It applies
-// only to the Latest landing (the front page), and only when that day carries a
-// curated recomendado list; otherwise it returns nil so the caller falls back to
-// the computed below-page rail. A recomendado slug with no matching article is
-// skipped, so the rail never links a dead page.
-func curatedRail(env *buildEnv, sc Scope, pageArts []domain.Article) []itemView {
-	if !isLatest(sc) || len(pageArts) == 0 {
-		return nil
-	}
+// recomendadoCap bounds the front-page "Recomendado" rail (and the computed
+// below-fold rail on the other landings). It matches the backend's recomendadoMax.
+const recomendadoCap = 10
+
+// globalRail resolves the site's single GLOBAL "Recomendado" list (idx.recomendado)
+// to item views for the front-page rail, in the operator's stored order, skipping
+// any slug with no live article and capping at recomendadoCap. It is day-independent
+// and persistent: the same list renders on the front page every day until an
+// operator replaces it. Returns an empty slice when nothing is curated (the caller
+// still renders the widget so the layout holds).
+func globalRail(env *buildEnv) []itemView {
 	idx := env.plan.Index
-	// pageArts is portada-sorted, so [0] is the newest day's lead.
-	slugs := idx.portadaRecomendado[dayKey(pageArts[0])]
-	if len(slugs) == 0 {
+	if len(idx.recomendado) == 0 {
 		return nil
 	}
 	bySlug := make(map[string]domain.Article, len(idx.All))
 	for _, a := range idx.All {
 		bySlug[a.Slug] = a
 	}
-	var out []itemView
-	for _, s := range slugs {
+	out := make([]itemView, 0, len(idx.recomendado))
+	for _, s := range idx.recomendado {
 		if a, ok := bySlug[s]; ok {
 			out = append(out, itemViewOf(a))
+			if len(out) >= recomendadoCap {
+				break
+			}
 		}
 	}
 	return out

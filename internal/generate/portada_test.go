@@ -23,6 +23,19 @@ func upsertPortada(t *testing.T, repo store.Repository, p store.PortadaDay) {
 	}
 }
 
+// setRecomendado writes the site's single GLOBAL editor's-pick list via the
+// RecomendadoStore (the concrete *sqlite.Store implements it).
+func setRecomendado(t *testing.T, repo store.Repository, slugs []string) {
+	t.Helper()
+	rs, ok := repo.(store.RecomendadoStore)
+	if !ok {
+		t.Fatalf("repo does not implement store.RecomendadoStore")
+	}
+	if err := rs.SetRecomendado(context.Background(), slugs); err != nil {
+		t.Fatalf("SetRecomendado: %v", err)
+	}
+}
+
 // dayAt is a UTC publish instant on the given day at hour h, so same-day articles get a
 // deterministic newest-first default order.
 func dayAt(y, m, d, h int) time.Time {
@@ -167,20 +180,18 @@ func TestPortada_DefaultOrderUnchanged(t *testing.T) {
 	}
 }
 
-// TestPortada_RecomendadoOverridesRail proves the plan's recomendado list becomes the
-// front page's "Recomendado" rail, in the operator's stored order, dropping any slug
-// with no matching article.
-func TestPortada_RecomendadoOverridesRail(t *testing.T) {
+// TestRecomendado_GlobalListIsFrontPageRail proves the site's single GLOBAL
+// editor's-pick list becomes the front page's "Recomendado" rail, in the operator's
+// stored order, dropping any slug with no matching article (and never the auto
+// fallback). The list is day-independent, so it is not attached to any portada.
+func TestRecomendado_GlobalListIsFrontPageRail(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{Title: "Alfa", Author: "ada", Section: "politics", Published: dayAt(2026, 6, 10, 9)})
 	b := seed(t, repo, seedSpec{Title: "Beta", Author: "bob", Section: "world", Published: dayAt(2026, 6, 10, 10)})
 	c := seed(t, repo, seedSpec{Title: "Gamma", Author: "lin", Section: "tech", Published: dayAt(2026, 6, 10, 11)})
 
-	upsertPortada(t, repo, store.PortadaDay{
-		Date:        "2026-06-10",
-		Recomendado: []string{b.Slug, a.Slug, "no-such-slug"},
-	})
+	setRecomendado(t, repo, []string{b.Slug, a.Slug, "no-such-slug"})
 
 	genInto(t, repo, out, nil)
 
@@ -195,6 +206,24 @@ func TestPortada_RecomendadoOverridesRail(t *testing.T) {
 		t.Errorf("recomendado rail order wrong: B should precede A")
 	}
 	if strings.Contains(rail, articleURL(c)) {
-		t.Errorf("recomendado rail contains C, which was not recommended")
+		t.Errorf("recomendado rail contains C, which was not in the curated list")
+	}
+}
+
+// TestRecomendado_EmptyListStillRendersWidget proves the front-page "Recomendado"
+// widget renders even when no global list is set (empty, no auto fallback), so the
+// two-column layout holds. The <aside> is present with an empty ranked list.
+func TestRecomendado_EmptyListStillRendersWidget(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{Title: "Alfa", Author: "ada", Section: "politics", Published: dayAt(2026, 6, 10, 9)})
+	seed(t, repo, seedSpec{Title: "Beta", Author: "bob", Section: "world", Published: dayAt(2026, 6, 9, 10)})
+
+	genInto(t, repo, out, nil) // no recomendado set
+
+	page := string(readArtifact(t, out, "latest/index.html"))
+	rail := rankedRail(t, page) // fails if the <aside> is absent
+	if len(railPermalinks([]byte(rail))) != 0 {
+		t.Errorf("empty global list should render no rail items (no auto fallback), got: %s", rail)
 	}
 }

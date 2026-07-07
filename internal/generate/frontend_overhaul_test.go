@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -238,7 +239,6 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	css := string(readArtifact(t, out, "assets/style.css"))
 
 	for _, want := range []string{
-		`<p class="article-subtitle">El dek de la pieza.</p>`,
 		`<p class="article-standfirst">El standfirst que resume la pieza en una o dos frases.</p>`,
 		`<footer class="article-sign">`,
 		`class="author-link article-sign-name" href="/author/ada/" rel="author" data-author>Ada L.</a>`,
@@ -246,6 +246,10 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("article page missing %q", want)
 		}
+	}
+	// The subtitle (metadata.subtitle dek) is no longer rendered on the article page.
+	if strings.Contains(page, `class="article-subtitle"`) {
+		t.Errorf("article page should no longer render the subtitle")
 	}
 	// The footer signs Name then portrait: the name link precedes the author-avatar.
 	if n, av := strings.Index(page, `article-sign-name`), strings.Index(page, `class="author-avatar"`); n < 0 || av < 0 || n > av {
@@ -258,6 +262,65 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 		if !strings.Contains(css, want) {
 			t.Errorf("article standfirst CSS missing %q", want)
 		}
+	}
+}
+
+// The article page carries a share bar linking to the five networks, each sharing
+// the article's absolute canonical URL (URL-encoded). The old subtitle dek is gone.
+func TestArticlePage_ShareBar(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Pieza compartible", Author: "ada", Section: "politics", Body: "Cuerpo del artículo.",
+		Published: date(2026, 6, 5),
+		Metadata: map[string]any{
+			"author_name": "Ada L.",
+			"subtitle":    "El dek que ya no se muestra.",
+			"description": "El standfirst que sí se muestra.",
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+
+	// The share bar is a labelled nav.
+	if !strings.Contains(page, `<nav class="article-share" aria-label="Compartir">`) {
+		t.Fatalf("article page missing the share nav")
+	}
+
+	// The absolute canonical URL, URL-encoded, is the share target for every network.
+	canonical := absolute("https://news.example", articleURL(a))
+	encURL := url.QueryEscape(canonical)
+	for _, host := range []string{
+		"https://twitter.com/intent/tweet?text=",
+		"https://wa.me/?text=",
+		"https://t.me/share/url?url=",
+		"https://www.linkedin.com/sharing/share-offsite/?url=",
+		"https://www.facebook.com/sharer/sharer.php?u=",
+	} {
+		if !strings.Contains(page, host) {
+			t.Errorf("share bar missing network host %q", host)
+		}
+	}
+	if !strings.Contains(page, encURL) {
+		t.Errorf("share links do not carry the URL-encoded canonical %q", encURL)
+	}
+	// Every share link opens safely in a new tab.
+	if n := strings.Count(page, `rel="noopener noreferrer"`); n < 5 {
+		t.Errorf("expected 5 share links with rel=noopener noreferrer, found %d", n)
+	}
+	// Icon-only now: no per-network text labels and no "Compartir" label span.
+	if strings.Contains(page, "article-share-text") || strings.Contains(page, "article-share-label") {
+		t.Errorf("share bar should be icon-only (text labels removed)")
+	}
+	// Each link carries its network's brand class (the icon is tinted via CSS).
+	for _, cls := range []string{"share-x", "share-whatsapp", "share-telegram", "share-linkedin", "share-facebook"} {
+		if !strings.Contains(page, `article-share-link `+cls) {
+			t.Errorf("share bar missing brand class %q", cls)
+		}
+	}
+	// The subtitle dek is no longer rendered even though metadata.subtitle is set.
+	if strings.Contains(page, `class="article-subtitle"`) {
+		t.Errorf("article page should no longer render the subtitle")
 	}
 }
 
@@ -439,21 +502,81 @@ func TestArticleAuthorMoreRelated_UpToSelfStable(t *testing.T) {
 	}
 }
 
-// Topic labels render normalized (lowercase, no accents) regardless of how the
-// topic was stored, so "Análisis Político", "política" and "politica" all read
-// consistently.
-func TestTopicLabels_Normalized(t *testing.T) {
+// The article page no longer renders the topic chip list: topics were moved off
+// the permalink. Neither the chip list markup nor the raw accented/capitalized
+// topic label appears on the page.
+func TestArticlePage_TopicsHidden(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
 	a := seed(t, repo, seedSpec{Title: "Pieza", Author: "ada", Section: "world", Topics: []string{"Análisis Político"}, Published: date(2026, 6, 2)})
 	genInto(t, repo, out, nil)
 	page := string(readArtifact(t, out, articlePath(a)))
 
-	if !strings.Contains(page, `>analisis-politico</a>`) {
-		t.Errorf("topic label not normalized to slug form")
+	if strings.Contains(page, `class="topics"`) || strings.Contains(page, `class="topic-link"`) {
+		t.Errorf("article page should no longer render the topic chip list")
+	}
+	if strings.Contains(page, `>analisis-politico</a>`) {
+		t.Errorf("article page should no longer render the topic chip anchor")
 	}
 	if strings.Contains(page, "Análisis Político") {
 		t.Errorf("raw accented/capitalized topic label leaked into output")
+	}
+}
+
+// Every article card carries the same five-network share row, and each share link
+// targets the article's ABSOLUTE permalink (siteBase + /a/...), never a bare
+// relative path.
+func TestCard_ShareRow_AbsoluteURL(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	one := seed(t, repo, seedSpec{Title: "Uno", Author: "ada", Section: "tech", Published: date(2026, 6, 1),
+		Metadata: map[string]any{"author_name": "Ada L."}})
+	two := seed(t, repo, seedSpec{Title: "Dos", Author: "lin", Section: "world", Published: date(2026, 6, 2),
+		Metadata: map[string]any{"author_name": "Lin X."}})
+	genInto(t, repo, out, nil)
+	listing := string(readArtifact(t, out, "latest/index.html"))
+
+	hosts := []string{
+		"https://twitter.com/intent/tweet?text=",
+		"https://wa.me/?text=",
+		"https://t.me/share/url?url=",
+		"https://www.linkedin.com/sharing/share-offsite/?url=",
+		"https://www.facebook.com/sharer/sharer.php?u=",
+	}
+	cards := strings.Split(listing, `<article class="card`)[1:]
+	if len(cards) < 2 {
+		t.Fatalf("want at least 2 cards on the listing, got %d", len(cards))
+	}
+	for _, enc := range []string{
+		url.QueryEscape(absolute("https://news.example", articleURL(one))),
+		url.QueryEscape(absolute("https://news.example", articleURL(two))),
+	} {
+		var card string
+		for _, c := range cards {
+			if strings.Contains(c, enc) {
+				card = c
+				break
+			}
+		}
+		if card == "" {
+			t.Fatalf("no card carries the absolute share URL %q", enc)
+		}
+		if !strings.Contains(card, `class="card-share"`) {
+			t.Errorf("card missing the card-share row (enc=%q)", enc)
+		}
+		for _, h := range hosts {
+			if !strings.Contains(card, h) {
+				t.Errorf("card share row missing network host %q", h)
+			}
+		}
+		// The shared URL is absolute (encoded siteBase + /a/), not a bare /a/ path.
+		if !strings.Contains(card, url.QueryEscape("https://news.example/a/")) {
+			t.Errorf("card share URL is not absolute (enc=%q)", enc)
+		}
+	}
+	// No card share link points at a bare relative /a/ path.
+	if strings.Contains(listing, `url=%2Fa%2F`) || strings.Contains(listing, `u=%2Fa%2F`) {
+		t.Errorf("a card share link uses a bare relative /a/ URL instead of the absolute one")
 	}
 }
 

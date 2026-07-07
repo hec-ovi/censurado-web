@@ -1887,6 +1887,93 @@
     font-weight: 700;
   }
 
+  /* Share bar: an icon-only row of brand links between the body and the reactions.
+     Each link carries the article URL and title prefilled and is tinted with its
+     network brand color via the per-network share-* class (the SVG fills
+     currentColor). Inline SVG glyphs only, so the page stays self-contained. */
+  .article-share {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+  }
+
+  .article-share-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition:
+      transform var(--motion-fast) var(--ease-out),
+      opacity var(--motion-fast) var(--ease-out);
+  }
+
+  .article-share-link:hover,
+  .article-share-link:focus-visible {
+    transform: translateY(-1px) scale(1.12);
+    opacity: 0.82;
+  }
+
+  .article-share-icon {
+    width: 1.7em;
+    height: 1.7em;
+    fill: currentColor;
+  }
+
+  /* Brand tints, shared by the article bar and the per-card row (both put a share-*
+     class on the link and let the icon fill currentColor). The X mark uses the theme
+     ink so its black/white logo stays visible on both the paper and the dark surface;
+     the four bright colors read on both themes too. */
+  .share-x {
+    color: var(--color-ink);
+  }
+
+  .share-whatsapp {
+    color: #25d366;
+  }
+
+  .share-telegram {
+    color: #229ed9;
+  }
+
+  .share-linkedin {
+    color: #0a66c2;
+  }
+
+  .share-facebook {
+    color: #1877f2;
+  }
+
+  /* Compact per-card share row: smaller icons sitting at the foot of the card body's
+     flex column, under the signature, so they never disturb the card layout. */
+  .card-share {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+  }
+
+  .card-share-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: transform var(--motion-fast) var(--ease-out);
+  }
+
+  .card-share-link:hover,
+  .card-share-link:focus-visible {
+    transform: scale(1.15);
+  }
+
+  .card-share-icon {
+    width: 1.05em;
+    height: 1.05em;
+    fill: currentColor;
+  }
+
   /* Article permalink layout: the piece + a "Relacionados" grid in the main
      column, with "Recomendado" as a lateral rail on wide screens (stacked
      below on narrow). */

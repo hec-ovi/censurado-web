@@ -286,4 +286,51 @@ describe("initInfiniteScroll", () => {
     });
     expect(infinite.batchSize).toBe(6);
   });
+
+  test("scroll-loaded cards carry the server card-share row with absolute share URLs", async () => {
+    serveJSON({ [SHARD_URL]: STREAM });
+    mountLanding(2); // server shows the two newest; n3..n5 arrive via scroll
+    const infinite = await initInfiniteScroll(container, {
+      observe: () => {},
+      wait: () => Promise.resolve(),
+    });
+
+    await infinite.loadMore();
+
+    // A client-rebuilt card (n4, appended by scroll) carries a .card-share row.
+    const n4 = [...container.querySelectorAll("[data-articles] .article-item")].find((li) =>
+      li.querySelector('.card-link[href="/a/n4/"]')
+    );
+    const share = n4.querySelector(".card-share");
+    expect(share).not.toBeNull();
+
+    // All five brand links, matching the server card_inner classes.
+    for (const cls of ["share-x", "share-whatsapp", "share-telegram", "share-linkedin", "share-facebook"]) {
+      expect(share.querySelector(".card-share-link." + cls)).not.toBeNull();
+    }
+
+    // Every share href is ABSOLUTE (starts with http), never a bare /a/... permalink.
+    const hrefs = [...share.querySelectorAll(".card-share-link")].map((a) => a.getAttribute("href"));
+    expect(hrefs.length).toBe(5);
+    for (const href of hrefs) {
+      expect(href.startsWith("http")).toBe(true);
+      expect(href).not.toContain("=/a/"); // the share target is the canonical URL, not root-relative
+    }
+
+    // All five networks are present by host.
+    const joined = hrefs.join(" ");
+    expect(joined).toContain("twitter.com/intent");
+    expect(joined).toContain("wa.me");
+    expect(joined).toContain("t.me/share/url");
+    expect(joined).toContain("linkedin.com/sharing");
+    expect(joined).toContain("facebook.com/sharer");
+
+    // The share target is the article's absolute permalink (localhost origin in tests).
+    const abs = encodeURIComponent("http://localhost/a/n4/");
+    expect(share.querySelector(".share-facebook").getAttribute("href")).toBe(
+      "https://www.facebook.com/sharer/sharer.php?u=" + abs
+    );
+    // An inline SVG glyph rides in each link (SVG-namespaced, not innerHTML).
+    expect(share.querySelectorAll(".card-share-link .card-share-icon path").length).toBe(5);
+  });
 });

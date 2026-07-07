@@ -156,6 +156,7 @@ type itemView struct {
 	Subtitle      string // authored dek (metadata.subtitle); "" when absent
 	Description   string // authored standfirst (metadata.description); "" when absent
 	URL           string
+	Canonical     string // absolute permalink (siteBase + URL); the card share targets
 	AuthorLabel   string
 	AuthorURL     string
 	AuthorSlug    string // slug form, matching shard/server membership (data-author)
@@ -272,7 +273,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		view.PrevURL = absolute(env.siteBase, pg.Prev)
 	}
 	for _, a := range pg.Articles {
-		iv := itemViewOf(a)
+		iv := itemViewOf(env.siteBase, a)
 		iv.Important = env.plan.Index.portadaRole[a.ID] == "important"
 		view.Items = append(view.Items, iv)
 	}
@@ -292,7 +293,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
 			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}
-		view.Items = authorLatestItems(env.plan.Index, sc, env.pageSize)
+		view.Items = authorLatestItems(env.siteBase, env.plan.Index, sc, env.pageSize)
 	} else if pg.Landing {
 		// "Recomendado" lives only on the scope landing (the front page and the
 		// section/topic fronts). Sealed deep-pagination pages omit it on purpose: a
@@ -309,7 +310,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			// Section/topic/author fronts keep the computed below-fold rail, drawn from
 			// articles below this page's window so it never repeats the grid; shown
 			// only when it has items.
-			view.Rail = railBelowPage(env.plan.Index, sc, pg.Articles, recomendadoCap)
+			view.Rail = railBelowPage(env.siteBase, env.plan.Index, sc, pg.Articles, recomendadoCap)
 			view.ShowRail = len(view.Rail) > 0
 		}
 	}
@@ -564,8 +565,8 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		BodyHTML:      template.HTML(bodyHTML),
 		Media:         media.view,
 	}
-	view.AuthorMore = articleAuthorMore(env.plan.Index, a, 4)
-	view.Related = articleRelated(env.plan.Index, a, 4)
+	view.AuthorMore = articleAuthorMore(env.siteBase, env.plan.Index, a, 4)
+	view.Related = articleRelated(env.siteBase, env.plan.Index, a, 4)
 	var buf bytes.Buffer
 	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
@@ -573,7 +574,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func itemViewOf(a domain.Article) itemView {
+func itemViewOf(siteBase string, a domain.Article) itemView {
 	// Reuse the canonical shard projection for the slug-form data-* hooks so the
 	// client refiner's membership matches the server-rendered shards exactly.
 	se := ShardEntryOf(a)
@@ -582,6 +583,7 @@ func itemViewOf(a domain.Article) itemView {
 		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
 		Description:   firstMetadataString(a.Metadata, "description"),
 		URL:           articleURL(a),
+		Canonical:     absolute(siteBase, articleURL(a)),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
 		AuthorSlug:    se.Author,
@@ -676,7 +678,7 @@ func markDaySeparators(items []itemView) {
 // reader is already looking at (the requested fix), and it stays byte-stable,
 // because a later (newer) publish lands ABOVE the window and so can never enter a
 // sealed page's rail.
-func railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []itemView {
+func railBelowPage(siteBase string, idx *Index, sc Scope, pageArts []domain.Article, n int) []itemView {
 	if len(pageArts) == 0 {
 		return nil
 	}
@@ -696,7 +698,7 @@ func railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []ite
 			below = append(below, a)
 		}
 	}
-	return itemViewsOf(below, n)
+	return itemViewsOf(siteBase, below, n)
 }
 
 // recomendadoCap bounds the front-page "Recomendado" rail (and the computed
@@ -721,7 +723,7 @@ func globalRail(env *buildEnv) []itemView {
 	out := make([]itemView, 0, len(idx.recomendado))
 	for _, s := range idx.recomendado {
 		if a, ok := bySlug[s]; ok {
-			out = append(out, itemViewOf(a))
+			out = append(out, itemViewOf(env.siteBase, a))
 			if len(out) >= recomendadoCap {
 				break
 			}
@@ -748,21 +750,21 @@ func articlesUpToSelf(idx *Index, self domain.Article) []domain.Article {
 	return out
 }
 
-func itemViewsOf(arts []domain.Article, n int) []itemView {
+func itemViewsOf(siteBase string, arts []domain.Article, n int) []itemView {
 	if n > len(arts) {
 		n = len(arts)
 	}
 	out := make([]itemView, 0, n)
 	for _, a := range arts[:n] {
-		out = append(out, itemViewOf(a))
+		out = append(out, itemViewOf(siteBase, a))
 	}
 	return out
 }
 
-func authorLatestItems(idx *Index, sc Scope, n int) []itemView {
+func authorLatestItems(siteBase string, idx *Index, sc Scope, n int) []itemView {
 	arts := idx.articlesAt(idx.scopeIndices(sc))
 	sortDisplay(arts)
-	return itemViewsOf(arts, n)
+	return itemViewsOf(siteBase, arts, n)
 }
 
 // maxAuthorTopics bounds the auto-computed topic union on an author profile so a
@@ -839,20 +841,20 @@ func authorTopicLinks(idx *Index, authorSlug string) []topicLink {
 // same author's other articles, up to and excluding self (newest first).
 // Restricting to "up to self" keeps the permalink byte-stable when the author
 // publishes again later.
-func articleAuthorMore(idx *Index, self domain.Article, n int) []itemView {
+func articleAuthorMore(siteBase string, idx *Index, self domain.Article, n int) []itemView {
 	var same []domain.Article
 	for _, a := range articlesUpToSelf(idx, self) {
 		if a.Author == self.Author {
 			same = append(same, a)
 		}
 	}
-	return itemViewsOf(same, n)
+	return itemViewsOf(siteBase, same, n)
 }
 
 // articleRelated is the "Relacionados" block: articles up to self that share at
 // least one topic with self (falling back to the same section when none do),
 // newest first.
-func articleRelated(idx *Index, self domain.Article, n int) []itemView {
+func articleRelated(siteBase string, idx *Index, self domain.Article, n int) []itemView {
 	selfTopics := map[string]struct{}{}
 	for _, t := range self.Topics {
 		if s, ok := facetSlug(t); ok {
@@ -880,7 +882,7 @@ func articleRelated(idx *Index, self domain.Article, n int) []itemView {
 			}
 		}
 	}
-	return itemViewsOf(related, n)
+	return itemViewsOf(siteBase, related, n)
 }
 
 // cardThumb builds the listing card's media from an AUTHORED metadata.card block

@@ -2,16 +2,6 @@
 <span class="author-avatar" aria-hidden="true">{{if .AuthorAvatar}}<img src="{{.AuthorAvatar}}" alt="" loading="lazy" decoding="async">{{else}}<span>{{.AuthorInitial}}</span>{{end}}</span>
 {{end}}
 
-{{define "topic_list"}}
-{{- if .}}
-<ul class="topics" data-topics>
-{{- range .}}
-<li><a class="topic-link" href="{{.URL}}">{{.Label}}</a></li>
-{{- end}}
-</ul>
-{{- end}}
-{{end}}
-
 {{/* card_inner is the body shared by the portada card and the full-width lead: one
      flex column in a single source order (date, title, media, dek, summary,
      signature). The date always opens the card; on media cards CSS `order` pulls the

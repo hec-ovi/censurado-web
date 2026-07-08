@@ -61,8 +61,8 @@ resolves.
 - The generator only READS the store (the backend's publish service is the only
   writer; WAL mode lets them run together).
 - Media rides the article `metadata` object (`image`, `image_alt`, `youtube`,
-  `subtitle`, `description`); it never changes the article contract or the content
-  hash.
+  `image_caption`, `image_credit`, `description`); it never changes the article
+  contract or the content hash.
 - The cache policy is a serving-layer concern; the generator emits no HTTP headers on
   its files. HTML and JSON are served `no-store` so readers always fetch fresh bytes.
   The version sentinel is byte-stable, so its `v` only changes when the top of the site

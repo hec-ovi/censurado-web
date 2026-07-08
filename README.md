@@ -6,6 +6,8 @@ pages, JSON shards for client-side filtering, feeds, sitemaps, and a CDN purge
 manifest. The public reading path is fully static, so nothing here runs when a reader
 loads the site; the generator runs at build time and a CDN serves the output.
 
+Live at https://elcensuradoweb.com.
+
 The system is three code repos plus an image backend:
 
 - **censurado-web** (this): the generator + the public frontend (templates, CSS, JS).

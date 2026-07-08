@@ -95,7 +95,7 @@ describe("card summary (.card-description) + fill", () => {
     // created time (cts) in its own .card-date line (not in the signature row):
     // cts 2026-06-08T09:00Z = 06:00 AR.
     const stamp = textCard.querySelector(".card-date");
-    expect(stamp.textContent).toBe("8 de junio de 2026, 06:00AM");
+    expect(stamp.textContent).toBe("8 de junio de 2026, 06:00");
     // The date is a body line, not a child of the signature row.
     expect(textCard.querySelector(".card-meta .card-date")).toBeNull();
     // The signature signs Name then portrait: byline before the author-avatar.

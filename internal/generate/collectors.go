@@ -25,6 +25,7 @@ type buildEnv struct {
 	siteName   string
 	lang       string            // render language (ISO code); the frontend_text lang and the <html lang>
 	text       map[string]string // key -> value for lang, loaded once from frontend_text; nil until loadText
+	clientI18N template.HTML     // <script> injecting window.__CNZ_I18N__ for app.js; built once in loadText
 	plan       *Plan
 	bodyHTML   map[string]string     // ContentHash -> rendered body, rendered once
 	shardCache map[Scope]scopeShards // scope -> shard build, computed once per scope

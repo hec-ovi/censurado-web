@@ -2,6 +2,7 @@ package generate
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
 
 	"github.com/hec-ovi/censurado-web-backend/store"
@@ -51,16 +52,34 @@ func (env *buildEnv) lookup(key string) (string, bool) {
 // the "t" func closes over env and reads env.text at render time, so populating
 // the map here is enough.
 func (env *buildEnv) loadText(ctx context.Context, repo store.Repository) error {
-	ts, ok := repo.(store.TextStore)
-	if !ok {
-		return nil
+	if ts, ok := repo.(store.TextStore); ok {
+		m, err := ts.Text(ctx, store.ScopeFrontend, env.lang)
+		if err != nil {
+			return err
+		}
+		env.text = m
 	}
-	m, err := ts.Text(ctx, store.ScopeFrontend, env.lang)
-	if err != nil {
-		return err
-	}
-	env.text = m
+	// Build the client blob after env.text is populated, so it reflects DB overrides.
+	env.clientI18N = env.buildClientI18N()
 	return nil
+}
+
+// buildClientI18N returns the <script> that seeds window.__CNZ_I18N__ with the
+// resolved values of the client keys (see clientTextKeys), for app.js to read when
+// it rebuilds cards. It is a pure function of the run language, so it is identical
+// on every page and keeps sealed pages byte-stable. json.Marshal sorts the keys
+// (deterministic) and escapes <, >, & to \uXXXX, so a translated value can never
+// break out of the <script> element.
+func (env *buildEnv) buildClientI18N() template.HTML {
+	m := make(map[string]string, len(clientTextKeys))
+	for _, k := range clientTextKeys {
+		m[k] = env.T(k)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return template.HTML(`<script>window.__CNZ_I18N__=` + string(b) + `;</script>`)
 }
 
 // bindTemplates clones the parsed base templates and binds the language-aware "t"
@@ -68,7 +87,10 @@ func (env *buildEnv) loadText(ctx context.Context, repo store.Repository) error 
 // pass and a manual one-shot never race on the shared FuncMap. The bound "t"
 // closes over env, so it sees whatever env.text loadText later populates.
 func (env *buildEnv) bindTemplates() {
-	funcs := template.FuncMap{"t": env.T}
+	funcs := template.FuncMap{
+		"t":       env.T,
+		"cnzI18N": func() template.HTML { return env.clientI18N },
+	}
 	env.listingTmpl = template.Must(listingTmplBase.Clone()).Funcs(funcs)
 	env.articleTmpl = template.Must(articleTmplBase.Clone()).Funcs(funcs)
 	env.aboutTmpl = template.Must(aboutTmplBase.Clone()).Funcs(funcs)

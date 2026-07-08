@@ -2,6 +2,7 @@ package generate
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"regexp"
 	"strings"
@@ -190,5 +191,54 @@ func TestFrontendText_FeedDescriptionFollowsLanguage(t *testing.T) {
 	}
 	if strings.Contains(feed, "Latest articles from") {
 		t.Errorf("old hardcoded English feed description still present")
+	}
+}
+
+// Every page injects window.__CNZ_I18N__ with the resolved client keys, so app.js
+// rebuilds cards in the same language as the server. The blob is valid JSON, carries
+// DB overrides, and holds exactly the client subset (no server-only chrome leaks).
+func TestClientI18N_Injected(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+	seed(t, repo, seedSpec{Title: "Nota", Author: "ada", Section: "tech", Published: date(2026, 6, 3)})
+	seedFrontendText(t, repo, "es", map[string]string{"live.reload_cta": "Recargar"})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, "latest/index.html"))
+
+	const marker = "window.__CNZ_I18N__="
+	start := strings.Index(page, marker)
+	if start < 0 {
+		t.Fatalf("client i18n script not injected")
+	}
+	frag := page[start+len(marker):]
+	end := strings.Index(frag, ";</script>")
+	if end < 0 {
+		t.Fatalf("injected script not terminated as expected")
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(frag[:end]), &m); err != nil {
+		t.Fatalf("injected blob is not valid JSON: %v (%q)", err, frag[:end])
+	}
+	if m["live.reload_cta"] != "Recargar" {
+		t.Errorf("blob did not reflect the DB override: %q", m["live.reload_cta"])
+	}
+	if m["share.x_aria"] != "Compartir en X" {
+		t.Errorf("blob missing the compiled default for a client key: %q", m["share.x_aria"])
+	}
+	if len(m) != len(clientTextKeys) {
+		t.Errorf("blob has %d keys, want %d (the client subset)", len(m), len(clientTextKeys))
+	}
+	if _, leaked := m["footer.tagline"]; leaked {
+		t.Errorf("a server-only key leaked into the client blob")
+	}
+}
+
+// Every clientTextKeys entry is a real catalog key (a typo would inject "" and make
+// app.js silently fall back), and the injected script is well-formed for both langs.
+func TestClientTextKeys_AllKnown(t *testing.T) {
+	for _, k := range clientTextKeys {
+		if _, ok := defaultText[k]; !ok {
+			t.Errorf("clientTextKeys references unknown catalog key %q", k)
+		}
 	}
 }

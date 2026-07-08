@@ -62,7 +62,7 @@ func TestCard_SubtitleSignature_NoPlaceholder(t *testing.T) {
 	}
 }
 
-// The card carries the AR-local date stamp (long Spanish date, then AM/PM time) fed
+// The card carries the AR-local date stamp (long Spanish date, then 24-hour time) fed
 // by CreatedAt, in its own .card-date line above the author signature.
 func TestCard_SignatureStamp(t *testing.T) {
 	repo := newStore(t)
@@ -76,7 +76,7 @@ func TestCard_SignatureStamp(t *testing.T) {
 	genInto(t, repo, out, nil)
 	listing := string(readArtifact(t, out, "latest/index.html"))
 
-	want := `<time class="card-date" datetime="2026-05-23T20:23:00Z">23 de mayo de 2026, 05:23PM</time>`
+	want := `<time class="card-date" datetime="2026-05-23T20:23:00Z">23 de mayo de 2026, 17:23</time>`
 	if !strings.Contains(listing, want) {
 		t.Errorf("card date stamp missing or wrong; want %q", want)
 	}
@@ -127,7 +127,7 @@ func TestDates_CardTopAndArticleCentered(t *testing.T) {
 }
 
 // The article view's date carries the AR clock time too (long Spanish date, then
-// the AM/PM time), so the article page shows the time like the cards do.
+// the 24-hour time), so the article page shows the time like the cards do.
 func TestArticlePage_DateHasTime(t *testing.T) {
 	repo := newStore(t)
 	out := t.TempDir()
@@ -143,8 +143,8 @@ func TestArticlePage_DateHasTime(t *testing.T) {
 	if !strings.Contains(page, `class="article-date"`) {
 		t.Fatalf("article page missing the article-date element")
 	}
-	if !strings.Contains(page, "05:23PM") {
-		t.Errorf("article date should include the AR clock time 05:23PM")
+	if !strings.Contains(page, "17:23") {
+		t.Errorf("article date should include the AR clock time 17:23 (24-hour)")
 	}
 	// The date now sits under the subtitle in the header, above the signature footer.
 	if d, s := strings.Index(page, `class="article-date"`), strings.Index(page, `class="article-sign"`); d < 0 || s < 0 || d > s {

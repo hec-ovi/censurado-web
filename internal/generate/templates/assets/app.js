@@ -20,10 +20,26 @@
 // shipped bytes are unit tested against DOM fragments, and also
 // auto-initializes on the real page.
 
+// Runtime UI strings: the generator injects window.__CNZ_I18N__ (the resolved
+// frontend_text values for the render language) into the page <head>, and T reads
+// it, falling back to the Spanish default baked in here when a key is missing (or
+// under the test runtime, where the blob is absent). So a card rebuilt on the client
+// reads the same language as the server-rendered cards.
+const I18N = (typeof window !== "undefined" && window.__CNZ_I18N__) || {};
+function T(key, fallback) {
+  const v = I18N[key];
+  return v === undefined || v === null ? fallback : v;
+}
+
 // "topic" is intentionally absent: the Tema filter bar is removed from the
 // listings (topics live on the author profile's own Temas nav instead).
 const FACET_TYPES = ["author", "section", "month"];
-const FACET_LABEL = { author: "Autor", section: "Sección", topic: "Tema", month: "Mes" };
+const FACET_LABEL = {
+  author: T("filter.facet_author", "Autor"),
+  section: T("filter.facet_section", "Sección"),
+  topic: T("filter.facet_topic", "Tema"),
+  month: T("filter.facet_month", "Mes"),
+};
 
 // absURL resolves a root-relative URL against the document base. Browsers do
 // this implicitly for fetch(); resolving explicitly also keeps the same code
@@ -157,18 +173,16 @@ function fallbackFacetURL(type, slug) {
 
 // longStampES renders a shard entry's CreatedAt (the real insert time, "cts") as
 // the per-card signature stamp in Argentina local time (UTC-3, no DST): "29 de
-// junio de 2026, 08:30PM" (long Spanish date, then AM/PM time). It mirrors the
-// server's humanstampar so server-rendered and client-rebuilt cards are identical.
+// junio de 2026, 20:30" (long Spanish date, then 24-hour time). It mirrors the
+// server's humanstampar so server-rendered and client-rebuilt cards are identical;
+// the 24-hour clock replaces the old English AM/PM that leaked into the stamp.
 function longStampES(entry) {
   const sec = entry.cts || entry.ts || (entry.published_at ? Math.floor(Date.parse(entry.published_at) / 1000) : NaN);
   if (!isFinite(sec)) return "";
   const d = new Date((sec - 3 * 3600) * 1000); // shift to UTC-3, then read UTC fields
-  let h = d.getUTCHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
   const p2 = (n) => String(n).padStart(2, "0");
   const month = MONTHS_ES[d.getUTCMonth()] || "";
-  return `${d.getUTCDate()} de ${month} de ${d.getUTCFullYear()}, ${p2(h)}:${p2(d.getUTCMinutes())}${ampm}`;
+  return `${d.getUTCDate()} de ${month} de ${d.getUTCFullYear()}, ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
 }
 
 // SHARE_NETWORKS mirrors the 5 brand links the server card_inner renders, in the
@@ -179,31 +193,31 @@ function longStampES(entry) {
 const SHARE_NETWORKS = [
   {
     cls: "share-x",
-    label: "Compartir en X",
+    label: T("share.x_aria", "Compartir en X"),
     path: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z",
     href: (t, u) => "https://twitter.com/intent/tweet?text=" + t + "&url=" + u,
   },
   {
     cls: "share-whatsapp",
-    label: "Compartir en WhatsApp",
+    label: T("share.whatsapp_aria", "Compartir en WhatsApp"),
     path: "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488",
     href: (t, u) => "https://wa.me/?text=" + t + "%20" + u,
   },
   {
     cls: "share-telegram",
-    label: "Compartir en Telegram",
+    label: T("share.telegram_aria", "Compartir en Telegram"),
     path: "M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z",
     href: (t, u) => "https://t.me/share/url?url=" + u + "&text=" + t,
   },
   {
     cls: "share-linkedin",
-    label: "Compartir en LinkedIn",
+    label: T("share.linkedin_aria", "Compartir en LinkedIn"),
     path: "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z",
     href: (t, u) => "https://www.linkedin.com/sharing/share-offsite/?url=" + u,
   },
   {
     cls: "share-facebook",
-    label: "Compartir en Facebook",
+    label: T("share.facebook_aria", "Compartir en Facebook"),
     path: "M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z",
     href: (t, u) => "https://www.facebook.com/sharer/sharer.php?u=" + u,
   },
@@ -300,7 +314,7 @@ function articleItemFromEntry(e, helpers) {
 
   if (hasImage) {
     const figure = el("figure", { class: "card-media" });
-    if (isVideo) figure.setAttribute("aria-label", "Vídeo: " + (e.title || ""));
+    if (isVideo) figure.setAttribute("aria-label", T("media.video_prefix", "Vídeo: %s").replace("%s", e.title || ""));
     const img = el("img", { src: e.image, alt: e.title || "", loading: "lazy", decoding: "async" });
     figure.appendChild(img);
     if (isVideo) {
@@ -492,7 +506,7 @@ class Refiner {
   // ahead of the article list. It never removes the server-rendered fallbacks.
   buildPanel() {
     const panel = el("div", { class: "facet-panel", role: "group" });
-    panel.setAttribute("aria-label", "Filtrar por faceta");
+    panel.setAttribute("aria-label", T("filter.group_aria", "Filtrar por faceta"));
 
     for (const type of FACET_TYPES) {
       const values = this.facetValues(type).filter((v) => this.facetURL(type, v));
@@ -528,7 +542,7 @@ class Refiner {
     }
 
     this.clearBtn = el("button", { type: "button", class: "facet-clear", hidden: "" });
-    this.clearBtn.textContent = "Quitar filtro";
+    this.clearBtn.textContent = T("filter.remove_chip", "Quitar filtro");
     this.clearBtn.addEventListener("click", () => this.clearFilter(true));
     panel.appendChild(this.clearBtn);
 
@@ -591,7 +605,7 @@ class Refiner {
       this.setPressed(null);
       this.activeFacet = null;
       this.showClear(true);
-      this.announce("Ningún artículo coincide con " + FACET_LABEL[type] + " " + value + ".");
+      this.announce(T("filter.announce_no_match_prefix", "Ningún artículo coincide con ") + FACET_LABEL[type] + " " + value + ".");
       this.focusHeading();
       return;
     }
@@ -601,10 +615,10 @@ class Refiner {
     this.showClear(true);
     if (push && href) this.pushState(href);
     this.announce(
-      "Mostrando " +
+      T("filter.announce_showing_prefix", "Mostrando ") +
         filtered.length +
-        (filtered.length === 1 ? " artículo" : " artículos") +
-        " de " +
+        (filtered.length === 1 ? T("filter.count_singular", " artículo") : T("filter.count_plural", " artículos")) +
+        T("filter.announce_of", " de ") +
         FACET_LABEL[type] +
         " " +
         value +
@@ -632,7 +646,7 @@ class Refiner {
     this.activeFacet = null;
     this.showClear(false);
     if (push) this.pushState(this.basePath);
-    this.announce("Filtro quitado. Mostrando todos los artículos.");
+    this.announce(T("filter.announce_cleared", "Filtro quitado. Mostrando todos los artículos."));
     this.focusHeading();
   }
 
@@ -656,7 +670,7 @@ class Refiner {
   renderEmpty(type, value) {
     const li = el("li", { class: "empty-state", role: "note" });
     li.textContent =
-      'Ningún artículo coincide con ' + FACET_LABEL[type] + ' "' + this.labelFor(type, value, value) + '".';
+      T("filter.announce_no_match_prefix", "Ningún artículo coincide con ") + FACET_LABEL[type] + ' "' + this.labelFor(type, value, value) + '".';
     this.list.replaceChildren(li);
     this.list.setAttribute("data-filtered", ""); // pause infinite scroll
   }
@@ -902,7 +916,7 @@ class LiveRefresh {
     this.reloadPending = false;
     this._ensureBanner();
     // A plain call to action, no count: the reader taps to pull in whatever is new.
-    this.banner.textContent = "Actualizar nuevos artículos";
+    this.banner.textContent = T("live.refresh_cta", "Actualizar nuevos artículos");
     this.banner.removeAttribute("hidden");
   }
 
@@ -914,7 +928,7 @@ class LiveRefresh {
     this.pendingSentinel = sentinel;
     this.reloadPending = true;
     this._ensureBanner();
-    this.banner.textContent = "Actualizar";
+    this.banner.textContent = T("live.reload_cta", "Actualizar");
     this.banner.removeAttribute("hidden");
   }
 
@@ -1167,7 +1181,7 @@ class InfiniteScroll {
     });
     const spinner = el("span", { class: "infinite-spinner", "aria-hidden": "true" });
     const loaderLabel = el("span", { class: "infinite-loader-label" });
-    loaderLabel.textContent = "Cargando";
+    loaderLabel.textContent = T("loading.infinite", "Cargando");
     this.loader.append(spinner, loaderLabel);
     this.sentinel = el("div", {
       class: "infinite-sentinel",
@@ -1588,7 +1602,7 @@ export function initCardVideos(root = document) {
     const iframe = doc.createElement("iframe");
     iframe.className = "card-media-embed";
     iframe.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0";
-    iframe.title = figure.getAttribute("aria-label") || "Vídeo";
+    iframe.title = figure.getAttribute("aria-label") || T("media.video_iframe_title", "Vídeo");
     iframe.setAttribute(
       "allow",
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -1624,8 +1638,8 @@ function enhanceScrollRow(row) {
   const wrap = doc.createElement("div");
   wrap.className = "scroll-row";
   row.parentNode.insertBefore(wrap, row);
-  const prev = arrowButton(doc, "‹", "Desplazar a la izquierda");
-  const next = arrowButton(doc, "›", "Desplazar a la derecha");
+  const prev = arrowButton(doc, "‹", T("rail.scroll_left_aria", "Desplazar a la izquierda"));
+  const next = arrowButton(doc, "›", T("rail.scroll_right_aria", "Desplazar a la derecha"));
   wrap.append(prev, row, next);
 
   const step = () => Math.max(140, Math.round(row.clientWidth * 0.7));
@@ -1817,7 +1831,7 @@ export async function initReactions(root = document) {
   } catch {
     return;
   }
-  const labels = { up: "Me gusta", down: "No me gusta" };
+  const labels = { up: T("reactions.like_aria", "Me gusta"), down: T("reactions.dislike_aria", "No me gusta") };
   const buttons = [...bar.querySelectorAll("button[data-vote]")];
   const paint = () => {
     for (const btn of buttons) {

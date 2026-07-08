@@ -47,6 +47,9 @@ var templateFuncs = template.FuncMap{
 	// time placeholder so the base templates compile; each run rebinds it to its own
 	// buildEnv.T (bindTemplates), so the real lookup is per-language.
 	"t": func(string) string { return "" },
+	// cnzI18N emits the window.__CNZ_I18N__ <script> app.js reads; a parse-time
+	// placeholder rebound per run to buildEnv's resolved blob.
+	"cnzI18N": func() template.HTML { return "" },
 }
 
 // canonicalSectionSlug folds the legacy `economics` section into its first-class
@@ -628,10 +631,12 @@ func dayLabelES(t time.Time) string {
 }
 
 // humanstampar is the displayed signature stamp in Argentina local time (UTC-3,
-// no DST): "29 de junio de 2026, 08:30PM" (long Spanish date, then AM/PM time).
+// no DST): "29 de junio de 2026, 20:30" (long Spanish date, then 24-hour time). The
+// 24-hour clock replaces the old English AM/PM; the client longStampES mirrors it
+// exactly so a scroll-appended card matches a sealed one.
 func humanstampar(t time.Time) string {
 	lt := t.In(argentinaZone)
-	return fmt.Sprintf("%d de %s de %d, %s", lt.Day(), monthsES[int(lt.Month())-1], lt.Year(), lt.Format("03:04PM"))
+	return fmt.Sprintf("%d de %s de %d, %s", lt.Day(), monthsES[int(lt.Month())-1], lt.Year(), lt.Format("15:04"))
 }
 
 // markDaySeparators sets DaySeparator on the first item of each new published day

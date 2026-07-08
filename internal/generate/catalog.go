@@ -143,6 +143,46 @@ var frontendSeed = []TextSeedEntry{
 	{"tweet.stat_bookmarks", "bookmarks", "guardados"},
 	{"tweet.stat_views", "views", "vistas"},
 	{"related.card_kicker", "View related article", "Ver artículo relacionado"},
+
+	// --- Client-only strings (app.js). The generator injects the resolved values
+	// for these keys as window.__CNZ_I18N__ (see clientTextKeys); app.js reads them
+	// with its hardcoded Spanish as the fallback, so a card rebuilt on the client
+	// (facet filter, live refresh, infinite scroll) reads the same language as the
+	// server-rendered cards. The share.*, reactions.*, and media.video_* keys above
+	// are shared with the server templates. ---
+	{"filter.facet_author", "Author", "Autor"},
+	{"filter.facet_section", "Section", "Sección"},
+	{"filter.facet_topic", "Topic", "Tema"},
+	{"filter.facet_month", "Month", "Mes"},
+	{"filter.group_aria", "Filter by facet", "Filtrar por faceta"},
+	{"filter.remove_chip", "Remove filter", "Quitar filtro"},
+	{"filter.announce_no_match_prefix", "No article matches ", "Ningún artículo coincide con "},
+	{"filter.announce_showing_prefix", "Showing ", "Mostrando "},
+	{"filter.count_singular", " article", " artículo"},
+	{"filter.count_plural", " articles", " artículos"},
+	{"filter.announce_of", " of ", " de "},
+	{"filter.announce_cleared", "Filter cleared. Showing all articles.", "Filtro quitado. Mostrando todos los artículos."},
+	{"live.refresh_cta", "Refresh new articles", "Actualizar nuevos artículos"},
+	{"live.reload_cta", "Refresh", "Actualizar"},
+	{"loading.infinite", "Loading", "Cargando"},
+	{"rail.scroll_left_aria", "Scroll left", "Desplazar a la izquierda"},
+	{"rail.scroll_right_aria", "Scroll right", "Desplazar a la derecha"},
+}
+
+// clientTextKeys are the catalog keys app.js reads at runtime, injected per page as
+// window.__CNZ_I18N__ (see buildEnv.clientI18N). It is a curated subset: the client
+// never needs the server-only chrome (footer, about, 404, feed titles, meta
+// descriptions), so the injected blob stays small.
+var clientTextKeys = []string{
+	"share.x_aria", "share.whatsapp_aria", "share.telegram_aria", "share.linkedin_aria", "share.facebook_aria",
+	"reactions.like_aria", "reactions.dislike_aria",
+	"media.video_prefix", "media.video_iframe_title",
+	"filter.facet_author", "filter.facet_section", "filter.facet_topic", "filter.facet_month",
+	"filter.group_aria", "filter.remove_chip",
+	"filter.announce_no_match_prefix", "filter.announce_showing_prefix",
+	"filter.count_singular", "filter.count_plural", "filter.announce_of", "filter.announce_cleared",
+	"live.refresh_cta", "live.reload_cta", "loading.infinite",
+	"rail.scroll_left_aria", "rail.scroll_right_aria",
 }
 
 // defaultText is the compiled render fallback: key -> Spanish value, the shipped

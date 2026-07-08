@@ -43,21 +43,10 @@ var templateFuncs = template.FuncMap{
 	// "29 de junio de 2026, 08:30PM" (long Spanish date, then AM/PM time). Used on
 	// cards and the article view, fed by CreatedAt (the real, unspoofable insert time).
 	"humanstampar": humanstampar,
-}
-
-// sectionLabelsES maps a section slug (the English URL slug discovered from
-// articles) to its Spanish display name. The URL slug stays English (e.g.
-// /section/tech/) while the heading and facet label render in Spanish. A slug not
-// listed here falls back to the stored, Title-cased label (Facet.labelOr). This
-// applies ONLY to section-axis facets, never to author or topic labels.
-var sectionLabelsES = map[string]string{
-	"tech":                    "Tecnología",
-	"world":                   "Mundo",
-	"politics":                "Política",
-	"misterio-y-conspiracion": "Misterio y conspiración",
-	"economy":                 "Economía",
-	"crypto":                  "Cripto",
-	"literatura":              "Cultura y literatura",
+	// t is the language-aware UI-string lookup. This package-level entry is a parse-
+	// time placeholder so the base templates compile; each run rebinds it to its own
+	// buildEnv.T (bindTemplates), so the real lookup is per-language.
+	"t": func(string) string { return "" },
 }
 
 // canonicalSectionSlug folds the legacy `economics` section into its first-class
@@ -75,23 +64,25 @@ func canonicalSectionSlug(section string) string {
 	return section
 }
 
-// sectionDisplayLabel resolves a section facet's reader-facing label: the Spanish
-// name when the slug is mapped, else the facet's stored label (Title-cased). It is
-// keyed on Facet.Value (the slug), so it depends only on the scope and stays
-// byte-stable on sealed pages.
-func sectionDisplayLabel(f Facet) string {
-	if es, ok := sectionLabelsES[f.Value]; ok {
-		return es
+// sectionLabel resolves a section facet's reader-facing label: the catalog value
+// (section.<slug>.label, from frontend_text or the compiled default) when the slug
+// is known, else the facet's stored label (Title-cased). It is keyed on Facet.Value
+// (the slug), so it depends only on the scope and the run language and stays
+// byte-stable on sealed pages. This is the ONE section-label source the nav, the
+// listing headings, the card kickers, and the shards all read.
+func (env *buildEnv) sectionLabel(f Facet) string {
+	if v, ok := env.lookup("section." + f.Value + ".label"); ok {
+		return v
 	}
 	return f.labelOr()
 }
 
-// facetDisplayLabel returns the reader-facing label for any facet, applying the
-// Spanish section map only on the section axis and leaving author/topic labels
-// (and month, which has no label) to the stored casing.
-func facetDisplayLabel(f Facet) string {
+// facetLabel returns the reader-facing label for any facet, applying the section
+// catalog only on the section axis and leaving author/topic labels (and month,
+// which has no label) to the stored casing.
+func (env *buildEnv) facetLabel(f Facet) string {
 	if f.Kind == AxisSection {
-		return sectionDisplayLabel(f)
+		return env.sectionLabel(f)
 	}
 	return f.labelOr()
 }
@@ -99,11 +90,14 @@ func facetDisplayLabel(f Facet) string {
 // Two parsed sets share base.tmpl; each pairs it with one content template that
 // defines "content". A single combined set is impossible because listing.tmpl and
 // article.tmpl both define "content" (and listing.tmpl also defines "headextra").
+// The four base trees are parsed once with a placeholder "t"; each run clones them
+// and binds its own language-aware "t" (buildEnv.bindTemplates), so rendering is
+// per-language while parsing stays one-time.
 var (
-	listingTmpl  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
-	articleTmpl  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
-	aboutTmpl    = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/about.tmpl", "templates/components/*.tmpl"))
-	notFoundTmpl = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/notfound.tmpl", "templates/components/*.tmpl"))
+	listingTmplBase  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/listing.tmpl", "templates/components/*.tmpl"))
+	articleTmplBase  = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/article.tmpl", "templates/components/*.tmpl"))
+	aboutTmplBase    = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/about.tmpl", "templates/components/*.tmpl"))
+	notFoundTmplBase = template.Must(template.New("").Funcs(templateFuncs).ParseFS(templateFS, "templates/base.tmpl", "templates/notfound.tmpl", "templates/components/*.tmpl"))
 )
 
 // headData is the shared <head> model: the SEO/social meta plus the per-scope
@@ -113,6 +107,7 @@ var (
 // base template reads .Title, .Canonical, etc. on either page kind.
 type headData struct {
 	Title       string        // <title> and og:title/twitter:title
+	Lang        string        // render language ISO code; the <html lang> attribute
 	Canonical   string        // absolute self URL; also og:url
 	Description string        // <meta name=description>, og/twitter description
 	Keywords    string        // <meta name=keywords>, "" when none (articles only)
@@ -245,10 +240,10 @@ type mediaView struct {
 // refiner reads the manifest from the landing, which is the scope entry point.
 func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, error) {
 	sc := pg.Scope
-	heading := scopeHeading(sc)
-	title := pageTitle(heading, env.siteName, pg)
+	heading := env.scopeHeading(sc)
+	title := env.pageTitle(heading, pg)
 	canonical := absolute(env.siteBase, pg.Canonical)
-	desc := scopeDescription(sc, env.siteName)
+	desc := env.scopeDescription(sc)
 	ld, err := collectionJSONLD(heading, canonical, desc)
 	if err != nil {
 		return nil, err
@@ -256,6 +251,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 	view := pageView{
 		headData: headData{
 			Title:       title,
+			Lang:        env.lang,
 			Canonical:   canonical,
 			Description: desc,
 			SiteName:    env.siteName,
@@ -264,7 +260,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			JSONLD:      ld,
 			// Pure function of the scope, so it is byte-stable on sealed pages.
 			ManifestURL: manifestURL(sc.ShardKey()),
-			NavLinks:    navLinksForArticles(pg.Articles),
+			NavLinks:    env.navLinks(),
 		},
 		IsLanding: pg.Landing,
 		Heading:   heading,
@@ -275,7 +271,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		view.PrevURL = absolute(env.siteBase, pg.Prev)
 	}
 	for _, a := range pg.Articles {
-		iv := itemViewOf(env.siteBase, a)
+		iv := env.itemViewOf(a)
 		iv.Important = env.plan.Index.portadaRole[a.ID] == "important"
 		view.Items = append(view.Items, iv)
 	}
@@ -295,7 +291,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 		if raw := env.plan.Index.authorAvatar[slug]; raw != "" {
 			view.AuthorAvatar, _ = media.SafeMediaURL(env.siteBase, raw)
 		}
-		view.Items = authorLatestItems(env.siteBase, env.plan.Index, sc, env.pageSize)
+		view.Items = env.authorLatestItems(env.plan.Index, sc, env.pageSize)
 	} else if pg.Landing {
 		// "Recomendado" lives only on the scope landing (the front page and the
 		// section/topic fronts). Sealed deep-pagination pages omit it on purpose: a
@@ -312,7 +308,7 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			// Section/topic/author fronts keep the computed below-fold rail, drawn from
 			// articles below this page's window so it never repeats the grid; shown
 			// only when it has items.
-			view.Rail = railBelowPage(env.siteBase, env.plan.Index, sc, pg.Articles, recomendadoCap)
+			view.Rail = env.railBelowPage(env.plan.Index, sc, pg.Articles, recomendadoCap)
 			view.ShowRail = len(view.Rail) > 0
 		}
 	}
@@ -328,12 +324,12 @@ func renderListing(env *buildEnv, pg Page, manifest template.HTML) ([]byte, erro
 			view.NextURL = absolute(env.siteBase, pg.Next)
 		}
 		if isLatest(sc) {
-			view.FeedLinks = feedLinksFor(env.siteBase, env.siteName)
+			view.FeedLinks = env.feedLinks()
 		}
 	}
 
 	var buf bytes.Buffer
-	if err := listingTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+	if err := env.listingTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -358,22 +354,6 @@ type authorCardView struct {
 	Bio         string
 	SectionSlug string // the author's beat slug, for the theme color (data-section)
 	Beat        string // Spanish beat label shown beside the name
-}
-
-// aboutHeading and aboutManifesto are the Spanish title and manifesto of the
-// /about/ page. The URL stays /about/.
-const (
-	aboutHeading     = "Nosotros"
-	aboutDescription = "El primer portal de noticias plenamente sintético por IA: investigación, validación cruzada y voces especializadas sin una redacción humana tradicional."
-	// aboutKicker/aboutSummary give the /about/ hero the same three-part header the
-	// listing pages carry (eyebrow, heading, summary), e.g. "Portada / Lo último / ...".
-	aboutKicker  = "La redacción sintética"
-	aboutSummary = "Las voces, el método y las fuentes detrás de El Censurado Web."
-)
-
-var aboutManifesto = []string{
-	"El Censurado Web es el primer portal de noticias plenamente sintético: artículos, firmas y análisis producidos por IA, sin una redacción humana escribiendo detrás.",
-	"Cuidamos la atención del lector con información concentrada y lectura por capas. Cada pieza cruza fuentes independientes, investiga en profundidad y atraviesa dos rondas de autorrevisión antes de publicarse; las personas sintéticas cubren diversos temas con voz propia.",
 }
 
 // orderedAuthorSlugs returns the author slugs present in the index in a
@@ -420,7 +400,7 @@ func authorCards(env *buildEnv) []authorCardView {
 		card.Initial = authorInitial(card.Name)
 		if sec := idx.authorSection[slug]; sec != "" {
 			card.SectionSlug = sec
-			card.Beat = sectionDisplayLabel(Facet{Kind: AxisSection, Value: sec})
+			card.Beat = env.sectionLabel(Facet{Kind: AxisSection, Value: sec})
 		}
 		if raw := idx.authorAvatar[slug]; raw != "" {
 			card.Avatar, _ = media.SafeMediaURL(env.siteBase, raw)
@@ -430,32 +410,37 @@ func authorCards(env *buildEnv) []authorCardView {
 	return out
 }
 
-// renderAbout renders the /about/ page listing every author.
+// renderAbout renders the /about/ page listing every author. Its copy (heading,
+// kicker, summary, two-paragraph manifesto, meta description) reads the catalog, so
+// the /about/ URL stays fixed while the text follows the run language.
 func renderAbout(env *buildEnv) ([]byte, error) {
 	canonical := absolute(env.siteBase, "/about/")
-	ld, err := collectionJSONLD(aboutHeading, canonical, aboutDescription)
+	heading := env.T("about.heading")
+	desc := env.T("about.meta_description")
+	ld, err := collectionJSONLD(heading, canonical, desc)
 	if err != nil {
 		return nil, err
 	}
 	view := aboutView{
 		headData: headData{
-			Title:       aboutHeading,
+			Title:       heading,
+			Lang:        env.lang,
 			Canonical:   canonical,
-			Description: aboutDescription,
+			Description: desc,
 			SiteName:    env.siteName,
 			OGType:      "website",
 			TwitterCard: "summary",
 			JSONLD:      ld,
-			NavLinks:    navLinksForArticles(env.plan.Index.All),
+			NavLinks:    env.navLinks(),
 		},
-		Kicker:  aboutKicker,
-		Heading: aboutHeading,
-		Summary: aboutSummary,
-		Intro:   aboutManifesto,
+		Kicker:  env.T("about.kicker"),
+		Heading: heading,
+		Summary: env.T("about.summary"),
+		Intro:   []string{env.T("about.manifesto_1"), env.T("about.manifesto_2")},
 		Authors: authorCards(env),
 	}
 	var buf bytes.Buffer
-	if err := aboutTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+	if err := env.aboutTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -472,48 +457,43 @@ type notFoundView struct {
 	HomeLabel string
 }
 
-// The 404 copy and links are fixed constants: the page never depends on the live
-// corpus, so 404.html is byte-identical run to run (it never enters a purge diff)
-// and is emitted even for an empty corpus.
-const (
-	notFoundHeading     = "¡Ups! No encontramos esta página"
-	notFoundDescription = "La página que buscás no existe o se movió. Volvé a la portada para seguir leyendo."
-	notFoundHomeURL     = "/latest/"
-	notFoundHomeLabel   = "Volver a la portada"
-)
-
-var notFoundMessage = []string{
-	"La dirección que abriste no existe, cambió o quedó fuera de línea.",
-	"Puede que el enlace esté mal escrito o que la página se haya movido.",
-}
+// notFoundHomeURL is the one fixed 404 datum: the link target back to the front
+// page. The copy (heading, message, CTA label, meta description) reads the catalog.
+// The page never depends on the live corpus, so for a given language 404.html is
+// byte-identical run to run (it never enters a purge diff) and is emitted even for
+// an empty corpus.
+const notFoundHomeURL = "/latest/"
 
 // renderNotFound renders the /404.html page served for unknown routes. nginx serves
 // it via `error_page 404 /404.html` (harness nginx/site.conf) and Cloudflare Pages
 // serves the same root file by convention on the cloud deploy.
 func renderNotFound(env *buildEnv) ([]byte, error) {
 	canonical := absolute(env.siteBase, "/404.html")
-	ld, err := collectionJSONLD(notFoundHeading, canonical, notFoundDescription)
+	heading := env.T("notfound.heading")
+	desc := env.T("notfound.meta_description")
+	ld, err := collectionJSONLD(heading, canonical, desc)
 	if err != nil {
 		return nil, err
 	}
 	view := notFoundView{
 		headData: headData{
-			Title:       notFoundHeading + " | " + env.siteName,
+			Title:       env.pageTitle(heading, Page{}),
+			Lang:        env.lang,
 			Canonical:   canonical,
-			Description: notFoundDescription,
+			Description: desc,
 			SiteName:    env.siteName,
 			OGType:      "website",
 			TwitterCard: "summary",
 			JSONLD:      ld,
-			NavLinks:    navLinksForArticles(nil),
+			NavLinks:    env.navLinks(),
 		},
-		Heading:   notFoundHeading,
-		Message:   notFoundMessage,
+		Heading:   heading,
+		Message:   []string{env.T("notfound.body_1"), env.T("notfound.body_2")},
 		HomeURL:   notFoundHomeURL,
-		HomeLabel: notFoundHomeLabel,
+		HomeLabel: env.T("notfound.home_cta"),
 	}
 	var buf bytes.Buffer
-	if err := notFoundTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+	if err := env.notFoundTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -524,7 +504,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 	canonical := absolute(env.siteBase, articleURL(a))
 	bodyHTML := env.bodyHTML[a.ContentHash]
 
-	media := mediaForArticle(env.siteBase, a)
+	media := env.mediaForArticle(a)
 	ogImage := media.ogImage
 	ogVideo := media.ogVideo
 	twitterCard := "summary"
@@ -540,6 +520,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 	view := articleView{
 		headData: headData{
 			Title:       a.Title,
+			Lang:        env.lang,
 			Canonical:   canonical,
 			Description: metaDescription(bodyHTML),
 			Keywords:    keywordsFor(a),
@@ -549,7 +530,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 			OGVideo:     ogVideo,
 			TwitterCard: twitterCard,
 			JSONLD:      ld,
-			NavLinks:    navLinksForArticle(a),
+			NavLinks:    env.navLinks(),
 		},
 		Slug:          a.Slug,
 		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
@@ -561,7 +542,7 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		AuthorSlug:    ShardEntryOf(a).Author,
 		AuthorInitial: authorInitial(authorDisplayLabel(a)),
 		AuthorAvatar:  metadataMediaSrc(env.siteBase, a.Metadata, "author_avatar", "avatar"),
-		Section:       sectionLabelOf(a),
+		Section:       env.sectionLabelOf(a),
 		SectionURL:    facetURL("section", a.Section),
 		Topics:        topicLinksOf(a),
 		PublishedAt:   a.PublishedAt,
@@ -569,16 +550,16 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		BodyHTML:      template.HTML(bodyHTML),
 		Media:         media.view,
 	}
-	view.AuthorMore = articleAuthorMore(env.siteBase, env.plan.Index, a, 4)
-	view.Related = articleRelated(env.siteBase, env.plan.Index, a, 4)
+	view.AuthorMore = env.articleAuthorMore(env.plan.Index, a, 4)
+	view.Related = env.articleRelated(env.plan.Index, a, 4)
 	var buf bytes.Buffer
-	if err := articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
+	if err := env.articleTmpl.ExecuteTemplate(&buf, "base", view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-func itemViewOf(siteBase string, a domain.Article) itemView {
+func (env *buildEnv) itemViewOf(a domain.Article) itemView {
 	// Reuse the canonical shard projection for the slug-form data-* hooks so the
 	// client refiner's membership matches the server-rendered shards exactly.
 	se := ShardEntryOf(a)
@@ -587,13 +568,13 @@ func itemViewOf(siteBase string, a domain.Article) itemView {
 		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
 		Description:   firstMetadataString(a.Metadata, "description"),
 		URL:           articleURL(a),
-		Canonical:     absolute(siteBase, articleURL(a)),
+		Canonical:     absolute(env.siteBase, articleURL(a)),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
 		AuthorSlug:    se.Author,
 		AuthorInitial: authorInitial(authorDisplayLabel(a)),
 		AuthorAvatar:  metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
-		Section:       sectionLabelOf(a),
+		Section:       env.sectionLabelOf(a),
 		SectionURL:    facetURL("section", a.Section),
 		SectionSlug:   se.Section,
 		Topics:        topicLinksOf(a),
@@ -605,28 +586,29 @@ func itemViewOf(siteBase string, a domain.Article) itemView {
 	}
 }
 
-// navLinksForArticles returns the fixed, curated top menu. The argument is
-// ignored: the menu is identical on every page (landing, article, section,
-// About), which removes the previous reshuffle bug, where the entries and their
-// order were derived from the current page's articles and so changed as the
-// reader clicked around. Every entry points at its section facet page, including
-// "Misterio y conspiración", the first-class section that the legacy `economics`
-// slug is folded into (canonicalSectionSlug). The menu is intentionally fixed, so
-// a category stays in the bar even on a page that does not feature it.
-func navLinksForArticles(_ []domain.Article) []navLink {
-	return []navLink{
-		{Label: "Lo último", URL: "/latest/"},
-		{Label: "Nosotros", URL: "/about/"},
-		{Label: "Política", URL: facetURL("section", "politics")},
-		{Label: "Internacionales", URL: facetURL("section", "world")},
-		{Label: "Misterio y conspiración", URL: facetURL("section", "misterio-y-conspiracion")},
-		{Label: "Tecnología", URL: facetURL("section", "tech")},
-		{Label: "Cultura y literatura", URL: facetURL("section", "literatura")},
+// navLinks returns the fixed, curated top menu. It is identical on every page
+// (landing, article, section, About), which removes the old reshuffle bug where
+// the entries and their order were derived from the current page's articles and so
+// changed as the reader clicked around. Every entry points at its section facet
+// page, including "Misterio y conspiración", the first-class section the legacy
+// `economics` slug folds into (canonicalSectionSlug). Labels read the ONE section
+// catalog (section.<slug>.label) plus nav.latest/nav.about, so the world entry now
+// reads the same "Mundo" as its heading instead of the old, divergent
+// "Internacionales". The menu is intentionally fixed, so a category stays in the
+// bar even on a page that does not feature it.
+func (env *buildEnv) navLinks() []navLink {
+	sec := func(slug string) navLink {
+		return navLink{Label: env.sectionLabel(Facet{Kind: AxisSection, Value: slug}), URL: facetURL("section", slug)}
 	}
-}
-
-func navLinksForArticle(a domain.Article) []navLink {
-	return navLinksForArticles([]domain.Article{a})
+	return []navLink{
+		{Label: env.T("nav.latest"), URL: "/latest/"},
+		{Label: env.T("nav.about"), URL: "/about/"},
+		sec("politics"),
+		sec("world"),
+		sec("misterio-y-conspiracion"),
+		sec("tech"),
+		sec("literatura"),
+	}
 }
 
 // monthsES are the Spanish month names, matching the client's formatDayES so a
@@ -682,7 +664,7 @@ func markDaySeparators(items []itemView) {
 // reader is already looking at (the requested fix), and it stays byte-stable,
 // because a later (newer) publish lands ABOVE the window and so can never enter a
 // sealed page's rail.
-func railBelowPage(siteBase string, idx *Index, sc Scope, pageArts []domain.Article, n int) []itemView {
+func (env *buildEnv) railBelowPage(idx *Index, sc Scope, pageArts []domain.Article, n int) []itemView {
 	if len(pageArts) == 0 {
 		return nil
 	}
@@ -702,7 +684,7 @@ func railBelowPage(siteBase string, idx *Index, sc Scope, pageArts []domain.Arti
 			below = append(below, a)
 		}
 	}
-	return itemViewsOf(siteBase, below, n)
+	return env.itemViewsOf(below, n)
 }
 
 // recomendadoCap bounds the front-page "Recomendado" rail (and the computed
@@ -727,7 +709,7 @@ func globalRail(env *buildEnv) []itemView {
 	out := make([]itemView, 0, len(idx.recomendado))
 	for _, s := range idx.recomendado {
 		if a, ok := bySlug[s]; ok {
-			out = append(out, itemViewOf(env.siteBase, a))
+			out = append(out, env.itemViewOf(a))
 			if len(out) >= recomendadoCap {
 				break
 			}
@@ -754,21 +736,21 @@ func articlesUpToSelf(idx *Index, self domain.Article) []domain.Article {
 	return out
 }
 
-func itemViewsOf(siteBase string, arts []domain.Article, n int) []itemView {
+func (env *buildEnv) itemViewsOf(arts []domain.Article, n int) []itemView {
 	if n > len(arts) {
 		n = len(arts)
 	}
 	out := make([]itemView, 0, n)
 	for _, a := range arts[:n] {
-		out = append(out, itemViewOf(siteBase, a))
+		out = append(out, env.itemViewOf(a))
 	}
 	return out
 }
 
-func authorLatestItems(siteBase string, idx *Index, sc Scope, n int) []itemView {
+func (env *buildEnv) authorLatestItems(idx *Index, sc Scope, n int) []itemView {
 	arts := idx.articlesAt(idx.scopeIndices(sc))
 	sortDisplay(arts)
-	return itemViewsOf(siteBase, arts, n)
+	return env.itemViewsOf(arts, n)
 }
 
 // maxAuthorTopics bounds the auto-computed topic union on an author profile so a
@@ -845,20 +827,20 @@ func authorTopicLinks(idx *Index, authorSlug string) []topicLink {
 // same author's other articles, up to and excluding self (newest first).
 // Restricting to "up to self" keeps the permalink byte-stable when the author
 // publishes again later.
-func articleAuthorMore(siteBase string, idx *Index, self domain.Article, n int) []itemView {
+func (env *buildEnv) articleAuthorMore(idx *Index, self domain.Article, n int) []itemView {
 	var same []domain.Article
 	for _, a := range articlesUpToSelf(idx, self) {
 		if a.Author == self.Author {
 			same = append(same, a)
 		}
 	}
-	return itemViewsOf(siteBase, same, n)
+	return env.itemViewsOf(same, n)
 }
 
 // articleRelated is the "Relacionados" block: articles up to self that share at
 // least one topic with self (falling back to the same section when none do),
 // newest first.
-func articleRelated(siteBase string, idx *Index, self domain.Article, n int) []itemView {
+func (env *buildEnv) articleRelated(idx *Index, self domain.Article, n int) []itemView {
 	selfTopics := map[string]struct{}{}
 	for _, t := range self.Topics {
 		if s, ok := facetSlug(t); ok {
@@ -886,7 +868,7 @@ func articleRelated(siteBase string, idx *Index, self domain.Article, n int) []i
 			}
 		}
 	}
-	return itemViewsOf(siteBase, related, n)
+	return env.itemViewsOf(related, n)
 }
 
 // cardThumb builds the listing card's media from an AUTHORED metadata.card block
@@ -992,23 +974,25 @@ func truncateAtWord(s string, max int) string {
 }
 
 // scopeDescription is a short, scope-derived listing description. It depends only
-// on the scope and site name, so it is byte-stable on sealed pages.
-func scopeDescription(s Scope, siteName string) string {
+// on the scope, the site name, and the run language, so it is byte-stable on sealed
+// pages.
+func (env *buildEnv) scopeDescription(s Scope) string {
+	site := env.siteName
 	if s.isSingle() {
 		switch s.Section.Kind {
 		case AxisLatest:
-			return "Los últimos artículos publicados en " + siteName + "."
+			return fmt.Sprintf(env.T("meta.desc_latest"), site)
 		case AxisSection:
-			return "Artículos de la sección " + facetDisplayLabel(s.Section) + " de " + siteName + "."
+			return fmt.Sprintf(env.T("meta.desc_section"), env.facetLabel(s.Section), site)
 		case AxisAuthor:
-			return "Artículos de " + facetDisplayLabel(s.Section) + " en " + siteName + "."
+			return fmt.Sprintf(env.T("meta.desc_author"), env.facetLabel(s.Section), site)
 		case AxisTopic:
-			return "Artículos etiquetados como " + facetDisplayLabel(s.Section) + " en " + siteName + "."
+			return fmt.Sprintf(env.T("meta.desc_topic"), env.facetLabel(s.Section), site)
 		case AxisMonth:
-			return "Artículos publicados en " + monthKey(s.Section.Year, s.Section.Month) + " en " + siteName + "."
+			return fmt.Sprintf(env.T("meta.desc_month"), monthKey(s.Section.Year, s.Section.Month), site)
 		}
 	}
-	return scopeHeading(s) + " en " + siteName + "."
+	return fmt.Sprintf(env.T("meta.desc_generic"), env.scopeHeading(s), site)
 }
 
 // metadataString reads a non-empty string value from the open metadata object.
@@ -1037,17 +1021,19 @@ type articleMedia struct {
 	ogVideo string
 }
 
-func mediaForArticle(base string, a domain.Article) articleMedia {
+func (env *buildEnv) mediaForArticle(a domain.Article) articleMedia {
+	base := env.siteBase
 	imgSrc, imgAbs := metadataMediaURL(base, a.Metadata, "image")
 	imgAlt := firstMetadataString(a.Metadata, "image_alt", "alt")
 	if imgAlt == "" {
 		imgAlt = a.Title
 	}
+	videoTitle := fmt.Sprintf(env.T("media.video_prefix"), a.Title)
 
 	if yt, ok := metadataString(a.Metadata, "youtube"); ok {
 		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
-				view:    mediaView{Kind: "youtube", Src: embed, Title: "Vídeo: " + a.Title, Poster: imgSrc},
+				view:    mediaView{Kind: "youtube", Src: embed, Title: videoTitle, Poster: imgSrc},
 				ogImage: imgAbs,
 				ogVideo: embed,
 			}
@@ -1056,7 +1042,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	if yt, ok := metadataString(a.Metadata, "youtube_id"); ok {
 		if embed := media.YouTubeEmbedURL(yt); embed != "" {
 			return articleMedia{
-				view:    mediaView{Kind: "youtube", Src: embed, Title: "Vídeo: " + a.Title, Poster: imgSrc},
+				view:    mediaView{Kind: "youtube", Src: embed, Title: videoTitle, Poster: imgSrc},
 				ogImage: imgAbs,
 				ogVideo: embed,
 			}
@@ -1064,7 +1050,7 @@ func mediaForArticle(base string, a domain.Article) articleMedia {
 	}
 	if vidSrc, vidAbs := metadataMediaURL(base, a.Metadata, "video"); vidSrc != "" {
 		return articleMedia{
-			view:    mediaView{Kind: "video", Src: vidSrc, Title: "Vídeo: " + a.Title, Poster: imgSrc},
+			view:    mediaView{Kind: "video", Src: vidSrc, Title: videoTitle, Poster: imgSrc},
 			ogImage: imgAbs,
 			ogVideo: vidAbs,
 		}
@@ -1105,15 +1091,31 @@ func firstMetadataString(m map[string]any, keys ...string) string {
 	return ""
 }
 
-// sectionLabelOf is the reader-facing section label for one article: the Spanish
-// display name when the slug is mapped, else the stored section string. The URL
-// slug and data-section hook are unchanged (they keep the English slug).
-func sectionLabelOf(a domain.Article) string {
+// sectionLabelOf is the reader-facing section label for one article: the catalog
+// display name when the slug is known, else the stored section string. The URL slug
+// and data-section hook are unchanged (they keep the English slug).
+func (env *buildEnv) sectionLabelOf(a domain.Article) string {
 	slug, ok := facetSlug(a.Section)
 	if !ok {
 		return a.Section
 	}
-	return sectionDisplayLabel(Facet{Kind: AxisSection, Value: slug, Label: a.Section})
+	return env.sectionLabel(Facet{Kind: AxisSection, Value: slug, Label: a.Section})
+}
+
+// sectionLabelDefault resolves an article's section label from the compiled catalog
+// only (no DB), the language-neutral base the env-free client shard projection
+// (ShardEntryOf) carries. buildScopeShards overrides it with the run's env-resolved
+// label when a non-default language or a DB override applies, so the emitted shard
+// still tracks the site language while ShardEntryOf stays env-free for its tests.
+func sectionLabelDefault(a domain.Article) string {
+	slug, ok := facetSlug(a.Section)
+	if !ok {
+		return a.Section
+	}
+	if v, ok := defaultText["section."+slug+".label"]; ok {
+		return v
+	}
+	return Facet{Kind: AxisSection, Value: slug, Label: a.Section}.labelOr()
 }
 
 // authorDisplayLabel is the reader-facing byline label for one article: the
@@ -1271,13 +1273,13 @@ func isAuthorScope(s Scope) bool {
 	return s.Section.Kind == AxisAuthor && s.isSingle()
 }
 
-func scopeHeading(s Scope) string {
+func (env *buildEnv) scopeHeading(s Scope) string {
 	if s.isSingle() {
 		switch s.Section.Kind {
 		case AxisLatest:
-			return "Lo último"
+			return env.T("nav.latest")
 		case AxisSection, AxisAuthor, AxisTopic:
-			return facetDisplayLabel(s.Section)
+			return env.facetLabel(s.Section)
 		case AxisMonth:
 			return monthKey(s.Section.Year, s.Section.Month)
 		}
@@ -1285,25 +1287,26 @@ func scopeHeading(s Scope) string {
 	sub := ""
 	switch s.Sub.Kind {
 	case AxisAuthor, AxisTopic:
-		sub = facetDisplayLabel(s.Sub)
+		sub = env.facetLabel(s.Sub)
 	case AxisMonth:
 		sub = monthKey(s.Sub.Year, s.Sub.Month)
 	}
-	return facetDisplayLabel(s.Section) + " / " + sub
+	return env.facetLabel(s.Section) + " / " + sub
 }
 
-func pageTitle(heading, siteName string, pg Page) string {
+func (env *buildEnv) pageTitle(heading string, pg Page) string {
 	if pg.Number >= 1 {
-		return fmt.Sprintf("%s (página %d) | %s", heading, pg.Number, siteName)
+		return fmt.Sprintf(env.T("meta.title_paged"), heading, pg.Number, env.siteName)
 	}
-	return heading + " | " + siteName
+	return fmt.Sprintf(env.T("meta.title"), heading, env.siteName)
 }
 
-func feedLinksFor(siteBase, siteName string) []feedLink {
+func (env *buildEnv) feedLinks() []feedLink {
+	site := env.siteName
 	return []feedLink{
-		{Rel: "alternate", Type: "application/rss+xml", Href: absolute(siteBase, "/feed.xml"), Title: "Canal RSS de " + siteName},
-		{Rel: "alternate", Type: "application/atom+xml", Href: absolute(siteBase, "/atom.xml"), Title: "Canal Atom de " + siteName},
-		{Rel: "alternate", Type: "application/feed+json", Href: absolute(siteBase, "/feed.json"), Title: "Canal JSON de " + siteName},
+		{Rel: "alternate", Type: "application/rss+xml", Href: absolute(env.siteBase, "/feed.xml"), Title: fmt.Sprintf(env.T("feed.rss_title"), site)},
+		{Rel: "alternate", Type: "application/atom+xml", Href: absolute(env.siteBase, "/atom.xml"), Title: fmt.Sprintf(env.T("feed.atom_title"), site)},
+		{Rel: "alternate", Type: "application/feed+json", Href: absolute(env.siteBase, "/feed.json"), Title: fmt.Sprintf(env.T("feed.json_title"), site)},
 	}
 }
 

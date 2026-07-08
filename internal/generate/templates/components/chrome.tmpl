@@ -9,27 +9,27 @@
 <div class="masthead-scanlines"></div>
 </div>
 <div class="header-topline">
-<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">Menú</button>
-<div class="theme-switcher" role="group" aria-label="Tema">
-<button type="button" data-theme-choice="system" aria-pressed="true">Sistema</button>
-<button type="button" data-theme-choice="light" aria-pressed="false">Claro</button>
-<button type="button" data-theme-choice="dark" aria-pressed="false">Oscuro</button>
+<button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="primary-nav">{{t "nav.menu_toggle"}}</button>
+<div class="theme-switcher" role="group" aria-label="{{t "nav.theme_group_aria"}}">
+<button type="button" data-theme-choice="system" aria-pressed="true">{{t "nav.theme_system"}}</button>
+<button type="button" data-theme-choice="light" aria-pressed="false">{{t "nav.theme_light"}}</button>
+<button type="button" data-theme-choice="dark" aria-pressed="false">{{t "nav.theme_dark"}}</button>
 </div>
 </div>
-<a class="site-name brand-wordmark" href="/latest/" aria-label="El Censurado Web, ir a portada">
+<a class="site-name brand-wordmark" href="/latest/" aria-label="{{t "nav.logo_aria"}}">
 <span class="brand-word brand-word-el"><span class="brand-el-e">E</span><span class="brand-el-l">L</span></span>
 <span class="brand-word brand-word-censurado">censurado</span>
 <span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
 </a>
-<a class="masthead-youtube" href="https://www.youtube.com/@elcensuradoweb" target="_blank" rel="noopener" aria-label="Canal de YouTube de El Censurado Web">
+<a class="masthead-youtube" href="https://www.youtube.com/@elcensuradoweb" target="_blank" rel="noopener" aria-label="{{t "nav.youtube_aria"}}">
 <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path fill="#FF0000" d="M23.5 6.2a3.02 3.02 0 0 0-2.12-2.14C19.5 3.55 12 3.55 12 3.55s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8z"/><path fill="#fff" d="M9.55 15.57V8.43L15.82 12z"/></svg>
 </a>
 </div>
-<nav class="site-nav" id="primary-nav" data-nav="primary" data-menu-panel aria-label="Principal">
+<nav class="site-nav" id="primary-nav" data-nav="primary" data-menu-panel aria-label="{{t "nav.landmark_aria"}}">
 {{- range .NavLinks}}
 <a class="site-nav-link" href="{{.URL}}">{{.Label}}</a>
 {{- else}}
-<a class="site-nav-link" href="/latest/">Lo último</a>
+<a class="site-nav-link" href="/latest/">{{t "nav.latest"}}</a>
 {{- end}}
 </nav>
 </header>
@@ -39,18 +39,18 @@
 <footer class="site-footer" data-site-footer>
 <div class="footer-brand">
 <p class="footer-name">
-<a class="footer-wordmark brand-wordmark" href="/latest/" aria-label="El Censurado Web, ir a portada">
+<a class="footer-wordmark brand-wordmark" href="/latest/" aria-label="{{t "nav.logo_aria"}}">
 <span class="brand-word brand-word-el"><span class="brand-el-e">E</span><span class="brand-el-l">L</span></span>
 <span class="brand-word brand-word-censurado">censurado</span>
 <span class="brand-word brand-word-web">W<span class="brand-e">e</span>b</span>
 </a>
 </p>
-<p class="site-footer-deck">Despachos independientes asistidos por IA sobre tecnología, poder, mercados y política.</p>
+<p class="site-footer-deck">{{t "footer.tagline"}}</p>
 </div>
-<section class="footer-disclosure" aria-label="Aviso editorial">
-<h2 class="footer-heading">Aviso editorial</h2>
-<p>El Censurado Web es un proyecto de medios asistido por IA. Los artículos pueden ser generados, resumidos, traducidos, estructurados o enriquecidos con sistemas automatizados y se publican para análisis informativo, no como asesoramiento profesional.</p>
-<p>Procuramos revisar y contextualizar el material antes de su publicación, pero el resultado automatizado puede incluir inexactitudes, omisiones, contexto desactualizado o afirmaciones sin respaldo. Los lectores deben verificar los hechos relevantes con fuentes primarias antes de basarse en ellos.</p>
+<section class="footer-disclosure" aria-label="{{t "footer.disclosure_heading"}}">
+<h2 class="footer-heading">{{t "footer.disclosure_heading"}}</h2>
+<p>{{t "footer.disclosure_body_1"}}</p>
+<p>{{t "footer.disclosure_body_2"}}</p>
 </section>
 </footer>
 {{end}}

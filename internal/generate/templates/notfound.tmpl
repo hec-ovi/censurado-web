@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="listing-hero notfound" aria-labelledby="notfound-heading">
-<p class="eyebrow">Error 404</p>
+<p class="eyebrow">{{t "notfound.eyebrow"}}</p>
 <h1 class="listing-heading" id="notfound-heading">{{.Heading}}</h1>
 {{- range .Message}}
 <p class="listing-summary">{{.}}</p>

@@ -23,10 +23,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hec-ovi/censurado-web/internal/generate"
-	"github.com/hec-ovi/censurado-web/internal/purge"
 	"github.com/hec-ovi/censurado-web-backend/store"
 	"github.com/hec-ovi/censurado-web-backend/store/sqlite"
+	"github.com/hec-ovi/censurado-web/internal/generate"
+	"github.com/hec-ovi/censurado-web/internal/purge"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -39,6 +39,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	baseURL := fs.String("base-url", os.Getenv("CENSURADO_BASE_URL"), "absolute site origin (or CENSURADO_BASE_URL)")
 	pageSize := fs.Int("page-size", 20, "articles per full page (P); locked before first publish")
 	siteName := fs.String("site-name", "El Censurado Web", "site/feed title")
+	lang := fs.String("lang", envOr("CENSURADO_LANG", "es"), "render language: the frontend_text rows and <html lang> (or CENSURADO_LANG); the live Spanish site uses es")
 	quiet := fs.Bool("quiet", false, "suppress the per-run summary on stdout")
 	watch := fs.Bool("watch", false, "stay resident and regenerate + purge on a fixed interval, so a publish to the database refreshes the static site without an external trigger")
 	watchInterval := fs.Duration("watch-interval", envDuration("CENSURADO_GENERATE_WATCH_INTERVAL", 2*time.Second), "poll interval between regeneration passes in -watch mode (or CENSURADO_GENERATE_WATCH_INTERVAL)")
@@ -68,6 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		BaseURL:  *baseURL,
 		PageSize: *pageSize,
 		SiteName: *siteName,
+		Lang:     *lang,
 		Now:      time.Now().UTC(),
 	}
 

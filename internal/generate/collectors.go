@@ -2,6 +2,8 @@ package generate
 
 import (
 	"context"
+	"fmt"
+	"html/template"
 	"time"
 
 	"github.com/hec-ovi/censurado-web-backend/domain"
@@ -21,9 +23,18 @@ type buildEnv struct {
 	capE       int
 	capB       int
 	siteName   string
+	lang       string            // render language (ISO code); the frontend_text lang and the <html lang>
+	text       map[string]string // key -> value for lang, loaded once from frontend_text; nil until loadText
 	plan       *Plan
 	bodyHTML   map[string]string     // ContentHash -> rendered body, rendered once
 	shardCache map[Scope]scopeShards // scope -> shard build, computed once per scope
+
+	// Per-run templates: the parsed base trees cloned with this run's language-aware
+	// "t" lookup bound (see bindTemplates).
+	listingTmpl  *template.Template
+	articleTmpl  *template.Template
+	aboutTmpl    *template.Template
+	notFoundTmpl *template.Template
 }
 
 // scopeShards is the per-scope shard build (months newest-first, parts keyed by
@@ -36,15 +47,18 @@ type scopeShards struct {
 }
 
 func buildEnvFrom(opts Options) *buildEnv {
-	return &buildEnv{
+	env := &buildEnv{
 		siteBase:   opts.BaseURL,
 		now:        opts.Now,
 		pageSize:   opts.PageSize,
 		capE:       opts.ShardMaxEntries,
 		capB:       opts.ShardMaxGzipBytes,
 		siteName:   opts.SiteName,
+		lang:       opts.Lang,
 		shardCache: map[Scope]scopeShards{},
 	}
+	env.bindTemplates()
+	return env
 }
 
 // shardsFor returns the scope's shard build, computing and caching it on first
@@ -91,8 +105,10 @@ func collectors() []collector {
 }
 
 // renderBodiesOnce renders every article body exactly once, keyed by content
-// hash (identical hashes share a body).
-func renderBodiesOnce(p *Plan) (map[string]string, error) {
+// hash (identical hashes share a body). env supplies the language-aware lookup the
+// inline widgets (video/tweet/related cards) use for their chrome text.
+func renderBodiesOnce(env *buildEnv) (map[string]string, error) {
+	p := env.plan
 	out := map[string]string{}
 	// Resolve inline {{relacionado:slug}} markers against the whole corpus; the
 	// first article for a slug wins (backend slugs are unique, so this is exact).
@@ -106,7 +122,7 @@ func renderBodiesOnce(p *Plan) (map[string]string, error) {
 		if _, ok := out[a.ContentHash]; ok {
 			continue
 		}
-		rendered, err := renderBodyWithMarkers(a.Body, bySlug, a)
+		rendered, err := renderBodyWithMarkers(env, a.Body, bySlug, a)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +161,10 @@ func buildScopeShards(env *buildEnv, s Scope) (months []ym, partsByMonth map[str
 		for _, i := range idxs {
 			a := env.plan.Index.All[i]
 			se := ShardEntryOf(a)
+			// Overlay the run's language-resolved section label (ShardEntryOf carries
+			// the compiled default); for the default es site this is identical, so
+			// sealed shards stay byte-stable.
+			se.SectionLabel = env.sectionLabelOf(a)
 			se.Ord = env.plan.Index.portadaOrd[a.ID]
 			se.Role = env.plan.Index.portadaRole[a.ID]
 			entries = append(entries, se)
@@ -445,7 +465,7 @@ func latestFeedInput(env *buildEnv) FeedInput {
 	in := FeedInput{
 		SiteURL:     env.siteBase,
 		Title:       env.siteName,
-		Description: "Latest articles from " + env.siteName,
+		Description: fmt.Sprintf(env.T("feed.channel_description"), env.siteName),
 		Items:       []FeedArticle{},
 	}
 	if len(idx.All) == 0 {

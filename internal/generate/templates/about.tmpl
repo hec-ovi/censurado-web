@@ -4,12 +4,12 @@
 <h1 class="listing-heading">{{.Heading}}</h1>
 {{- if .Summary}}<p class="listing-summary">{{.Summary}}</p>{{end}}
 </header>
-<section class="about-manifesto" aria-label="Manifiesto">
+<section class="about-manifesto" aria-label="{{t "about.manifesto_aria"}}">
 {{- range .Intro}}
 <p>{{.}}</p>
 {{- end}}
 </section>
-<section class="about-authors" aria-label="Personas">
+<section class="about-authors" aria-label="{{t "about.people_aria"}}">
 {{- if .Authors}}
 <ul class="author-cards">
 {{- range .Authors}}

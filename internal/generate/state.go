@@ -45,8 +45,8 @@ func sha256hex(b []byte) string {
 // optionsFingerprint captures the structural options that change every artifact
 // path or boundary. A mismatch forces a full rewrite (and purges orphans).
 func optionsFingerprint(o Options) string {
-	return sha256hex([]byte(fmt.Sprintf("v1|P=%d|capE=%d|capB=%d|base=%s",
-		o.PageSize, o.ShardMaxEntries, o.ShardMaxGzipBytes, strings.TrimRight(o.BaseURL, "/"))))
+	return sha256hex([]byte(fmt.Sprintf("v2|P=%d|capE=%d|capB=%d|base=%s|lang=%s",
+		o.PageSize, o.ShardMaxEntries, o.ShardMaxGzipBytes, strings.TrimRight(o.BaseURL, "/"), o.Lang)))
 }
 
 // diff compares the collected set against prior state. forceWrite (set on a

@@ -20,12 +20,15 @@ func collectAll(t *testing.T, repo store.Repository, opts Options) *ArtifactSet 
 		t.Fatalf("validate: %v", err)
 	}
 	env := buildEnvFrom(opts)
+	if err := env.loadText(context.Background(), repo); err != nil {
+		t.Fatalf("loadText: %v", err)
+	}
 	plan, err := BuildPlan(context.Background(), repo, opts.PageSize)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	env.plan = plan
-	if env.bodyHTML, err = renderBodiesOnce(plan); err != nil {
+	if env.bodyHTML, err = renderBodiesOnce(env); err != nil {
 		t.Fatalf("renderBodies: %v", err)
 	}
 	set := newArtifactSet()
@@ -307,8 +310,9 @@ func TestFingerprintForcesRebuildAndPurgesOrphans(t *testing.T) {
 		t.Errorf("orphaned page URL not in purge; got %v", res.Purge)
 	}
 
-	// state.json records the new fingerprint.
-	prior, force := loadState(stateDir(out), optionsFingerprint(Options{OutDir: out, BaseURL: "https://news.example", PageSize: 20, ShardMaxEntries: 500, ShardMaxGzipBytes: 200 * 1024}))
+	// state.json records the new fingerprint. Lang matches the default the run
+	// validated to (es), since the fingerprint now covers the render language.
+	prior, force := loadState(stateDir(out), optionsFingerprint(Options{OutDir: out, BaseURL: "https://news.example", PageSize: 20, ShardMaxEntries: 500, ShardMaxGzipBytes: 200 * 1024, Lang: "es"}))
 	if force {
 		t.Errorf("state fingerprint not updated to the PageSize=20 config")
 	}

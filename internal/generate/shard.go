@@ -89,7 +89,7 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 		AuthorLabel:  authorDisplayLabel(a),
 		Avatar:       metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
 		Section:      sec,
-		SectionLabel: sectionLabelOf(a),
+		SectionLabel: sectionLabelDefault(a),
 		Topics:       topics,
 		PublishedAt:  a.PublishedAt.UTC().Format(time.RFC3339),
 		TS:           a.PublishedAt.UTC().Unix(),

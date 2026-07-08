@@ -1,5 +1,5 @@
 {{define "base"}}<!doctype html>
-<html lang="es">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,7 +37,7 @@
 {{- block "headextra" .}}{{end}}
 </head>
 <body class="site-shell">
-<a class="skip-link" href="#main">Saltar al contenido</a>
+<a class="skip-link" href="#main">{{t "nav.skip_link"}}</a>
 {{template "site_header" .}}
 <main class="site-main" id="main">
 {{- block "content" .}}{{end}}

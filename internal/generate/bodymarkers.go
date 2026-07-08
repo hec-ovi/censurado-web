@@ -80,7 +80,7 @@ func firstBodyVideoPoster(a domain.Article) string {
 // expands its inline markers. bySlug maps every article's backend slug to the
 // article; self is the article whose body this is (so a related marker never links
 // forward or to itself).
-func renderBodyWithMarkers(markdown string, bySlug map[string]domain.Article, self domain.Article) (string, error) {
+func renderBodyWithMarkers(env *buildEnv, markdown string, bySlug map[string]domain.Article, self domain.Article) (string, error) {
 	replacements := map[string]string{}
 	n := 0
 	pre := markerRe.ReplaceAllStringFunc(markdown, func(m string) string {
@@ -89,11 +89,11 @@ func renderBodyWithMarkers(markdown string, bySlug map[string]domain.Article, se
 		var frag string
 		switch kind {
 		case "video":
-			frag = videoEmbedHTML(val, self)
+			frag = videoEmbedHTML(env, val, self)
 		case "relacionado":
-			frag = relatedCardFor(val, bySlug, self)
+			frag = relatedCardFor(env, val, bySlug, self)
 		case "tweet":
-			frag = tweetCardHTML(val, self)
+			frag = tweetCardHTML(env, val, self)
 		}
 		if frag == "" {
 			return "" // drop an unresolved/unsafe marker entirely
@@ -121,15 +121,15 @@ func renderBodyWithMarkers(markdown string, bySlug map[string]domain.Article, se
 // is dropped rather than rendered as broken markup). When the YouTube id is recorded
 // unavailable in self's metadata.media_checks, it renders a "video eliminado"
 // placeholder that keeps the original link instead of a dead iframe.
-func videoEmbedHTML(raw string, self domain.Article) string {
+func videoEmbedHTML(env *buildEnv, raw string, self domain.Article) string {
 	if embed := media.YouTubeEmbedURL(raw); embed != "" {
 		id := strings.TrimPrefix(embed, "https://www.youtube-nocookie.com/embed/")
 		if youtubeUnavailable(self.Metadata, id) {
-			return youtubeRemovedHTML(id)
+			return youtubeRemovedHTML(env, id)
 		}
 		return `<figure class="body-embed"><div class="embed-shell">` +
 			`<iframe class="body-embed-frame" src="` + html.EscapeString(embed) +
-			`" title="Vídeo" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"` +
+			`" title="` + html.EscapeString(env.T("media.video_iframe_title")) + `" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"` +
 			` allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div></figure>`
 	}
 	if src, _ := media.SafeMediaURL("", raw); src != "" && isVideoURL(src) {
@@ -141,12 +141,12 @@ func videoEmbedHTML(raw string, self domain.Article) string {
 
 // youtubeRemovedHTML is the placeholder shown in place of an embed when a cited
 // YouTube video is no longer available; it keeps the original watch link.
-func youtubeRemovedHTML(id string) string {
+func youtubeRemovedHTML(env *buildEnv, id string) string {
 	watch := "https://www.youtube.com/watch?v=" + id
 	return `<figure class="body-embed"><div class="embed-removed">` +
-		`<p class="embed-removed-note">Este video fue eliminado de YouTube.</p>` +
+		`<p class="embed-removed-note">` + html.EscapeString(env.T("media.video_removed_note")) + `</p>` +
 		`<a class="embed-removed-link" href="` + html.EscapeString(watch) +
-		`" rel="nofollow noopener" target="_blank">Ver enlace original</a></div></figure>`
+		`" rel="nofollow noopener" target="_blank">` + html.EscapeString(env.T("media.view_original_link")) + `</a></div></figure>`
 }
 
 // youtubeUnavailable reports whether metadata.media_checks[id].available is the
@@ -170,7 +170,7 @@ func youtubeUnavailable(m map[string]any, id string) bool {
 // verbatim (never fetched live), so the card survives the original being deleted;
 // an erased snapshot keeps the captured text and adds a "publicación eliminada"
 // note plus the retained original link.
-func tweetCardHTML(ref string, self domain.Article) string {
+func tweetCardHTML(env *buildEnv, ref string, self domain.Article) string {
 	snap := findTweet(self.Metadata, ref)
 	if snap == nil {
 		return ""
@@ -213,35 +213,37 @@ func tweetCardHTML(ref string, self domain.Article) string {
 		b.WriteString(`<p class="tweet-card-text">` + html.EscapeString(text) + `</p>`)
 	}
 	if erased {
-		b.WriteString(`<p class="tweet-card-erased">Publicación eliminada en X. Censurado conserva esta copia.</p>`)
+		b.WriteString(`<p class="tweet-card-erased">` + html.EscapeString(env.T("tweet.erased_note")) + `</p>`)
 	}
 
 	// Meta line: the date (links to the original on X) and the view count.
+	viewOnX := env.T("tweet.view_on_x")
+	viewOriginal := env.T("media.view_original_link")
 	label := date
 	if label == "" {
-		label = "Ver en X"
+		label = viewOnX
 		if erased {
-			label = "Ver enlace original"
+			label = viewOriginal
 		}
 	}
 	b.WriteString(`<p class="tweet-card-meta">`)
 	if link != "" {
-		aria := "Ver en X"
+		aria := viewOnX
 		if erased {
-			aria = "Ver enlace original"
+			aria = viewOriginal
 		}
-		b.WriteString(`<a class="tweet-card-date" href="` + html.EscapeString(link) + `" rel="nofollow noopener" target="_blank" aria-label="` + aria + `">` + html.EscapeString(label) + `</a>`)
+		b.WriteString(`<a class="tweet-card-date" href="` + html.EscapeString(link) + `" rel="nofollow noopener" target="_blank" aria-label="` + html.EscapeString(aria) + `">` + html.EscapeString(label) + `</a>`)
 	} else {
 		b.WriteString(`<span class="tweet-card-date">` + html.EscapeString(label) + `</span>`)
 	}
 	if v, ok := metaInt(snap, "views"); ok && v > 0 {
-		b.WriteString(` · <span class="tweet-card-views"><strong>` + humanizeCount(v) + `</strong> Views</span>`)
+		b.WriteString(` · <span class="tweet-card-views"><strong>` + humanizeCount(v) + `</strong> ` + html.EscapeString(env.T("tweet.stat_views")) + `</span>`)
 	}
 	b.WriteString(`</p>`)
 
 	// Stat row: replies, retweets, likes, bookmarks. Only when the snapshot carries
 	// them; older snapshots without metrics simply omit the row.
-	if stats := tweetStatsHTML(snap); stats != "" {
+	if stats := tweetStatsHTML(env, snap); stats != "" {
 		b.WriteString(`<div class="tweet-card-stats">` + stats + `</div>`)
 	}
 
@@ -260,12 +262,12 @@ const (
 
 // tweetStatsHTML renders the reply/retweet/like/bookmark counts present in the snapshot,
 // each as an icon plus its X-abbreviated count; an absent metric is skipped.
-func tweetStatsHTML(snap map[string]any) string {
-	stats := []struct{ key, ico, label string }{
-		{"replies", tweetIcoReply, "respuestas"},
-		{"retweets", tweetIcoRetweet, "reposteos"},
-		{"likes", tweetIcoLike, "me gusta"},
-		{"bookmarks", tweetIcoBookmark, "guardados"},
+func tweetStatsHTML(env *buildEnv, snap map[string]any) string {
+	stats := []struct{ key, ico, labelKey string }{
+		{"replies", tweetIcoReply, "tweet.stat_replies"},
+		{"retweets", tweetIcoRetweet, "tweet.stat_retweets"},
+		{"likes", tweetIcoLike, "tweet.stat_likes"},
+		{"bookmarks", tweetIcoBookmark, "tweet.stat_bookmarks"},
 	}
 	var b strings.Builder
 	for _, s := range stats {
@@ -274,7 +276,7 @@ func tweetStatsHTML(snap map[string]any) string {
 			continue
 		}
 		c := humanizeCount(n)
-		b.WriteString(`<span class="tweet-card-stat" aria-label="` + c + ` ` + s.label + `">` + s.ico + `<span>` + c + `</span></span>`)
+		b.WriteString(`<span class="tweet-card-stat" aria-label="` + c + ` ` + html.EscapeString(env.T(s.labelKey)) + `">` + s.ico + `<span>` + c + `</span></span>`)
 	}
 	return b.String()
 }
@@ -382,7 +384,7 @@ const relatedCardMax = 120
 
 // relatedCardFor resolves a slug to the "Ver artículo relacionado" card HTML, or ""
 // when the target is missing, is self, or is newer than self (a forward reference).
-func relatedCardFor(slug string, bySlug map[string]domain.Article, self domain.Article) string {
+func relatedCardFor(env *buildEnv, slug string, bySlug map[string]domain.Article, self domain.Article) string {
 	target, ok := bySlug[slug]
 	if !ok || target.ID == self.ID || target.PublishedAt.After(self.PublishedAt) {
 		return ""
@@ -394,7 +396,7 @@ func relatedCardFor(slug string, bySlug map[string]domain.Article, self domain.A
 	var b strings.Builder
 	b.WriteString(`<aside class="related-card"><a class="related-card-link" href="`)
 	b.WriteString(articleURL(target))
-	b.WriteString(`"><span class="related-card-kicker">Ver artículo relacionado</span><span class="related-card-main">`)
+	b.WriteString(`"><span class="related-card-kicker">` + html.EscapeString(env.T("related.card_kicker")) + `</span><span class="related-card-main">`)
 	if thumb != "" {
 		b.WriteString(`<span class="related-card-thumb"><img src="`)
 		b.WriteString(html.EscapeString(thumb))

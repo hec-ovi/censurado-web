@@ -262,16 +262,16 @@ func TestBodyMarker_TweetMetrics(t *testing.T) {
 
 	for _, want := range []string{
 		`class="tweet-card-avatar"`,
-		`class="tweet-card-badge"`,        // verified seal
+		`class="tweet-card-badge"`, // verified seal
 		`class="tweet-card-meta"`,
-		`3:44 AM · Jun 28, 2026`,          // X-style date, Argentina time (UTC-3)
+		`3:44 AM · Jun 28, 2026`, // X-style date, Argentina time (UTC-3)
 		`class="tweet-card-views"`,
-		`<strong>22K</strong> Views`,      // abbreviated view count
+		`<strong>22K</strong> vistas`, // abbreviated view count (Spanish label, matching the stat row)
 		`class="tweet-card-stats"`,
-		`>17<`, // replies
-		`>13<`, // retweets
+		`>17<`,  // replies
+		`>13<`,  // retweets
 		`>269<`, // likes (under 1000, not abbreviated)
-		`>31<`, // bookmarks
+		`>31<`,  // bookmarks
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("tweet metrics card missing %q\n%s", want, page)

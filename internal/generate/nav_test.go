@@ -29,8 +29,10 @@ func TestNav_FixedCuratedMenu(t *testing.T) {
 		t.Fatalf("nav differs between the landing and the About page:\n  latest=%s\n  about=%s", latest, about)
 	}
 
+	// The world entry reads the ONE section label ("Mundo"), the same as its heading
+	// and cards; the old divergent nav-only "Internacionales" is gone.
 	want := []string{
-		"Lo último", "Nosotros", "Política", "Internacionales",
+		"Lo último", "Nosotros", "Política", "Mundo",
 		"Misterio y conspiración", "Tecnología", "Cultura y literatura",
 	}
 	last := -1

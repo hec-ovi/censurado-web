@@ -16,14 +16,14 @@
 {{- end}}
 </div>
 <div class="author-profile-main">
-<p class="author-profile-kicker">Perfil</p>
+<p class="author-profile-kicker">{{t "author.profile_kicker"}}</p>
 <h1 class="author-profile-name">{{.AuthorName}}</h1>
 {{- if .AuthorGender}}
 <p class="author-profile-gender">{{.AuthorGender}}</p>
 {{- end}}
 {{- if .AuthorTopics}}
-<nav class="author-profile-topics" aria-label="Temas que cubre">
-<p class="author-profile-label">Temas</p>
+<nav class="author-profile-topics" aria-label="{{t "author.topics_aria"}}">
+<p class="author-profile-label">{{t "author.topics_label"}}</p>
 <ul>
 {{- range .AuthorTopics}}
 <li><a href="{{.URL}}">{{.Label}}</a></li>
@@ -32,8 +32,8 @@
 </nav>
 {{- end}}
 {{- if .AuthorBio}}
-<section class="author-profile-about" aria-label="Sobre {{.AuthorName}}">
-<p class="author-profile-label">Sobre</p>
+<section class="author-profile-about" aria-label="{{printf (t "author.about_aria") .AuthorName}}">
+<p class="author-profile-label">{{t "author.about_label"}}</p>
 <p>{{.AuthorBio}}</p>
 </section>
 {{- end}}
@@ -41,16 +41,16 @@
 </section>
 {{- else}}
 <header class="listing-hero">
-<p class="eyebrow">Portada</p>
+<p class="eyebrow">{{t "listing.eyebrow"}}</p>
 <h1 class="listing-heading">{{.Heading}}</h1>
 <p class="listing-summary">{{.Description}}</p>
 </header>
 {{- end}}
-<section class="portal-front{{if .AuthorName}} author-portal{{end}}" data-facets aria-label="{{if .AuthorName}}Contenido generado{{else}}Portada{{end}}">
+<section class="portal-front{{if .AuthorName}} author-portal{{end}}" data-facets aria-label="{{if .AuthorName}}{{t "author.generated_aria"}}{{else}}{{t "listing.facets_aria"}}{{end}}">
 {{- if .AuthorName}}
 <header class="author-content-head">
-<p class="eyebrow">Contenido generado</p>
-<h2>Últimas publicaciones</h2>
+<p class="eyebrow">{{t "author.generated_aria"}}</p>
+<h2>{{t "author.generated_heading"}}</h2>
 </header>
 {{- end}}
 <ol class="article-list{{if .AuthorName}} author-grid{{end}}" data-articles>
@@ -65,11 +65,11 @@
 {{- end}}
 </ol>
 {{- if and .AuthorName (not .Items)}}
-<p class="author-empty">Todavía no publicó artículos.</p>
+<p class="author-empty">{{t "empty.author_no_articles"}}</p>
 {{- end}}
 {{- if .ShowRail}}
-<aside class="ranked-rail" aria-label="Recomendado">
-<h2 class="rail-heading">Recomendado</h2>
+<aside class="ranked-rail" aria-label="{{t "rail.recomendado_aria"}}">
+<h2 class="rail-heading">{{t "rail.recomendado_heading"}}</h2>
 <ol class="ranked-list">
 {{- range .Rail}}
 <li class="ranked-item">
@@ -83,14 +83,14 @@
 </aside>
 {{- end}}
 {{- if gt (len .Pager.Pages) 1}}
-<nav class="pager" data-pager aria-label="Páginas">
+<nav class="pager" data-pager aria-label="{{t "pagination.nav_aria"}}">
 {{- range .Pager.Pages}}
 <a class="pager-link" href="{{.URL}}">{{.N}}</a>
 {{- end}}
 </nav>
 {{- end}}
 {{- if .Months}}
-<nav class="months" data-months aria-label="Meses">
+<nav class="months" data-months aria-label="{{t "pagination.months_nav_aria"}}">
 {{- range .Months}}
 <a class="month-link" href="{{.URL}}" data-month="{{.Slug}}">{{.Label}}</a>
 {{- end}}

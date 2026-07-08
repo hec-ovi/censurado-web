@@ -22,6 +22,7 @@ type Options struct {
 	ShardMaxGzipBytes int       // gzipped-bytes cap per shard part; default 200*1024, >=1
 	Now               time.Time // build clock; default time.Now().UTC(); never used for content identity
 	SiteName          string    // feed/site title; default "El Censurado Web"
+	Lang              string    // render language (frontend_text lang + <html lang>); default "es"
 }
 
 // Validate fills defaults in place, trims the BaseURL trailing slash, and
@@ -62,6 +63,11 @@ func (o *Options) Validate() error {
 	if o.SiteName == "" {
 		o.SiteName = "El Censurado Web"
 	}
+	// The live Argentine site renders Spanish, so es is the default even though the
+	// catalog's base language is English: es is a loaded translation the readers see.
+	if o.Lang == "" {
+		o.Lang = "es"
+	}
 	return nil
 }
 
@@ -90,13 +96,16 @@ func Generate(ctx context.Context, repo store.Repository, opts Options) (Result,
 		return Result{}, err
 	}
 	env := buildEnvFrom(opts)
+	if err := env.loadText(ctx, repo); err != nil {
+		return Result{}, err
+	}
 
 	plan, err := BuildPlan(ctx, repo, opts.PageSize)
 	if err != nil {
 		return Result{}, err
 	}
 	env.plan = plan
-	if env.bodyHTML, err = renderBodiesOnce(plan); err != nil {
+	if env.bodyHTML, err = renderBodiesOnce(env); err != nil {
 		return Result{}, err
 	}
 

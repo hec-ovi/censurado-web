@@ -138,10 +138,10 @@ type pageView struct {
 	// ShowRail renders the "Recomendado" widget even when Rail is empty. The front
 	// page always shows it (so the two-column layout holds); other landings show it
 	// only when the computed rail has items.
-	ShowRail  bool
-	Pager     pagerView
-	Months    []monthLink
-	Manifest  template.HTML
+	ShowRail bool
+	Pager    pagerView
+	Months   []monthLink
+	Manifest template.HTML
 	// Author bio block, populated only on a single-author listing page.
 	AuthorName    string
 	AuthorBio     string
@@ -205,6 +205,8 @@ type articleView struct {
 	Slug          string // backend slug, the key the reactions bar votes under (data-slug)
 	Subtitle      string // authored dek (metadata.subtitle); "" when absent
 	Standfirst    string // authored description/lede (metadata.description); "" when absent
+	ImageCaption  string // authored hero caption/epígrafe (metadata.image_caption); "" when absent
+	ImageCredit   string // authored hero source credit (metadata.image_credit); "" when absent
 	AuthorLabel   string
 	AuthorURL     string
 	AuthorSlug    string // slug form, for the client-side "Más de este autor" fetch
@@ -552,6 +554,8 @@ func renderArticle(env *buildEnv, a domain.Article) ([]byte, error) {
 		Slug:          a.Slug,
 		Subtitle:      firstMetadataString(a.Metadata, "subtitle"),
 		Standfirst:    firstMetadataString(a.Metadata, "description"),
+		ImageCaption:  firstMetadataString(a.Metadata, "image_caption"),
+		ImageCredit:   firstMetadataString(a.Metadata, "image_credit"),
 		AuthorLabel:   authorDisplayLabel(a),
 		AuthorURL:     facetURL("author", a.Author),
 		AuthorSlug:    ShardEntryOf(a).Author,

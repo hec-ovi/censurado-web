@@ -265,6 +265,91 @@ func TestArticlePage_SubtitleStandfirstSignature(t *testing.T) {
 	}
 }
 
+// The hero carries an OPTIONAL caption + source credit that the SITE renders as text
+// under the image (a <figcaption>), so no credit is baked into the pixels. Both keys
+// are optional: absent -> no figcaption element renders at all; present -> caption then
+// credit, each in its own span, sitting under the hero image.
+func TestArticlePage_HeroCaptionAndCredit(t *testing.T) {
+	img := "/media/" + strings.Repeat("a", 64) + ".png"
+
+	// (a) Both keys present: caption then credit render under the hero image.
+	repo := newStore(t)
+	out := t.TempDir()
+	a := seed(t, repo, seedSpec{
+		Title: "Pieza con epígrafe", Author: "ada", Section: "politics", Body: "Cuerpo.",
+		Published: date(2026, 6, 6),
+		Metadata: map[string]any{
+			"author_name":   "Ada L.",
+			"image":         img,
+			"image_alt":     "El acto en la plaza.",
+			"image_caption": "El intendente durante el acto en la plaza central.",
+			"image_credit":  "Prensa Municipalidad de X",
+		},
+	})
+	genInto(t, repo, out, nil)
+	page := string(readArtifact(t, out, articlePath(a)))
+	css := string(readArtifact(t, out, "assets/style.css"))
+
+	for _, want := range []string{
+		`<figcaption class="hero-figcaption">`,
+		`<span class="hero-caption">El intendente durante el acto en la plaza central.</span>`,
+		`<span class="hero-credit">Prensa Municipalidad de X</span>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("article page missing hero caption markup %q", want)
+		}
+	}
+	// The figcaption sits UNDER the hero image (after the <img>) and inside the figure.
+	if img, cap := strings.Index(page, `class="hero-img"`), strings.Index(page, `class="hero-figcaption"`); img < 0 || cap < 0 || img > cap {
+		t.Errorf("hero figcaption should render after the hero image: imgIdx=%d capIdx=%d", img, cap)
+	}
+	// Caption precedes credit when both are present.
+	if c, cr := strings.Index(page, `hero-caption"`), strings.Index(page, `hero-credit"`); c < 0 || cr < 0 || c > cr {
+		t.Errorf("caption should precede credit: captionIdx=%d creditIdx=%d", c, cr)
+	}
+	for _, want := range []string{`.hero-figcaption {`, `.hero-credit {`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("hero caption CSS missing %q", want)
+		}
+	}
+
+	// (b) Credit only: just the credit span, no caption span, but the figcaption renders.
+	repo2 := newStore(t)
+	out2 := t.TempDir()
+	b := seed(t, repo2, seedSpec{
+		Title: "Pieza con solo crédito", Author: "ada", Section: "politics", Body: "Cuerpo.",
+		Published: date(2026, 6, 6),
+		Metadata: map[string]any{
+			"author_name":  "Ada L.",
+			"image":        img,
+			"image_credit": "Reuters",
+		},
+	})
+	genInto(t, repo2, out2, nil)
+	pageB := string(readArtifact(t, out2, articlePath(b)))
+	if !strings.Contains(pageB, `<figcaption class="hero-figcaption">`) ||
+		!strings.Contains(pageB, `<span class="hero-credit">Reuters</span>`) {
+		t.Errorf("credit-only hero should render a figcaption with just the credit")
+	}
+	if strings.Contains(pageB, `class="hero-caption"`) {
+		t.Errorf("credit-only hero should not render a caption span")
+	}
+
+	// (c) Neither key: NO figcaption element renders (no empty caption).
+	repo3 := newStore(t)
+	out3 := t.TempDir()
+	c := seed(t, repo3, seedSpec{
+		Title: "Pieza sin epígrafe", Author: "ada", Section: "politics", Body: "Cuerpo.",
+		Published: date(2026, 6, 6),
+		Metadata:  map[string]any{"author_name": "Ada L.", "image": img, "image_alt": "El acto."},
+	})
+	genInto(t, repo3, out3, nil)
+	pageC := string(readArtifact(t, out3, articlePath(c)))
+	if strings.Contains(pageC, "hero-figcaption") || strings.Contains(pageC, "<figcaption") {
+		t.Errorf("hero with no caption/credit should render no figcaption element")
+	}
+}
+
 // The article page carries a share bar linking to the five networks, each sharing
 // the article's absolute canonical URL (URL-encoded). The old subtitle dek is gone.
 func TestArticlePage_ShareBar(t *testing.T) {

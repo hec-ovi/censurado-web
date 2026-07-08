@@ -17,6 +17,7 @@ import (
 // updating CONTRACT.md and this list together.
 var frozenMetadataVocab = []string{
 	"subtitle", "description", "card", "image", "image_alt", "alt",
+	"image_caption", "image_credit",
 	"author_name", "author_bio", "author_avatar", "avatar",
 	"youtube", "youtube_id", "video", "keywords", "tweets", "media_checks",
 	"gender", "beat", "profile_topics",

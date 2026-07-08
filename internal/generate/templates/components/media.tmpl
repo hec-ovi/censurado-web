@@ -10,6 +10,12 @@
 <iframe class="hero-embed" src="{{.Media.Src}}" title="{{.Media.Title}}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
 </div>
 {{- end}}
+{{- if or .ImageCaption .ImageCredit}}
+<figcaption class="hero-figcaption">
+{{- if .ImageCaption}}<span class="hero-caption">{{.ImageCaption}}</span>{{end}}
+{{- if .ImageCredit}}<span class="hero-credit">{{.ImageCredit}}</span>{{end}}
+</figcaption>
+{{- end}}
 </figure>
 {{- end}}
 {{end}}

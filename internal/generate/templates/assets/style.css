@@ -1974,6 +1974,15 @@
     fill: currentColor;
   }
 
+  /* On desktop, cards drop the compact share row: sharing belongs on the full
+     article page (.article-share), not on listing/related cards. Cards keep it on
+     mobile, where the article's own share bar is much further down the page. */
+  @media (min-width: 42rem) {
+    .card-share {
+      display: none;
+    }
+  }
+
   /* Article permalink layout: the piece + a "Relacionados" grid in the main
      column, with "Recomendado" as a lateral rail on wide screens (stacked
      below on narrow). */

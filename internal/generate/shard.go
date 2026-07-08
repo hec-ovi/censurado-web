@@ -9,7 +9,7 @@ import (
 // ShardEntry is the body-free projection of an article for the client-side
 // Tier-B refiner. Routing-axis facets are slug form so client membership matches
 // server-rendered membership; author_label carries the original display string.
-// The JSON field set is frozen (17 fields); id is unexported and never
+// The JSON field set is frozen (18 fields); id is unexported and never
 // serialized, kept only to break display-order ties consistently with the HTML
 // listing (ties by id). ord and role carry the curated per-day plan: ord is the
 // article's within-day render position (0 = the day's lead, default = newest-first
@@ -23,23 +23,24 @@ import (
 // poster when there is no metadata.image, and Video is then true so the client
 // rebuilds the play badge over that poster (matching the server thumbForArticle).
 type ShardEntry struct {
-	Slug        string   `json:"slug"`
-	URL         string   `json:"url"`
-	Title       string   `json:"title"`
-	Subtitle    string   `json:"subtitle"`
-	Description string   `json:"description"`
-	Image       string   `json:"image"`
-	Video       bool     `json:"video"`
-	Author      string   `json:"author"`
-	AuthorLabel string   `json:"author_label"`
-	Avatar      string   `json:"avatar"`
-	Section     string   `json:"section"`
-	Topics      []string `json:"topics"`
-	PublishedAt string   `json:"published_at"`
-	TS          int64    `json:"ts"`
-	CreatedTS   int64    `json:"cts"`  // created-at epoch (real insert time); drives the displayed card stamp
-	Ord         int      `json:"ord"`  // within-day render position (0 = the day's lead; default = newest-first display rank)
-	Role        string   `json:"role"` // "" normal, "important" full-row; curated by the per-day plan
+	Slug         string   `json:"slug"`
+	URL          string   `json:"url"`
+	Title        string   `json:"title"`
+	Subtitle     string   `json:"subtitle"`
+	Description  string   `json:"description"`
+	Image        string   `json:"image"`
+	Video        bool     `json:"video"`
+	Author       string   `json:"author"`
+	AuthorLabel  string   `json:"author_label"`
+	Avatar       string   `json:"avatar"`
+	Section      string   `json:"section"`
+	SectionLabel string   `json:"section_label"` // reader-facing Spanish label; the client uses it so JS-filled rails don't show the raw English slug
+	Topics       []string `json:"topics"`
+	PublishedAt  string   `json:"published_at"`
+	TS           int64    `json:"ts"`
+	CreatedTS    int64    `json:"cts"`  // created-at epoch (real insert time); drives the displayed card stamp
+	Ord          int      `json:"ord"`  // within-day render position (0 = the day's lead; default = newest-first display rank)
+	Role         string   `json:"role"` // "" normal, "important" full-row; curated by the per-day plan
 
 	id string // article id; sort tie-break only, never serialized
 }
@@ -77,21 +78,22 @@ func ShardEntryOf(a domain.Article) ShardEntry {
 	image := thumb.Src
 	video := thumb.Kind == "youtube" || thumb.Kind == "video"
 	return ShardEntry{
-		Slug:        a.Slug,
-		URL:         articleURL(a),
-		Title:       a.Title,
-		Subtitle:    firstMetadataString(a.Metadata, "subtitle"),
-		Description: firstMetadataString(a.Metadata, "description"),
-		Image:       image,
-		Video:       video,
-		Author:      auth,
-		AuthorLabel: authorDisplayLabel(a),
-		Avatar:      metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
-		Section:     sec,
-		Topics:      topics,
-		PublishedAt: a.PublishedAt.UTC().Format(time.RFC3339),
-		TS:          a.PublishedAt.UTC().Unix(),
-		CreatedTS:   a.CreatedAt.UTC().Unix(),
-		id:          a.ID,
+		Slug:         a.Slug,
+		URL:          articleURL(a),
+		Title:        a.Title,
+		Subtitle:     firstMetadataString(a.Metadata, "subtitle"),
+		Description:  firstMetadataString(a.Metadata, "description"),
+		Image:        image,
+		Video:        video,
+		Author:       auth,
+		AuthorLabel:  authorDisplayLabel(a),
+		Avatar:       metadataMediaSrc("", a.Metadata, "author_avatar", "avatar"),
+		Section:      sec,
+		SectionLabel: sectionLabelOf(a),
+		Topics:       topics,
+		PublishedAt:  a.PublishedAt.UTC().Format(time.RFC3339),
+		TS:           a.PublishedAt.UTC().Unix(),
+		CreatedTS:    a.CreatedAt.UTC().Unix(),
+		id:           a.ID,
 	}
 }

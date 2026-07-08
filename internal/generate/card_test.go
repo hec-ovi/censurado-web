@@ -57,6 +57,24 @@ func TestCardThumb_AuthoredCardDrivesTheListingCard(t *testing.T) {
 	}
 }
 
+// TestShardEntry_SectionLabelIsSpanish proves the client shard carries the reader-facing
+// Spanish section label (section_label) alongside the English URL slug. A JS-filled rail
+// ("Más de este autor") reads section_label, so it shows "Política" instead of the raw slug
+// "politics" that CSS text-transform:uppercase would render as "POLITICS".
+func TestShardEntry_SectionLabelIsSpanish(t *testing.T) {
+	a := domain.Article{
+		Title: "T", Body: "b", Section: "politics", Author: "ada",
+		ContentHash: "0123456789abcdef",
+	}
+	se := ShardEntryOf(a)
+	if se.Section != "politics" {
+		t.Errorf("shard Section slug = %q, want %q (the URL slug stays English)", se.Section, "politics")
+	}
+	if se.SectionLabel != "Política" {
+		t.Errorf("shard SectionLabel = %q, want %q (the reader-facing Spanish label)", se.SectionLabel, "Política")
+	}
+}
+
 // TestCardThumb_LegacyUnchanged pins that a piece with NO card block still renders
 // exactly as before (byte-stable for sealed pages): metadata.image -> an image
 // card, a body YouTube video -> its poster with a play badge, plain text -> none.

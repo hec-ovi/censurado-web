@@ -22,9 +22,13 @@ afterEach(() => {
 
 const MANIFEST = { scope: "/author/ada/", shards: [{ url: "/shards/author/ada/2026/06.json", month: "2026-06" }] };
 const SHARD = [
-  { slug: "l2", url: "/a/ada-dos-00000002/", title: "Ada Dos", section: "politics", author: "ada", ts: 200 },
-  { slug: "l1", url: "/a/ada-uno-00000001/", title: "Ada Uno", section: "politics", author: "ada", ts: 100 },
+  { slug: "l2", url: "/a/ada-dos-00000002/", title: "Ada Dos", section: "politics", section_label: "Política", author: "ada", ts: 200 },
+  { slug: "l1", url: "/a/ada-uno-00000001/", title: "Ada Uno", section: "politics", section_label: "Política", author: "ada", ts: 100 },
 ];
+
+function sectionLabels() {
+  return [...container.querySelectorAll(".author-more-section")].map((s) => s.textContent);
+}
 
 function aside(self) {
   return `
@@ -51,6 +55,19 @@ describe("initAuthorMore", () => {
     expect(res).not.toBeNull();
     expect(links()).toEqual(["/a/ada-dos-00000002/", "/a/ada-uno-00000001/"]);
     expect(hits["/manifest/author/ada/index.json"]).toBe(1);
+    // The rail shows the Spanish section label from the shard, not the raw English slug
+    // (which CSS uppercases to "POLITICS"). Guards the section_label wiring.
+    expect(sectionLabels()).toEqual(["Política", "Política"]);
+  });
+
+  test("falls back to the raw section slug on a legacy shard without section_label", async () => {
+    mount(aside("/a/ada-tres-00000003/"));
+    serveJSON({
+      "/manifest/author/ada/index.json": MANIFEST,
+      "/shards/author/ada/2026/06.json": SHARD.map(({ section_label, ...rest }) => rest),
+    });
+    await initAuthorMore(container);
+    expect(sectionLabels()).toEqual(["politics", "politics"]);
   });
 
   test("excludes the article being read", async () => {

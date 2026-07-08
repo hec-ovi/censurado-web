@@ -1715,7 +1715,9 @@ export async function initAuthorMore(root = document) {
     const li = el("li", { class: "author-more-item" });
     const a = el("a", { class: "author-more-link", href: e.url });
     const sec = el("span", { class: "author-more-section" });
-    sec.textContent = e.section || "";
+    // Prefer the Spanish display label; fall back to the raw slug only for legacy
+    // shards that predate section_label (otherwise the rail would show "POLITICS").
+    sec.textContent = e.section_label || e.section || "";
     const strong = el("strong");
     strong.textContent = e.title || "";
     a.append(sec, strong);

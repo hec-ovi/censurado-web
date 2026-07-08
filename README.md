@@ -6,7 +6,13 @@ pages, JSON shards for client-side filtering, feeds, sitemaps, and a CDN purge
 manifest. The public reading path is fully static, so nothing here runs when a reader
 loads the site; the generator runs at build time and a CDN serves the output.
 
-Live at https://elcensuradoweb.com.
+<h2 align="center">
+  <a href="https://elcensuradoweb.com">🌐 elcensuradoweb.com →</a>
+</h2>
+
+<p align="center">
+  <a href="https://elcensuradoweb.com"><img src="https://img.shields.io/badge/live-elcensuradoweb.com-e01842?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Live site" /></a>
+</p>
 
 The system is three code repos plus an image backend:
 

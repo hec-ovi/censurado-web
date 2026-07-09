@@ -39,7 +39,11 @@ resolves.
    default).
 4. `cmd/censurado/generate` :: the generator binary. One-shot, or `-watch` to stay
    resident and regenerate plus purge whenever the backend writes new content.
+   `-lang`/`CENSURADO_LANG` picks the render language (default `es`).
 5. `web/` :: the vitest suite for `app.js`.
+6. `cmd/censurado/seedtext` :: one-time bootstrap that seeds the backend's `frontend_text`
+   catalog (the English base plus the Spanish rows the generator falls back to). Inserts
+   missing rows only; `-force` overwrites.
 
 ## Contracts to honor
 

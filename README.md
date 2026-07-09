@@ -49,8 +49,9 @@ There is no authors or topics table the generator depends on. The author pages
 (`/about/`) are all derived from per-article metadata and tags: an article's
 `metadata.author_*` fields supply each author's display name, bio, and avatar, and an
 article's topics supply the topic facets. The Nosotros roster is ordered by the
-article index, most-published author first, tie-broken by earliest published article,
-then slug; no author is hardcoded, so an empty corpus yields zero authors. When the
+article index, most-published author first, tie-broken by each author's earliest
+article in insertion order, then slug; no author is hardcoded, so an empty corpus
+yields zero authors. When the
 backend store exposes an operator author/topic registry, those rows can override an
 existing author's or topic's label/bio/avatar, but the registry never manufactures a
 page for an author or topic that has no published articles.

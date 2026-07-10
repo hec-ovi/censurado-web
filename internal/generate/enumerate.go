@@ -63,6 +63,9 @@ type Index struct {
 	// order so uncurated output stays byte-identical.
 	portadaOrd  map[string]int
 	portadaRole map[string]string
+	// portadaDays records days with an explicit curation plan. The paginator uses
+	// it to keep the newest curated day together on the mutable front-page landing.
+	portadaDays map[string]bool
 	// recomendado is the site's single GLOBAL editor's-pick slug list (RecomendadoStore),
 	// day-independent and persistent, rendered as the front-page "Recomendado" rail in
 	// stored order. Empty until an operator sets one.
@@ -91,6 +94,7 @@ func newIndex(n int) *Index {
 		authorDeleted:       map[string]bool{},
 		portadaOrd:          map[string]int{},
 		portadaRole:         map[string]string{},
+		portadaDays:         map[string]bool{},
 	}
 }
 
@@ -276,6 +280,7 @@ func overlayPortada(ctx context.Context, idx *Index, repo store.Repository) erro
 		if !has {
 			continue // a plan for a day with no published articles: nothing to order
 		}
+		idx.portadaDays[plan.Date] = true
 		bySlug := map[string]int{}
 		for _, ix := range dayIdxs {
 			bySlug[idx.All[ix].Slug] = ix

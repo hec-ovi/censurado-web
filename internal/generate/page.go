@@ -47,6 +47,21 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 	n := len(indices)
 	full := n / P
 
+	// A curated newest day is the front page's editorial unit. Keep every card
+	// from that day on the mutable landing, even when the day crosses the fixed
+	// page-size boundary. Without this, a plan can name a lead that has already
+	// been sealed onto an older page before portadaSort gets a chance to run.
+	if n > 0 {
+		newestDay := dayKey(idx.All[indices[n-1]])
+		if idx.portadaDays[newestDay] {
+			firstNewestDay := n - 1
+			for firstNewestDay > 0 && dayKey(idx.All[indices[firstNewestDay-1]]) == newestDay {
+				firstNewestDay--
+			}
+			full = firstNewestDay / P
+		}
+	}
+
 	var pages []Page
 	for k := 1; k <= full; k++ {
 		arts := idx.articlesAt(indices[(k-1)*P : k*P])

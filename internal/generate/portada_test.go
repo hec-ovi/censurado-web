@@ -180,6 +180,29 @@ func TestPortada_DefaultOrderUnchanged(t *testing.T) {
 	}
 }
 
+func TestPortada_NewestCuratedDayStaysOnLandingAcrossPageBoundary(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+
+	older := seed(t, repo, seedSpec{Title: "Zeta", Author: "ada", Section: "politics", Published: dayAt(2026, 6, 9, 9)})
+	a := seed(t, repo, seedSpec{Title: "Alfa", Author: "ada", Section: "politics", Published: dayAt(2026, 6, 10, 9)})
+	b := seed(t, repo, seedSpec{Title: "Beta", Author: "bob", Section: "world", Published: dayAt(2026, 6, 10, 10)})
+	c := seed(t, repo, seedSpec{Title: "Gamma", Author: "lin", Section: "tech", Published: dayAt(2026, 6, 10, 11)})
+
+	upsertPortada(t, repo, store.PortadaDay{
+		Date:    "2026-06-10",
+		Entries: []store.PortadaEntry{{Slug: a.Slug}, {Slug: c.Slug}, {Slug: b.Slug}},
+	})
+
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
+
+	got := permalinksIn(readArtifact(t, out, "latest/index.html"))
+	want := []string{articleURL(a), articleURL(c), articleURL(b), articleURL(older)}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("front-page order = %v, want whole curated day on landing %v", got, want)
+	}
+}
+
 // TestRecomendado_GlobalListIsFrontPageRail proves the site's single GLOBAL
 // editor's-pick list becomes the front page's "Recomendado" rail, in the operator's
 // stored order, dropping any slug with no matching article (and never the auto

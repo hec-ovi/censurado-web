@@ -1315,16 +1315,14 @@ func (env *buildEnv) feedLinks() []feedLink {
 	}
 }
 
-// pagerFor lists the scope's existing pages: sealed pages 1..full then the
-// landing (N==0).
+// pagerFor lists the scope's actual generated pages. Curated front pages use
+// whole-day, soft-size chunks, so their sealed page count is not necessarily
+// len(scope)/pageSize.
 func pagerFor(idx *Index, s Scope, pageSize, current int) pagerView {
-	n := len(idx.scopeIndices(s))
-	full := n / pageSize
 	var pages []pageLink
-	for k := 1; k <= full; k++ {
-		pages = append(pages, pageLink{N: k, URL: s.PageURL(k)})
+	for _, pg := range idx.chunkPages(s, pageSize) {
+		pages = append(pages, pageLink{N: pg.Number, URL: s.PageURL(pg.Number)})
 	}
-	pages = append(pages, pageLink{N: 0, URL: s.PageURL(0)})
 	return pagerView{Pages: pages, Current: current}
 }
 

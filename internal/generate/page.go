@@ -44,6 +44,9 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 		}
 		return idLess(ia.ID, ib.ID) // stable tie-break
 	})
+	if isLatest(s) && idx.hasCuratedDay(indices) {
+		return idx.chunkLatestByDay(s, P, indices)
+	}
 	n := len(indices)
 	full := n / P
 
@@ -107,6 +110,107 @@ func (idx *Index) chunkPages(s Scope, P int) []Page {
 	arts := idx.articlesAt(landIdx)
 	idx.portadaSort(arts)
 	landing.Articles = arts
+	pages = append(pages, landing)
+	return pages
+}
+
+// hasCuratedDay reports whether a scope contains an explicit per-day portada
+// plan. The front page must treat those days as indivisible layout units: the
+// lead, paired half-width cards, and full-row important cards only make sense
+// when pagination does not cut the day in half.
+func (idx *Index) hasCuratedDay(indices []int) bool {
+	for _, i := range indices {
+		if idx.portadaDays[dayKey(idx.All[i])] {
+			return true
+		}
+	}
+	return false
+}
+
+// chunkLatestByDay paginates the front page on whole UTC publication days once
+// any day has an explicit portada plan. PageSize becomes a soft target: adjacent
+// days are packed oldest-first without ever splitting a day, and the newest
+// landing absorbs the preceding whole-day page when it would otherwise contain
+// fewer than P articles. This keeps the landing a canonical prefix of the shard
+// stream and preserves each day's lead/pair/important layout across day changes.
+func (idx *Index) chunkLatestByDay(s Scope, P int, indices []int) []Page {
+	if len(indices) == 0 {
+		return []Page{{Scope: s, Number: 0, Landing: true, Canonical: s.PageURL(0)}}
+	}
+
+	var chunks [][]int
+	current := make([]int, 0, P)
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		chunks = append(chunks, current)
+		current = make([]int, 0, P)
+	}
+	for start := 0; start < len(indices); {
+		end := start + 1
+		day := dayKey(idx.All[indices[start]])
+		for end < len(indices) && dayKey(idx.All[indices[end]]) == day {
+			end++
+		}
+		group := indices[start:end]
+		if len(current) > 0 && len(current)+len(group) > P {
+			flush()
+		}
+		current = append(current, group...)
+		if len(current) >= P {
+			flush()
+		}
+		start = end
+	}
+	flush()
+
+	// A short newest day would otherwise leave the front page sparse. Pull the
+	// preceding complete chunk into the mutable landing; because chunks end only
+	// at day boundaries, this cannot manufacture a false lead or orphan a pair.
+	last := len(chunks) - 1
+	if last > 0 && len(chunks[last]) < P {
+		merged := make([]int, 0, len(chunks[last-1])+len(chunks[last]))
+		merged = append(merged, chunks[last-1]...)
+		merged = append(merged, chunks[last]...)
+		chunks[last-1] = merged
+		chunks = chunks[:last]
+	}
+
+	sealed := len(chunks) - 1
+	pages := make([]Page, 0, len(chunks))
+	for i := 0; i < sealed; i++ {
+		arts := idx.articlesAt(chunks[i])
+		idx.portadaSort(arts)
+		pg := Page{
+			Scope:     s,
+			Number:    i + 1,
+			Articles:  arts,
+			Canonical: s.PageURL(i + 1),
+		}
+		if i > 0 {
+			pg.Prev = s.PageURL(i)
+		}
+		if i+1 < sealed {
+			pg.Next = s.PageURL(i + 2)
+		} else {
+			pg.Next = s.PageURL(0)
+		}
+		pages = append(pages, pg)
+	}
+
+	arts := idx.articlesAt(chunks[len(chunks)-1])
+	idx.portadaSort(arts)
+	landing := Page{
+		Scope:     s,
+		Number:    0,
+		Landing:   true,
+		Articles:  arts,
+		Canonical: s.PageURL(0),
+	}
+	if sealed > 0 {
+		landing.Prev = s.PageURL(sealed)
+	}
 	pages = append(pages, landing)
 	return pages
 }

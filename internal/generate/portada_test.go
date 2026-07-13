@@ -197,9 +197,80 @@ func TestPortada_NewestCuratedDayStaysOnLandingAcrossPageBoundary(t *testing.T) 
 	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
 
 	got := permalinksIn(readArtifact(t, out, "latest/index.html"))
-	want := []string{articleURL(a), articleURL(c), articleURL(b), articleURL(older)}
+	want := []string{articleURL(a), articleURL(c), articleURL(b)}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("front-page order = %v, want whole curated day on landing %v", got, want)
+		t.Errorf("front-page order = %v, want whole curated day on landing %v (older=%s)", got, want, articleURL(older))
+	}
+}
+
+// A new, still-uncurated day must not make the previous curated day's portada
+// straddle the landing boundary. The old fixed-size cut left only positions 2
+// and 4 on /latest/, while positions 0, 1, and 3 moved to the older page; the
+// browser then appended those missing earlier positions after the later ones.
+func TestPortada_PreviousCuratedDayStaysWholeWhenNewDayArrives(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+
+	a := seed(t, repo, seedSpec{Title: "Prev A", Author: "ada", Section: "world", Published: dayAt(2026, 6, 10, 9)})
+	b := seed(t, repo, seedSpec{Title: "Prev B", Author: "bob", Section: "world", Published: dayAt(2026, 6, 10, 10)})
+	c := seed(t, repo, seedSpec{Title: "Prev C", Author: "lin", Section: "world", Published: dayAt(2026, 6, 10, 11)})
+	d := seed(t, repo, seedSpec{Title: "Prev D", Author: "ada", Section: "world", Published: dayAt(2026, 6, 10, 12)})
+	e := seed(t, repo, seedSpec{Title: "Prev E", Author: "bob", Section: "world", Published: dayAt(2026, 6, 10, 13)})
+	upsertPortada(t, repo, store.PortadaDay{
+		Date: "2026-06-10",
+		Entries: []store.PortadaEntry{
+			{Slug: a.Slug, Role: "important"},
+			{Slug: c.Slug},
+			{Slug: e.Slug},
+			{Slug: b.Slug},
+			{Slug: d.Slug},
+		},
+	})
+
+	n1 := seed(t, repo, seedSpec{Title: "New One", Author: "ada", Section: "politics", Published: dayAt(2026, 6, 11, 9)})
+	n2 := seed(t, repo, seedSpec{Title: "New Two", Author: "bob", Section: "politics", Published: dayAt(2026, 6, 11, 10)})
+	n3 := seed(t, repo, seedSpec{Title: "New Three", Author: "lin", Section: "politics", Published: dayAt(2026, 6, 11, 11)})
+
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 6 })
+
+	page := string(readArtifact(t, out, "latest/index.html"))
+	got := permalinksIn([]byte(page))
+	want := []string{
+		articleURL(n3), articleURL(n2), articleURL(n1),
+		articleURL(a), articleURL(c), articleURL(e), articleURL(b), articleURL(d),
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("front-page order = %v, want canonical whole-day prefix %v", got, want)
+	}
+	if n := strings.Count(page, `class="card lead-card`); n != 2 {
+		t.Errorf("lead-card count = %d, want one lead for each complete day", n)
+	}
+}
+
+// Regression for the n%%P==0 path left behind by the first curated-day fix. It
+// used the modified full-page count with the old exact-boundary mirror branch
+// and could replace the landing with the oldest page.
+func TestPortada_CuratedLandingAtExactPageBoundary(t *testing.T) {
+	repo := newStore(t)
+	out := t.TempDir()
+
+	seed(t, repo, seedSpec{Title: "Old One", Author: "ada", Section: "world", Published: dayAt(2026, 6, 9, 9)})
+	seed(t, repo, seedSpec{Title: "Old Two", Author: "bob", Section: "world", Published: dayAt(2026, 6, 9, 10)})
+	seed(t, repo, seedSpec{Title: "Old Three", Author: "lin", Section: "world", Published: dayAt(2026, 6, 9, 11)})
+	a := seed(t, repo, seedSpec{Title: "New A", Author: "ada", Section: "world", Published: dayAt(2026, 6, 10, 9)})
+	b := seed(t, repo, seedSpec{Title: "New B", Author: "bob", Section: "world", Published: dayAt(2026, 6, 10, 10)})
+	c := seed(t, repo, seedSpec{Title: "New C", Author: "lin", Section: "world", Published: dayAt(2026, 6, 10, 11)})
+	upsertPortada(t, repo, store.PortadaDay{
+		Date:    "2026-06-10",
+		Entries: []store.PortadaEntry{{Slug: a.Slug}, {Slug: c.Slug}, {Slug: b.Slug}},
+	})
+
+	genInto(t, repo, out, func(o *Options) { o.PageSize = 2 })
+
+	got := permalinksIn(readArtifact(t, out, "latest/index.html"))
+	want := []string{articleURL(a), articleURL(c), articleURL(b)}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("exact-boundary landing = %v, want newest curated day %v", got, want)
 	}
 }
 

@@ -1109,9 +1109,18 @@
      A non-lead card that carries media pulls the image between the date and the
      title (date -> image -> title -> ...); the two negative orders sort before the
      rest of the column, which keeps its source order at the default 0. Text-only
-     cards and the lead render the source order as-is. */
+     cards render the source order as-is. */
   .card:not(.lead-card).card-has-media .card-date { order: -2; }
   .card:not(.lead-card).card-has-media .card-media { order: -1; }
+
+  /* The lead card reads title -> dek -> summary -> hero -> byline: the dek and
+     summary stay at the default order right after the title, and the hero, meta
+     and share row sort after them in that order. Applies at every width (this
+     rule lives outside any @media block), so mobile gets the same order as
+     desktop instead of the old title -> hero -> dek stack. */
+  .lead-card.card-has-media .card-media { order: 1; }
+  .lead-card.card-has-media .card-meta { order: 2; }
+  .lead-card.card-has-media .card-share { order: 3; }
 
   .card-body {
     display: flex;
@@ -2251,7 +2260,11 @@
     background: var(--color-line);
   }
 
-  .related-card-thumb img {
+  /* The compound selector beats `.article-body img`, which has the same specificity but
+     comes later in this layer and sets `height: auto`. The related card is rendered INSIDE
+     the article body, so that rule was winning: the thumbnail kept its own aspect ratio
+     inside the 5.5rem square and left an empty block of background below the picture. */
+  .related-card .related-card-thumb img {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -2590,9 +2603,10 @@
       overflow: hidden;
     }
 
-    /* The full-width lead is a feature card: title, date, then a wide full-bleed
-       hero under them, then the dek and summary. The hero spans the whole card at a
-       wide banner ratio (never the old tall side column), so it reads wide-not-tall. */
+    /* The full-width lead is a feature card: title, date, then the dek and summary,
+       then a wide full-bleed hero (order set above). The hero spans the whole card
+       at a wide banner ratio (never the old tall side column), so it reads
+       wide-not-tall. */
     .lead-card .card-title {
       font-size: var(--text-2xl);
     }

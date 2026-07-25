@@ -59,9 +59,10 @@
 <article class="card{{if .Thumb.Src}} card-has-media{{else}} card-textonly{{end}}{{if $video}} card-has-video{{end}}">{{template "card_inner" .}}</article>
 {{end}}
 
-{{/* lead_card is the front page's full-width lead. Same field order as a portada
-     card; the CSS gives it a bigger title and a wide full-bleed hero (never the old
-     tall side column) and keeps its summary. */}}
+{{/* lead_card is the front page's full-width lead. Same source order as a portada
+     card; the CSS gives it a bigger title, reads title -> dek -> summary -> hero
+     (see style.css), and gives the hero a wide full-bleed ratio (never the old
+     tall side column). */}}
 {{define "lead_card"}}
 {{- $video := or (eq .Thumb.Kind "youtube") (eq .Thumb.Kind "video") -}}
 <article class="card lead-card{{if .Thumb.Src}} card-has-media{{else}} card-textonly{{end}}{{if $video}} card-has-video{{end}}">{{template "card_inner" .}}</article>
